@@ -1,0 +1,93 @@
+loss_hyp:
+  use_focal_loss: false
+  focal_loss_gamma: 1.5
+  focal_loss_alpha: 0.25
+  obj_loss_scale: 0.05
+  cls_loss_scale: 0.5
+  cof_loss_scale: 1.0
+  anchor_match_thr: 4.0
+  class_smooth_factor: 1.0
+  cls_pos_weight: 1.0
+  cof_pos_weight: 1.0
+
+train_hyp:
+  img_dir: "/home/uih/JYL/Dataset/GlobalWheatDetection/image"
+  val_data_dir: "./result/wheat_test_imgs"
+  lab_dir: "/home/uih/JYL/Dataset/GlobalWheatDetection/label"
+  aspect_ratio_path: ~
+  use_crowb: false
+  cache_num: 10000
+  input_img_size:
+    - 640
+    - 640
+  batch_size: 2
+  drop_last: true
+  pin_memory: true
+  shuffle: true
+  num_workers: 6
+  total_epoch: 300
+  device: "gpu"
+  do_warmup: true
+  accumulate_loss_step: 64
+  warmup_epoch: 3
+  do_ema: true
+  warmup_bias_lr: 0.1
+  warmup_momentum: 0.8
+  validation_every: 0.5  # 每隔多少个epoch validate一次
+  show_tbar_every: 5  # 每个多少个step显示实时训练状态信息
+  use_tta: true  # validation时是否使用TTA
+  save_log_txt: true
+  use_pretrained_mdoel: true
+  pretrained_model_path: ""
+  mutil_scale_training: false
+  current_work_path: null
+  calculate_map_every: ~
+  calculate_map: false
+  save_ckpt_every: 500
+  model_type: 'smalldw'
+  use_auxiliary_classifier: false
+
+optim_hyp:
+  optimizer: sgd
+  init_lr: 0.01
+  weight_decay: 0.0005
+  momentum: 0.937
+  lr_scheculer_bias: 0.2
+
+
+data_hyp:
+  data_aug_scale: 0.5
+  data_aug_shear: 0.0
+  data_aug_translate: 0.1
+  data_aug_degree: 0.0
+  data_aug_prespective: 0.0
+  data_aug_hsv_thr: 1.0
+  data_aug_hsv_hgain: 0.015
+  data_aug_hsv_sgain: 0.7
+  data_aug_hsv_vgain: 0.4
+  data_aug_mixup_thr: 0.0
+  data_aug_fliplr_thr: 0.5
+  data_aug_flipud_thr: 0.0
+  data_aug_fill_value: 128
+  data_aug_mosaic_thr: 1.0
+
+nms_hyp:
+  iou_threshold: 0.2
+  conf_threshold: 0.3
+  cls_threshold: 0.3
+  max_predictions_per_img: 300
+  min_prediction_box_wh: 2
+  max_prediction_box_wh: 4096
+  iou_type: iou
+  infer_img_save_path: ~
+  mutil_label: false  # 一个object是否可以有多个标签
+  agnostic: true  # 是否在同类别的bbox之间进行NMS
+  postprocess_bbox: true  # 是否对预测框进行调优
+  wfb: false  # use NMS or Weighted Fusion Bbox
+  wfb_weights: 
+    - 1
+    - 1
+    - 1
+  wfb_iou_threshold: 0.5
+  wfb_skip_box_threshold: 0.001
+

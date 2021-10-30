@@ -1,0 +1,42 @@
+nms_hyp:
+  iou_threshold: 0.25  # 最后使用iou threshold过滤掉一批预测框
+  conf_threshold: 0.3  # 先使用conf threshold过滤掉一批预测框
+  cls_threshold: 0.3  # 再使用cls threshold过滤掉一批预测框
+  max_predictions_per_img: 300
+  min_prediction_box_wh: 2
+  max_prediction_box_wh: 4096
+  iou_type: 'iou'
+  mutil_label:  false  # 一个object是否可以分配多个标签
+  agnostic:  true  # 是否只在同一个类别的bbox间进行NMS
+  postprocess_bbox:  true  # 是否对预测的bbox进一步调优
+  wfb:  false  # use NMS or Weighted Fusion Bbox
+  wfb_weights: 
+    - 1
+    - 1
+    - 1
+  wfb_iou_threshold: 0.5
+  wfb_skip_box_threshold: 0.001
+
+test_hyp:
+  img_dir: "/Volumes/Samsung/Dataset/COCO/val_dataset/image" 
+  lab_dir: "/Volumes/Samsung/Dataset/COCO/val_dataset/label"
+  name_path: "/Volumes/Samsung/Dataset/COCO/val_dataset/names.txt"
+  ema_model:  true 
+  use_auxiliary_classifier:  false
+  batch_size: 2
+  input_img_size: 
+    - 640 
+    - 640
+  num_workers: 0
+  save_img:  true
+  device: 'gpu' 
+  use_tta:  true 
+  save_pred_bbox:  true
+  current_work_path: ~ 
+  pretrained_model_path: "./checkpoints/every_for_coco_xlarge.pth"
+  show_gt_bbox:  true 
+  model_type: "xlarge" 
+  drop_last:  false 
+  shuffle: false
+  pin_memory: true
+  half:  true

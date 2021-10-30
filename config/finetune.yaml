@@ -1,0 +1,113 @@
+loss_hyp:
+  use_focal_loss: false
+  focal_loss_gamma: 1.5
+  focal_loss_alpha: 0.25
+  obj_loss_scale: 0.0296
+  cls_loss_scale: 0.243
+  cof_loss_scale: 0.301
+  anchor_match_thr: 2.91
+  class_smooth_factor: 1.0
+  cls_pos_weight: 0.631
+  cof_pos_weight: 0.911
+
+coco_train_hyp:
+  data_dir: "/home/uih/JYL/Dataset/COCO2017"
+  set_name: "train2017"
+  use_crowb: false
+  input_img_size:
+    - 640
+    - 640
+  batch_size: 16
+  drop_last: true
+  pin_memory: true
+  shuffle: true
+  num_workers: 6
+  total_epoch: 300
+  device: "cpu"
+  do_warmup: true
+  accumulate_loss_step: 64
+  warmup_epoch: 2
+  do_ema: true
+  warmup_bias_lr: 0.05
+  warmup_momentum: 0.5
+  validation: true
+  validation_every: 500
+  show_tbar_every: 5
+  use_tta: true
+  save_log_txt: true
+  use_pretrained_mdoel: true
+  pretrained_model_path: "./checkpoints/my_yolov5_xlarge_for_coco.pth"
+  mutil_scale_training: true
+  current_work_path: null
+  calculate_map_every: 800
+  calculate_map: false
+  save_ckpt_every: 500
+  model_type: 'xlarge'
+
+optimizer_hyp:
+  optimizer: sgd
+  init_lr: 0.0032
+  optimizer_weight_decay: 0.00036
+  momentum: 0.843
+  lr_scheculer_bias: 0.12
+
+
+data_aug_hyp:
+  data_aug_scale: 0.898
+  data_aug_shear: 0.602
+  data_aug_translate: 0.245
+  data_aug_degree: 0.373
+  data_aug_prespective: 0.0005
+  data_aug_hsv_thr: 1.0
+  data_aug_hsv_hgain: 0.0138
+  data_aug_hsv_sgain: 0.664
+  data_aug_hsv_vgain: 0.464
+  data_aug_mixup_thr: 0.243
+  data_aug_fliplr_thr: 0.5
+  data_aug_flipud_thr: 0.0856
+  data_aug_fill_value: 128
+  data_aug_mosaic_thr: 1.0
+
+nms_hyp:
+  iou_threshold: 0.2
+  conf_threshold: 0.3
+  cls_threshold: 0.3
+  max_predictions_per_img: 300
+  min_prediction_box_wh: 2
+  max_prediction_box_wh: 4096
+  iou_type: iou
+  infer_img_save_path: ~
+  mutil_label: true
+  agnostic: false
+  postprocess_bbox: false
+  wfb: false  # use NMS or Weighted Fusion Bbox
+  wfb_weights: 
+    - 1
+    - 1
+    - 1
+  wfb_iou_threshold: 0.5
+  wfb_skip_box_threshold: 0.001
+
+
+
+test_hyp:
+   # data_dir: "/home/uih/JYL/Dataset/COCO2017/"
+  data_dir: "./result/coco_test_imgs"
+  set_name: "val2017"
+  use_auxiliary_classifier: false
+  batch_size: 1
+  input_img_size: 
+    - 1024
+    - 1024
+  num_workers: 6
+  save_img: true
+  use_crowd: false
+  save_pred_bbox: true
+       
+
+
+
+
+
+
+
