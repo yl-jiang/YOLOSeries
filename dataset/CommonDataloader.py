@@ -194,7 +194,7 @@ class YoloDataset(Dataset, Generator):
                 warnings.simplefilter("ignore")
                 ann = np.loadtxt(str(lab_path), delimiter=' ', dtype=np.float32)
         except Exception as err:  # label.txt文件不存在或为空
-            ann = np.empty(shape=[1, 5], dtype=np.float32)
+            ann = np.zeros(shape=[1, 5], dtype=np.float32)
         
         if len(ann) > 0:
             if ann.ndim == 1 and len(ann) == 5:
@@ -202,10 +202,10 @@ class YoloDataset(Dataset, Generator):
             assert ann.ndim == 2 and ann.shape[1] == 5, f"annotation's shape must same as (N, 5) that represent 'class, xmin, ymin, xmax, ymax' for each element, but got {ann.shape}\n {ann}"
             # 过滤掉一些不合格的bbox
             whs = ann[:, [2, 3]] - ann[:, [0, 1]]
-            mask = np.all(whs > 1, axis=1)
+            mask = np.all(whs >= 1, axis=1)
             ann = ann[mask]
         else:
-            ann = np.empty(shape=[1, 5], dtype=np.float32)
+            ann = np.zeros(shape=[1, 5], dtype=np.float32)  # 不要使用np.empty()，empty()函数会生成随机数
         ann_out = {'classes': ann[:, 0], 'bboxes': ann[:, 1:]}
 
         return ann_out
@@ -404,7 +404,11 @@ class YoloDataset(Dataset, Generator):
             valid_index = valid_bbox(ann['bboxes'])
             ann['bboxes'] = ann['bboxes'][valid_index]
             ann['classes'] = ann['classes'][valid_index]
-        # print(f"after fliter len(labels) = {len(ann['bboxes'])}")
+        # 如果返回没有bbox的训练数据会造成计算loss时在匹配target和prediction时出现问题
+        while np.sum(ann['bboxes']) == 0: 
+            i = random.randint(0, len(self)-1)
+            img, ann = self.load_img_and_ann(i)
+
         return img, ann, str(Path(self.get_img_path(ix)).stem)
         
 

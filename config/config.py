@@ -27,6 +27,10 @@ class Config:
             self.config.update({'name_path': args.name_path})
         if args.cache_num:
             self.config.update({'cache_num': args.cache_num})
+        if args.model_save_dir:
+            self.config.update({'model_save_dir': args.model_save_dir})
+        if args.log_save_path:
+            self.config.update({'log_save_path': args.log_save_path})
         if args.total_epoch:
             self.config.update({'total_epoch': args.total_epoch})
         if args.do_warmup:

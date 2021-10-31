@@ -5,6 +5,8 @@
 # @File    : train.py
 from pathlib import Path
 import sys
+
+from numpy.lib.npyio import save
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
 
@@ -150,8 +152,11 @@ class Training:
         logger = logging.getLogger("SimpleYolov5")
         logger.setLevel(logging.INFO)
         if self.hyp['save_log_txt']:
-            txt_log_path = str(self.cwd / 'log' / 'log.txt')
-            maybe_mkdir(Path(txt_log_path).parent)
+            if self.hyp['log_save_dir'] and Path(self.hyp['log_save_dir']).exists():
+                txt_log_path = self.hyp['log_save_dir']
+            else:
+                txt_log_path = str(self.cwd / 'log' / 'log.txt')
+                maybe_mkdir(Path(txt_log_path).parent)
         else:
             return None
         handler = logging.FileHandler(txt_log_path)
@@ -315,7 +320,10 @@ class Training:
             self.optim_scheduler.step()
 
         # save the lastest model
-        save_path = str(self.cwd / 'checkpoints' / f'final.pth')
+        if self.hyp['model_save_dir'] and Path(self.hyp['model_save_dir']).exists():
+            save_path = self.hyp['model_save_dir']
+        else:
+            save_path = str(self.cwd / 'checkpoints' / f'final.pth')
         self.save(tot_loss, 'finally', 'finally', True, save_path)
 
     def show_tbar(self, tbar, epoch, step, batchsz, start_t, is_best, tot_loss, box_loss, cof_loss, cls_loss, 
@@ -489,13 +497,10 @@ class Training:
             print('training from stratch!')
 
     def save(self, loss, epoch, step, save_optimizer, save_path=None):
-        if save_path is None:
-            if 'coco' in self.hyp['data_dir'].lower():
-                save_path = str(self.cwd / 'checkpoints' / f'every_for_coco_{self.hyp["model_type"]}.pth')
-            elif 'wheat' in self.hyp['data_dir'].lower():
-                save_path = str(self.cwd / 'checkpoints' / f'every_for_wheat_{self.hyp["model_type"]}.pth')
-            else:
-                save_path = None
+        if self.hyp['model_save_dir'] and Path(self.hyp['model_save_dir']).exists():
+            save_path = self.hyp['model_save_dir']
+        else:
+            save_path = str(self.cwd / 'checkpoints' / f'every_{self.hyp["model_type"]}.pth')            
 
         if not Path(save_path).exists():
             maybe_mkdir(Path(save_path).parent)
@@ -537,6 +542,8 @@ if __name__ == '__main__':
     parser.add_argument('--use_focal_loss', default=False, type=bool, dest='use_focal_loss', help='whether use focal loss')
     parser.add_argument('--img_dir', default="/Volumes/Samsung/Dataset/GlobalWheat/image/", dest='img_dir', type=str)
     parser.add_argument('--lab_dir', default="/Volumes/Samsung/Dataset/GlobalWheat/label", dest='lab_dir', type=str)
+    parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
+    parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
     parser.add_argument('--name_path', default="/Volumes/Samsung/Dataset/GlobalWheat/names.txt", dest='name_path', type=str)
     parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio', type=str)
     parser.add_argument('--cache_num', default=10, dest='cache_num', type=int)
