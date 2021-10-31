@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/4/26 11:32
-# @Author  : jyl
-# @File    : train.py
 from collections import Counter
 import emoji
 from pathlib import Path
@@ -82,14 +77,6 @@ class Validation:
 
     def load_dataset(self):
         dataloader, dataset = YoloDataloader(self.hyp, False)
-        # dataloader, dataset = None, None
-        # if 'coco' in self.hyp['data_dir'].lower():
-        #     dataset, dataloader = cocotestdataloader(self.hyp)
-
-        # elif 'wheat' in self.hyp['data_dir'].lower():
-        #     dataset, dataloader = WheatTestDataLoader(self.hyp)
-        # else:
-        #     dataset, dataloader = testdataloader(self.hyp['data_dir'], self.hyp['input_img_size'])
         return dataset, dataloader
 
     @property
@@ -377,7 +364,9 @@ class Validation:
 if __name__ == '__main__':
     config_ = Config()
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='/Users/ylj/Desktop/Yolov5Base/config/validation.yaml', dest='cfg', help='path to config file')
+    parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
+    parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
+    parser.add_argument('--model_type', required=True, dest='model_type', type=str)
     args = parser.parse_args()
     hyp = config_.get_config(args.cfg, None)
     assert hyp['model_type'] in hyp['pretrained_model_path']
@@ -385,12 +374,3 @@ if __name__ == '__main__':
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
     val = Validation(anchors, hyp)
     val.calculate_mAP()
-
-    # pred = pickle.load(
-    #     open("/home/uih/JYL/Programs/Yolov5mBase/result/pkl/pred_coco_bbox_640_large.pkl", 'rb'))
-
-    # gt = pickle.load(
-    #     open("/home/uih/JYL/Programs/Yolov5mBase/result/pkl/gt_bbox.pkl", 'rb'))
-
-    # mapv2 = mAP_v2(gt, pred, "/home/uih/JYL/Programs/Yolov5mBase/result/curve")
-    # mapv2.compute_ap_per_class()

@@ -1,54 +1,54 @@
 loss_hyp:
-  use_focal_loss: false
-  focal_loss_gamma: 1.5
-  focal_loss_alpha: 0.25
-  obj_loss_scale: 0.05
-  cls_loss_scale: 0.5
-  cof_loss_scale: 1.0
-  anchor_match_thr: 4.0
-  class_smooth_factor: 1.0
-  cls_pos_weight: 1.0
-  cof_pos_weight: 1.0
+  use_focal_loss: false # 是否使用focal loss方法计算分类损失
+  focal_loss_gamma: 1.5 # focal loss参数
+  focal_loss_alpha: 0.25  # focal loss参数
+  obj_loss_scale: 0.05  # 回归损失（bbox损失）权重
+  cls_loss_scale: 0.5  # 分类损失权重
+  cof_loss_scale: 1.0  # 置信度损失权重
+  anchor_match_thr: 4.0  # 该参数用于过滤预测框与标签框之间匹配的阈值
+  class_smooth_factor: 1.0 # 标签平滑
+  cls_pos_weight: 1.0  # 
+  cof_pos_weight: 1.0  # 
 
 train_hyp:
-  img_dir: "/home/uih/JYL/Dataset/GlobalWheatDetection/image"
+  img_dir: "xxx/image"
   val_data_dir: "./result/wheat_test_imgs"
-  lab_dir: "/home/uih/JYL/Dataset/GlobalWheatDetection/label"
+  lab_dir: "xxx/label"
   aspect_ratio_path: ~
   use_crowb: false
   cache_num: 10000
-  input_img_size:
+  input_img_size:  # 输入训练网络的图片大小
     - 640
     - 640
   batch_size: 2
-  drop_last: true
-  pin_memory: true
-  shuffle: true
-  num_workers: 6
+  drop_last: true  # Pytorch DataLoader中的参数
+  pin_memory: true  # Pytorch DataLoader中的参数
+  shuffle: true  # Pytorch DataLoader中的参数
+  num_workers: 6  # Pytorch DataLoader中的参数
   total_epoch: 300
-  device: "gpu"
-  do_warmup: true
-  accumulate_loss_step: 64
+  device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
+  do_warmup: true  # 是否开启预热训练
+  accumulate_loss_step: 64  # 累积梯度下降
   warmup_epoch: 3
-  do_ema: true
+  do_ema: true  # 是否维持一个Everage Moving Model
   warmup_bias_lr: 0.1
   warmup_momentum: 0.8
   validation_every: 0.5  # 每隔多少个epoch validate一次
   show_tbar_every: 5  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
-  save_log_txt: true
-  use_pretrained_mdoel: true
-  pretrained_model_path: ""
-  mutil_scale_training: false
-  current_work_path: null
+  save_log_txt: true  # 是否保存log文件
+  use_pretrained_mdoel: true  # 是否使用与训练模型
+  pretrained_model_path: "xxx/xxx.pth"  # 预训练模型路径
+  mutil_scale_training: false  # 是否使用多尺度训练
+  current_work_path: null  # 当前工作目录（可以不设置）
   calculate_map_every: ~
   calculate_map: false
-  save_ckpt_every: 500
-  model_type: 'smalldw'
-  use_auxiliary_classifier: false
+  save_ckpt_every: 500  # 每隔多少个epoch保存一次模型
+  model_type: 'smalldw'  # 使用模型类型
+  use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
 
 optim_hyp:
-  optimizer: sgd
+  optimizer: sgd # 优化器类别/['sgd' or 'adam']
   init_lr: 0.01
   weight_decay: 0.0005
   momentum: 0.937

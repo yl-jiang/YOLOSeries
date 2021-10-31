@@ -1,9 +1,5 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/4/26 11:32
-# @Author  : jyl
-# @File    : train.py
 from pathlib import Path
+from re import T
 import sys
 
 from numpy.lib.npyio import save
@@ -106,12 +102,6 @@ class Training:
 
     def load_dataset(self):
         dataloader, dataset = YoloDataloader(self.hyp)
-        # dataloader, dataset = None, None
-        # if 'coco' in self.hyp['img_dir'].lower():
-        #     dataloader, dataset = cocodataloader(self.hyp)
-
-        # if 'wheat' in self.hyp['img_dir'].lower():
-        #     dataloader, dataset = WheatTrainDataloader(self.hyp)
         return dataloader, dataset
 
     @property
@@ -536,17 +526,17 @@ class Training:
 if __name__ == '__main__':
     config_ = Config()
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='/Users/ylj/Desktop/Yolov5Base/config/train.yaml',dest='cfg', help='path to config file')
+    parser.add_argument('--cfg', type=str, required=True,dest='cfg', help='path to config file')
     parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
     parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
     parser.add_argument('--use_focal_loss', default=False, type=bool, dest='use_focal_loss', help='whether use focal loss')
-    parser.add_argument('--img_dir', default="/Volumes/Samsung/Dataset/GlobalWheat/image/", dest='img_dir', type=str)
-    parser.add_argument('--lab_dir', default="/Volumes/Samsung/Dataset/GlobalWheat/label", dest='lab_dir', type=str)
+    parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
+    parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
     parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
     parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
-    parser.add_argument('--name_path', default="/Volumes/Samsung/Dataset/GlobalWheat/names.txt", dest='name_path', type=str)
+    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
     parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio', type=str)
-    parser.add_argument('--cache_num', default=10, dest='cache_num', type=int)
+    parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
     parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
     parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
     parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
@@ -556,6 +546,7 @@ if __name__ == '__main__':
     parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
     parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
     parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
+    parser.add_argument('--pretrained_model_path',required=True, dest='pretrained_model_path') 
 
     args = parser.parse_args()
     hyp = config_.get_config(args.cfg, args)

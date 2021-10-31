@@ -20,9 +20,9 @@ nms_hyp:
   wfb_skip_box_threshold: 0.001
 
 test_hyp:
-  img_dir: "/Volumes/Samsung/Dataset/COCO/val_dataset/image" 
-  lab_dir: "/Volumes/Samsung/Dataset/COCO/val_dataset/label"
-  name_path: "/Volumes/Samsung/Dataset/COCO/val_dataset/names.txt"
+  img_dir: "xxx/image" 
+  lab_dir: "xxx/label"
+  name_path: "xxx/names.txt"
   ema_model:  true 
   use_auxiliary_classifier: false
   batch_size: 8

@@ -18,9 +18,9 @@ nms_hyp:
   wfb_skip_box_threshold: 0.001
 
 test_hyp:
-  img_dir: "/Volumes/Samsung/Dataset/COCO/val_dataset/image" 
-  lab_dir: "/Volumes/Samsung/Dataset/COCO/val_dataset/label"
-  name_path: "/Volumes/Samsung/Dataset/COCO/val_dataset/names.txt"
+  img_dir: "xxx/image" 
+  name_path: "xxx/names.txt"
+  lab_dir: ~  # don't change this
   ema_model:  true 
   use_auxiliary_classifier:  false
   batch_size: 2
@@ -33,9 +33,9 @@ test_hyp:
   use_tta:  true 
   save_pred_bbox:  true
   current_work_path: ~ 
-  pretrained_model_path: "./checkpoints/every_for_coco_xlarge.pth"
+  pretrained_model_path: ""
   show_gt_bbox:  true 
-  model_type: "xlarge" 
+  model_type: "" 
   drop_last:  false 
   shuffle: false
   pin_memory: true

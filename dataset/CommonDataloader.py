@@ -44,10 +44,12 @@ class YoloDataset(Dataset, Generator):
         super().__init__()
         
         self.img_dir = Path(img_dir)
-        self.lab_dir = Path(lab_dir)
+        self.lab_dir = Path(lab_dir) if lab_dir is not None else lab_dir
         print(f"Checking the consistency of dataset!")
         _start = time()
-        self._check_dataset()
+        if self.lab_dir is not None:
+            self._check_dataset()
+
         print(f"- Use time {time() - _start:.3f}s")
 
         self.img_files = [_ for _ in self.img_dir.iterdir() if _.is_file()]
@@ -386,6 +388,10 @@ class YoloDataset(Dataset, Generator):
         :param ix:
         :return: [xmin, ymin, xmax, ymax]
         """
+        if self.lab_dir is None:  # only detection image
+            return self.load_img(ix)
+
+        # traing or validation
         img, ann = self.load_img_and_ann(ix)
         if self.is_training:
             if random.random() < self.data_aug_param['mosaic_thr']:
@@ -404,6 +410,7 @@ class YoloDataset(Dataset, Generator):
             valid_index = valid_bbox(ann['bboxes'])
             ann['bboxes'] = ann['bboxes'][valid_index]
             ann['classes'] = ann['classes'][valid_index]
+
         # 如果返回没有bbox的训练数据会造成计算loss时在匹配target和prediction时出现问题
         while np.sum(ann['bboxes']) == 0: 
             i = random.randint(0, len(self)-1)
@@ -452,12 +459,19 @@ def YoloDataloader(hyp, is_training=True):
                                 collate_fn=collector_fn,
                                 num_workers=hyp['num_workers'],
                                 pin_memory=hyp['pin_memory'])
-    else:
+    elif not is_training and hyp['lab_dir']:  # validation for compute mAP
         dataset = YoloDataset(hyp['img_dir'], hyp['lab_dir'], hyp['name_path'], hyp['input_img_size'], None)
         dataloader = DataLoader(dataset, batch_size=hyp['batch_size'], 
                                 shuffle=False, drop_last=False, 
                                 num_workers=hyp['num_workers'], 
                                 pin_memory=hyp['pin_memory'], 
+                                collate_fn=collector_fn)
+    else:  # just detection
+        dataset = YoloDataset(hyp['img_dir'], None, hyp['name_path'], hyp['input_img_size'], None)
+        dataloader = DataLoader(dataset, batch_size=hyp['batch_size'],
+                                shuffle=False, drop_last=False,
+                                num_workers=hyp['num_workers'],
+                                pin_memory=hyp['pin_memory'],
                                 collate_fn=collector_fn)
     
     

@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/4/26 11:32
-# @Author  : jyl
-# @File    : train.py
 from collections import Counter
 import emoji
 from pathlib import Path
@@ -81,15 +76,6 @@ class Detection:
 
     def load_dataset(self):
         dataloader, dataset = YoloDataloader(self.hyp, self.is_training)
-
-        # dataloader, dataset = None, None
-        # if 'coco' in self.hyp['data_dir'].lower():
-        #     dataset, dataloader = cocotestdataloader(self.hyp)
-
-        # elif 'wheat' in self.hyp['data_dir'].lower():
-        #     dataset, dataloader = WheatTestDataLoader(self.hyp)
-        # else:
-        #     dataset, dataloader = testdataloader(self.hyp['data_dir'], self.hyp['input_img_size'])
         return dataset, dataloader
 
     @property
@@ -352,13 +338,18 @@ class Detection:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='/Users/ylj/Desktop/Yolov5Base/config/detection.yaml', dest='cfg', help='path to config file')
+    parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
+    parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
+    parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
+    parser.add_argument('--model_type', required=True, dest='model_type', type=str)
+    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
     args = parser.parse_args()
     config_ = Config()
     stratch_config = config_.config
-    hyp = config_.get_config(args.cfg, None)
+    hyp = config_.get_config(args.cfg, args)
 
-    assert hyp['model_type'] in hyp['pretrained_model_path']
+    assert hyp['model_type'] in hyp['pretrained_model_path'], f"hyp['model_type']: {hyp['model_type']}, but hyp['pretrained_model_path']: {hyp['pretrained_model_path']}"
+    print(args.img_dir)
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
     det = Detection(anchors, hyp, False)
     det.detect_all()
