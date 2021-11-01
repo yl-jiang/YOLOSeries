@@ -1,5 +1,3 @@
-
-
 from torch.utils.data.sampler import Sampler
 import random
 import torch
@@ -52,7 +50,7 @@ class AspectRatioBatchSampler(Sampler):
         if self.ar is None:
             order = list(range(len(self.data_source)))
             order.sort(key=lambda x: self.data_source.aspect_ratio(x))
-            pickle.dump(order, open("/home/uih/Downloads/Yolov5-main/dataset/pkl/wheat_aspect_ratio.pkl", 'wb'))
+            pickle.dump(order, open("./dataset/pkl/wheat_aspect_ratio.pkl", 'wb'))
         else:
             sort_i = np.argsort(self.ar)
             order = np.array(order)[sort_i]
