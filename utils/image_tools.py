@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/4/28 下午3:03
-# @Author  : jyl
-# @File    : resize_image.py
 import numpy as np
 import random
 import cv2

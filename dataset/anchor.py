@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/4/28 下午4:09
-# @Author  : jyl
-# @File    : anchor.py
 import torch
 import numpy as np
 from utils import compute_featuremap_shape

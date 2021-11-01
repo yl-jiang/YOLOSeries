@@ -1,8 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/10/29 15:52 下午
-# @Author  : jyl
-# @File    : torch_tools.py
+
 
 from torch.utils.data.sampler import Sampler
 import random
@@ -56,6 +52,7 @@ class AspectRatioBatchSampler(Sampler):
         if self.ar is None:
             order = list(range(len(self.data_source)))
             order.sort(key=lambda x: self.data_source.aspect_ratio(x))
+            pickle.dump(order, open("/home/uih/Downloads/Yolov5-main/dataset/pkl/wheat_aspect_ratio.pkl", 'wb'))
         else:
             sort_i = np.argsort(self.ar)
             order = np.array(order)[sort_i]
@@ -75,7 +72,8 @@ def fixed_imgsize_collector(data_in, dst_size):
     :return:
     """
     # 输入图像的格式为(h,w,3)
-    assert len(data_in[0][0].shape) == 3 and data_in[0][0].shape[-1] == 3
+    assert data_in[0][0].ndim == 3 and data_in[0][0].shape[-1] == 3, f"data's formate should be (h, w, 3), but got {data_in[0].shape}"
+    
     batch_size = len(data_in)
     imgs = [d[0] for d in data_in]
     anns = [d[1] for d in data_in]

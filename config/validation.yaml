@@ -30,12 +30,12 @@ test_hyp:
     - 640 
     - 640
   num_workers: 0
-  save_img:  true
+  save_img:  false
   device: 'gpu' 
   use_tta:  true 
   save_pred_bbox:  true
   current_work_path: ~ 
-  pretrained_model_path: "./checkpoints/every_for_coco_xlarge.pth"
+  pretrained_model_path: "xxx/xlarge.pth"
   show_gt_bbox:  true 
   model_type: "xlarge" 
   drop_last:  false 

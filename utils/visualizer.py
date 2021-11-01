@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/6/2 下午2:55
-# @Author  : jyl
-# @File    : visualizer.py
 import cv2
 import torch
 import random
@@ -33,13 +28,6 @@ COCO_BBOX_LABEL_NAMES = ['person', 'bicycle', 'car', 'motorcycle', 'airplane',
                          'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave',
                          'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock',
                          'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush']
-
-# coco_box_label_names = dict([(i, name) for i, name in enumerate(COCO_BBOX_LABEL_NAMES)])
-# voc_box_label_names = dict([(i, name) for i , name in enumerate(VOC_BBOX_LABEL_NAMES)])
-# pickle.dump({'coco': coco_box_label_names, 'voc': voc_box_label_names}, open("/home/uih/JYL/Programs/Yolov5mBase/result/pkl/label_names.pkl", 'wb'))
-
-
-
 
 def random_colors(color_num):
 

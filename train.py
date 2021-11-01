@@ -30,13 +30,15 @@ import torch.optim as optim
 from torchnet.meter import AverageValueMeter
 from trainer import Evaluate
 from torch import nn
-from dataset import cocodataloader, testdataloader, YoloDataloader
+from dataset import testdataloader, YoloDataloader
 import argparse
+import pickle
+from utils import mAP_v2, cv2_save_img_plot_pred_gt
 
 
 class Training:
 
-    def __init__(self, anchors, hyp, is_training=False):
+    def __init__(self, anchors, hyp):
         # parameters
         self.hyp = hyp
         self.select_device()
@@ -142,8 +144,8 @@ class Training:
         logger = logging.getLogger("SimpleYolov5")
         logger.setLevel(logging.INFO)
         if self.hyp['save_log_txt']:
-            if self.hyp['log_save_dir'] and Path(self.hyp['log_save_dir']).exists():
-                txt_log_path = self.hyp['log_save_dir']
+            if self.hyp['log_save_path'] and Path(self.hyp['log_save_path']).exists():
+                txt_log_path = self.hyp['log_save_path']
             else:
                 txt_log_path = str(self.cwd / 'log' / 'log.txt')
                 maybe_mkdir(Path(txt_log_path).parent)
@@ -282,8 +284,8 @@ class Training:
                     # validation
                     if cur_steps % (self.hyp['validation_every']*len(self.dataloader))== 0:
                         for j, y in enumerate(self.testdataloader):
-                            inp = y['imgs'].to(self.hyp['device'])  # (1, 3, h, w)
-                            info = y['resize_infoes']
+                            inp = y['img'].to(self.hyp['device'])  # (1, 3, h, w)
+                            info = y['resize_info']
                             outputs = self.validate(inp)
                             if outputs:
                                 imgs, preds = self.preds_postprocess(inp.cpu(), outputs, info)
@@ -292,6 +294,10 @@ class Training:
                                     maybe_mkdir(Path(save_path).parent)
                                     cv2_save_img(imgs[k], preds[k][:, :4], preds[k][:, 5].astype(np.uint8), preds[k][:, 4], save_path)
                                 del imgs, preds, outputs
+                    
+                    # mAP
+                    if self.hyp['calculate_map_every'] is not None and cur_steps % self.hyp['calculate_map_every'] == 0:
+                        self.calculate_mAP()
 
                     # verbose
                     if cur_steps % self.hyp['show_tbar_every'] == 0:
@@ -522,6 +528,94 @@ class Training:
             self.cls_loss_meter.add(cls_loss)
         return self.tot_loss_meter.value()[0], self.box_loss_meter.value()[0], self.cof_loss_meter.value()[0], self.cls_loss_meter.value()[0]
 
+    def calculate_mAP(self):
+        """
+        计算dataloader中所有数据的map
+        """
+        start_t = time_synchronize()
+        pred_bboxes, pred_classes, pred_confidences, pred_labels, gt_bboxes, gt_classes = [], [], [], [], [], []
+        for i, x in enumerate(self.dataloader):
+            imgs = x['img']  # (bn, 3, h, w)
+            infoes = x['resize_info']
+
+            # gt_bbox: [(M, 4), (N, 4), (P, 4), ...]; gt_cls: [(M,), (N, ), (P, ), ...]
+            # coco val2017 dataset中存在有些图片没有对应的gt bboxes的情况
+            gt_bbox, gt_cls = self.gt_bbox_postprocess(x['ann'], infoes)
+            gt_bboxes.extend(gt_bbox)
+            gt_classes.extend(gt_cls)
+
+            # 统计预测一个batch需要花费的时间
+            t1 = time_synchronize()
+            imgs = imgs.to(self.hyp['device'])
+            if self.hyp['half'] and self.hyp['device'] == 'cuda':
+                imgs = imgs.half()
+            outputs = self.validate(imgs)
+            # preds: [(X, 6), (Y, 6), (Z, 6), ...]
+            imgs, preds = self.preds_postprocess(imgs.cpu(), outputs, infoes)
+            t = time_synchronize() - t1
+
+            batch_pred_box, batch_pred_cof, batch_pred_cls, batch_pred_lab = [], [], [], []
+            for j in range(len(imgs)):
+                valid_idx = preds[j][:, 5] >= 0
+                if valid_idx.sum() == 0:
+                    pred_box, pred_cls, pred_cof, pred_lab = [], [], [], []
+                else:
+                    pred_box = preds[j][valid_idx, :4]
+                    pred_cof = preds[j][valid_idx, 4]
+                    pred_cls = preds[j][valid_idx, 5]
+                    pred_lab = [self.testdataset.cls2lab[int(c)] for c in pred_cls]
+
+                batch_pred_box.append(pred_box)
+                batch_pred_cls.append(pred_cls)
+                batch_pred_cof.append(pred_cof)
+                batch_pred_lab.append(pred_lab)
+
+            pred_bboxes.extend(batch_pred_box)
+            pred_classes.extend(batch_pred_cls)
+            pred_confidences.extend(batch_pred_cof)
+            pred_labels.extend(batch_pred_lab)
+            
+            obj_msg = self.count_object(batch_pred_lab)
+            
+            for k in range(len(imgs)):
+                count = i * len(imgs) + k + 1
+                print(f"[{count:>05}/{len(self.testdataset)}] ➡️ " + obj_msg[k] + f" ({(t/len(imgs)):.2f}s)")
+                if self.hyp['save_img']:
+                    save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
+                    if self.hyp['show_gt_bbox']:
+                        gt_lab = [self.testdataset.cls2lab[int(c)] for c in gt_cls[k]]
+                        cv2_save_img_plot_pred_gt(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], gt_bbox[k], gt_lab, save_path)
+                    else:
+                        cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
+            del imgs, preds
+
+        total_use_time = time_synchronize() - start_t
+
+        all_preds = []
+        for pred_box, pred_cof, pred_cls in zip(pred_bboxes, pred_confidences, pred_classes):
+            if len(pred_box) == 0:
+                all_preds.append(np.zeros((0, 6)))
+            else:
+                all_preds.append(np.concatenate((pred_box, pred_cof[:, None], pred_cls[:, None]), axis=1))
+        
+        all_gts = []
+        for gt_box, gt_cls in zip(gt_bboxes, gt_classes):
+            all_gts.append(np.concatenate((gt_box, gt_cls[:, None]), axis=1))
+
+        # 如果测试的数据较多，计算一次mAP需花费较多时间，这里将结果保存以便后续统计
+        if self.hyp['save_pred_bbox']:
+            save_path = self.cwd / "result" / "pkl" / f"pred_bbox_{self.hyp['input_img_size'][0]}_{self.hyp['model_type']}.pkl"
+            pickle.dump(all_preds, open(str(save_path), 'wb'))
+            pickle.dump(all_gts, open(self.cwd / "result" / "pkl" / "gt_bbox.pkl", "wb"))
+
+        mapv2 = mAP_v2(all_gts, all_preds, self.cwd / "result" / "curve")
+        map, map50, mp, mr = mapv2.get_mean_metrics()
+        print(f"use time: {total_use_time:.2f}s")
+        print(f'mAP = {map * 100:.3f}')
+        print(f'mAP@0.5 = {map50 * 100:.1f}')
+        print(f'mp = {mp * 100:.1f}')
+        print(f'mr = {mr * 100:.1f}')
+
 
 if __name__ == '__main__':
     config_ = Config()
@@ -529,13 +623,12 @@ if __name__ == '__main__':
     parser.add_argument('--cfg', type=str, required=True,dest='cfg', help='path to config file')
     parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
     parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
-    parser.add_argument('--use_focal_loss', default=False, type=bool, dest='use_focal_loss', help='whether use focal loss')
     parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
     parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
     parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
     parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
     parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio', type=str)
+    parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
     parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
     parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
     parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
@@ -546,7 +639,7 @@ if __name__ == '__main__':
     parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
     parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
     parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
-    parser.add_argument('--pretrained_model_path',required=True, dest='pretrained_model_path') 
+    parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
 
     args = parser.parse_args()
     hyp = config_.get_config(args.cfg, args)

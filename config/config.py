@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/8/20 11:20 下午
-# @Author  : jyl
-# @File    : config.py
 import yaml
 from pathlib import Path
 
@@ -51,6 +46,8 @@ class Config:
             self.config.update({"pretrained_model_path": args.pretrained_model_path})
         if hasattr(args,'model_type'):
             self.config.update({"model_type": args.model_type})
+        if hasattr(args,'aspect_ratio_path'):
+            self.config.update({"aspect_ratio_path": args.aspect_ratio_path})
         
 
 

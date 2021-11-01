@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/6/25 9:17 下午
-# @Author  : jyl
-# @File    : mAP.py
 import numpy as np
 from collections import defaultdict
 from numpy.lib.arraysetops import unique
@@ -456,56 +451,14 @@ class ConfusionMatrix:
 
 
 if __name__ == "__main__":
-    # region
-    # # 7张图片的ground truth
-    # # box format: [xmin, ymin, w/2, h/2]
-    # gt = [[[25, 16, 38, 56, 0], [129, 123, 41, 62, 0]],
-    #       [[123, 11, 43, 55, 0], [38, 132, 59, 45, 0]],
-    #       [[16, 14, 35, 48, 0], [123, 30, 49, 44, 0], [99, 139, 47, 47, 0]],
-    #       [[53, 42, 40, 52, 0], [154, 43, 31, 34, 0]],
-    #       [[59, 31, 44, 51, 0], [48, 128, 34, 52, 0]],
-    #       [[36, 89, 52, 76, 0], [62, 58, 44, 67, 0]],
-    #       [[28, 31, 55, 63, 0], [58, 67, 50, 58, 0]]]
-
-    # # 7张图片的预测结果
-    # pred = [[[5, 67, 31, 48, 0.88, 0], [119, 111, 40, 67, 0.7, 0], [124, 9, 49, 67, 0.8, 0]],
-    #         [[64, 111, 64, 58, 0.71, 0], [26, 140, 60, 47, 0.54, 0], [19, 18, 43, 35, 0.74, 0]],
-    #         [[109, 15, 77, 39, 0.18, 0], [86, 63, 46, 45, 0.67, 0], [160, 62, 36, 53, 0.38, 0], [105, 131, 47, 47, 0.91, 0], [18, 148, 40, 44, 0.44, 0]],
-    #         [[83, 28, 28, 26, 0.35, 0], [28, 68, 42, 67, 0.78, 0], [87, 89, 25, 39, 0.45, 0], [10, 155, 60, 26, 0.14, 0]],
-    #         [[50, 38, 28, 46, 0.62, 0], [95, 11, 53, 28, 0.44, 0], [29, 131, 72, 29, 0.95, 0], [29, 163, 72, 29, 0.23, 0]],
-    #         [[43, 48, 74, 38, 0.45, 0], [17, 155, 29, 35, 0.84, 0], [95, 110, 25, 42, 0.43, 0]],
-    #         [[16, 20, 101, 88, 0.48, 0], [33, 116, 37, 49, 0.95, 0]]]
-
-    # for i, arr in enumerate(gt):
-    #     arr = np.array(arr)
-    #     arr[:, [2, 3]] = arr[:, [0, 1]] + arr[:, [2, 3]]
-    #     gt[i] = arr
-        
-
-    # for i, arr in enumerate(pred):
-    #     arr = np.array(arr)
-    #     arr[:, [2, 3]] = arr[:, [0, 1]] + arr[:, [2, 3]]
-    #     pred[i] = arr
-
-    # map = mAP_v2(gt, pred, "/home/uih/JYL/PersonalProjects/Programs/Yolov5mBase/utils")
-    # print(map.compute_ap_per_class())
-
-    # MAP = mAP(pred, gt, 0.3)
-    # print('Precision: ', np.around(MAP.precision, 2))
-    # print('Recall: ', np.around(MAP.recall, 2))
-    # print('AP: %.2f %%' % (MAP.elevenPointAP * 100))
-    # print('mAP: %.2f %%' % (MAP.everyPointAP * 100))
-    # endregion
-
-
     import pickle
-    all_gts = pickle.load(open("/home/uih/JYL/Programs/Yolov5mBase/result/pkl/gt_bbox.pkl", 'rb'))
-    all_preds = pickle.load(open("/home/uih/JYL/Programs/Yolov5mBase/result/pkl/pred_coco_bbox_640_xlarge.pkl", 'rb'))
-    names = pickle.load(open("/home/uih/JYL/Programs/Yolov5mBase/result/pkl/label_names.pkl", 'rb'))['coco']
+    all_gts = pickle.load(open("/pkl/gt_bbox.pkl", 'rb'))
+    all_preds = pickle.load(open("/pkl/pred_coco_bbox_640_xlarge.pkl", 'rb'))
+    names = pickle.load(open("/pkl/label_names.pkl", 'rb'))['coco']
     names = list(names.values())
 
     
-    mapv2 = mAP_v2(all_gts, all_preds, "/home/uih/JYL/Programs/Yolov5mBase/result/curve")
+    mapv2 = mAP_v2(all_gts, all_preds, "/result/curve")
     mapv2.compute_ap_per_class()
 
     map, map50, mp, mr = mapv2.get_mean_metrics()
@@ -516,4 +469,4 @@ if __name__ == "__main__":
 
     cm = ConfusionMatrix(all_preds, all_gts, 0.25, len(names), 0.45)
     cm.compute_matrix()
-    cm.plot(names, "/home/uih/JYL/Programs/Yolov5mBase/utils/confusion-matrix.png")
+    cm.plot(names, "/utils/confusion-matrix.png")

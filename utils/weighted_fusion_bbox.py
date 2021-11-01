@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/6/24 8:03 下午
-# @Author  : jyl
-# @File    : weighted_box_fusion.py
 import numpy as np
 from utils import cpu_iou
 
@@ -98,8 +93,3 @@ def weighted_fusion_bbox(bbox_list, iou_thr=0.5):
         Fusion.append(fusion_bbox)
 
     return Cluster, Fusion
-
-
-
-
-

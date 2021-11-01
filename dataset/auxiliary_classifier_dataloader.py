@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/5/14 12:27
-# @Author  : jyl
-# @File    : auxiliary_classifier_dataloader.py
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 import torch
@@ -86,7 +81,7 @@ def test(img_dir, img_size, batch_size):
 
 
 if __name__ == '__main__':
-    img_dir = "/home/uih/JYL/Dataset/COCO2017/single_object_img/"
+    img_dir = "/img/"
     img_size = [224, 224]
     batch_size = 8
     test(img_dir, img_size, batch_size)

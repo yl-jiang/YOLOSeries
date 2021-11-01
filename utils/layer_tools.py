@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-# @Time    : 2020/8/20 11:20 下午
-# @Author  : jyl
-# @File    : layer_tools.py
 import torch
 import torch.nn as nn
 import math

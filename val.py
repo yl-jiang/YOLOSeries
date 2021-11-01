@@ -73,8 +73,6 @@ class Validation:
 
         self.validate = Evaluate(self.ema_model.ema if self.hyp['ema_model'] else self.model,  self.anchors, self.hyp)
         
-        
-
     def load_dataset(self):
         dataloader, dataset = YoloDataloader(self.hyp, False)
         return dataset, dataloader
@@ -365,10 +363,14 @@ if __name__ == '__main__':
     config_ = Config()
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
+    parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
+    parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
     parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
     parser.add_argument('--model_type', required=True, dest='model_type', type=str)
+    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    parser.add_argument('--batch_size', default=8, dest='name_path', type=str)
     args = parser.parse_args()
-    hyp = config_.get_config(args.cfg, None)
+    hyp = config_.get_config(args.cfg, args)
     assert hyp['model_type'] in hyp['pretrained_model_path']
 
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])

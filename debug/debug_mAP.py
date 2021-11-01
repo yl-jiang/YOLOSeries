@@ -415,8 +415,8 @@ def box_iou(box1, box2):
 
 if __name__ == "__main__":
     import pickle
-    gts = pickle.load(open("/home/uih/JYL/Programs/Yolov5mBase/result/pkl/gt_bbox.pkl", 'rb'))
-    preds = pickle.load(open("/home/uih/JYL/Programs/Yolov5mBase/result/pkl/pred_coco_bbox_640_xlarge.pkl", 'rb'))
+    gts = pickle.load(open("/pkl/gt_bbox.pkl", 'rb'))
+    preds = pickle.load(open("/pkl/pred_coco_bbox_640_xlarge.pkl", 'rb'))
     iouv = torch.linspace(0.5, 0.95, 10)  # iou vector for mAP@0.5:0.95
     
     tps = []

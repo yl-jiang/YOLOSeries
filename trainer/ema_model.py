@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/4/25 16:13
-# @Author  : jyl
-# @File    : EMA.py
 import torch
 from copy import deepcopy
 import numpy as np

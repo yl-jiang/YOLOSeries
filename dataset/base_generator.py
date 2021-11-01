@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/4/28 下午2:25
-# @Author  : jyl
-# @File    : generator.py
 from pycocotools.coco import COCO
 import numpy as np
 import skimage.io as io

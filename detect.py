@@ -19,7 +19,7 @@ from utils import time_synchronize
 from datetime import datetime
 from trainer import ExponentialMovingAverageModel
 from trainer import Evaluate
-from dataset import YoloDataloader
+from dataset import YoloDataloader, testdataloader
 from utils import cv2_save_img_plot_pred_gt, ConvBnAct, fuse_conv_bn, summary_model
 import pickle
 from config import Config
@@ -72,7 +72,6 @@ class Detection:
         if self.hyp['half'] and self.hyp['device'] == 'cuda':
             self.model = self.model.half()
             self.ema_model.ema = self.ema_model.ema.half()    
-
 
     def load_dataset(self):
         dataloader, dataset = YoloDataloader(self.hyp, self.is_training)
@@ -280,11 +279,6 @@ class Detection:
         for i, x in enumerate(self.testdataloader):
             imgs = x['img']  # (bn, 3, h, w)
             infoes = x['resize_info']
-
-            # gt_bbox: [(M, 4), (N, 4), (P, 4), ...]; gt_cls: [(M,), (N, ), (P, ), ...]
-            # coco val2017 dataset中存在有些图片没有对应的gt bboxes的情况
-            gt_bbox, gt_cls = self.gt_bbox_postprocess(x['ann'], infoes)
-
             # 统计一个batch需要花费的时间
             t1 = time_synchronize()
             imgs = imgs.to(self.hyp['device'])
@@ -325,11 +319,7 @@ class Detection:
                 print(f"[{count:>05}/{len(self.testdataset)}] ➡️ " + obj_msg[k] + f" ({(t/len(imgs)):.2f}s)")
                 if self.hyp['save_img']:
                     save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
-                    if self.hyp['show_gt_bbox']:
-                        gt_lab = [self.testdataset.cls2lab[int(c)] for c in gt_cls[k]]
-                        cv2_save_img_plot_pred_gt(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], gt_bbox[k], gt_lab, save_path)
-                    else:
-                        cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
+                    cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
             del imgs, preds
 
         total_use_time = time_synchronize() - start_t
@@ -349,7 +339,7 @@ if __name__ == '__main__':
     hyp = config_.get_config(args.cfg, args)
 
     assert hyp['model_type'] in hyp['pretrained_model_path'], f"hyp['model_type']: {hyp['model_type']}, but hyp['pretrained_model_path']: {hyp['pretrained_model_path']}"
-    print(args.img_dir)
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
     det = Detection(anchors, hyp, False)
+
     det.detect_all()

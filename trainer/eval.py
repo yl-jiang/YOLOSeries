@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/6/16 下午4:59
-# @Author  : jyl
-# @File    : eval.py
 import math
 import torch
 import numpy as np

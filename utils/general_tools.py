@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/5/17 10:25
-# @Author  : jyl
-# @File    : general_tools.py
 import shutil
 from pathlib import Path
 import torch

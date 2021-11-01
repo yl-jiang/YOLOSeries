@@ -11,7 +11,7 @@ loss_hyp:
   cof_pos_weight: 0.911
 
 coco_train_hyp:
-  data_dir: "/home/uih/JYL/Dataset/COCO2017"
+  data_dir: "/COCO2017"
   set_name: "train2017"
   use_crowb: false
   input_img_size:
@@ -91,7 +91,6 @@ nms_hyp:
 
 
 test_hyp:
-   # data_dir: "/home/uih/JYL/Dataset/COCO2017/"
   data_dir: "./result/coco_test_imgs"
   set_name: "val2017"
   use_auxiliary_classifier: false

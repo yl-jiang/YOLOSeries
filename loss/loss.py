@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/11/29 1:16 下午
-# @Author  : jyl
-# @File    : loss.py
 import torch
 import torch.nn as nn
 import numpy as np

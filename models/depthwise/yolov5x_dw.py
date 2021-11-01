@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/9/2 17:38 下午
-# @Author  : jyl
-# @File    : yolov5x_dw.py
 
 import sys
 from pathlib import Path

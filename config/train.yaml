@@ -91,3 +91,10 @@ nms_hyp:
   wfb_iou_threshold: 0.5
   wfb_skip_box_threshold: 0.001
 
+
+va_hyp:
+  save_img: false
+  show_gt_bbox: false
+  save_pred_bbox: false
+  half: false
+

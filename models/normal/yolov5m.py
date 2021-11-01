@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/8/20 11:20 下午
-# @Author  : jyl
-# @File    : yolov5.py
 import sys
 import torch
 from torch import nn

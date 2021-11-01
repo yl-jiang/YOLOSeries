@@ -1,3 +1,3 @@
 #!/bin/bash
-conda activate fun
-python /Users/ylj/Programs/Python/Yolov5Git/scripts/train.py --cfg "/Users/ylj/Programs/Python/Yolov5Git/config/train.yaml" --img_dir "/Volumes/Samsung/Dataset/GlobalWheat/image" --lab_dir "/Volumes/Samsung/Dataset/GlobalWheat/label" --name_path "/Volumes/Samsung/Dataset/GlobalWheat/names.txt"
+source conda activate torch1.7
+python /home/uih/Downloads/Yolov5-main/train.py --cfg "/home/uih/Downloads/Yolov5-main/config/train.yaml" --img_dir "/home/uih/JYL/Dataset/GlobalWheatDetection/image/" --lab_dir "/home/uih/JYL/Dataset/GlobalWheatDetection/label" --name_path "/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt" --aspect_ratio_path "/home/uih/Downloads/Yolov5-main/dataset/pkl/wheat_aspect_ratio.pkl"

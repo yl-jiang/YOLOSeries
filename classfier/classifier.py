@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/5/14 15:09
-# @Author  : jyl
-# @File    : classifier.py
 import numpy as np
 import torch
 import torchvision.models as models
@@ -77,4 +72,4 @@ def train_aux_classifier(aux_c, train_dir, test_dir):
 
 if __name__ == '__main__':
     aux_c = AuxiliaryClassifier()
-    train_aux_classifier(aux_c, "/home/uih/JYL/Dataset/COCO2017/classifier_train/", "/home/uih/JYL/Dataset/COCO2017/classifier_test/")
+    train_aux_classifier(aux_c, "/classifier_train/", "/classifier_test/")

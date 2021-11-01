@@ -1,3 +1,3 @@
 #!/bin/bash
-source conda activate fun
-python /Users/ylj/Programs/Python/Yolov5Git/detect.py --cfg "/Users/ylj/Programs/Python/Yolov5Git/config/detection.yaml" --img_dir "/Users/ylj/Programs/Python/Yolov5Git/result/coco_test_imgs" --pretrained_model_path "/Users/ylj/Desktop/Yolov5Base/checkpoints/my_yolov5_small_for_coco.pth" --model_type "small" --name_path "/Volumes/Samsung/Dataset/COCO/train_dataset/names.txt"
+source conda activate troch1.7
+python /home/uih/Downloads/Yolov5-main/detect.py --cfg "/home/uih/Downloads/Yolov5-main/config/detection.yaml" --img_dir "/home/uih/JYL/Dataset/COCO2017/val2017" --pretrained_model_path "/home/uih/Downloads/checkpoints/every_for_coco_xlarge.pth" --model_type "xlarge" --name_path "/home/uih/JYL/Dataset/COCO2017/train/names.txt"

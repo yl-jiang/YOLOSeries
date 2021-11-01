@@ -388,8 +388,11 @@ class YoloDataset(Dataset, Generator):
         :param ix:
         :return: [xmin, ymin, xmax, ymax]
         """
-        if self.lab_dir is None:  # only detection image
-            return self.load_img(ix)
+        # only detection image
+        if self.lab_dir is None: 
+            # 单纯的的测试模式是不需要label的，这里创建一个临时的label是为了复用fixed_imgsize_collector函数
+            dummy_ann = {'bboxes': np.zeros(shape=(1,4)), "classes": np.zeros((1))} 
+            return self.load_img(ix), dummy_ann, str(0)
 
         # traing or validation
         img, ann = self.load_img_and_ann(ix)
@@ -446,11 +449,13 @@ def YoloDataloader(hyp, is_training=True):
             }
         dataset = YoloDataset(hyp['img_dir'], hyp['lab_dir'], hyp['name_path'], hyp['input_img_size'], coco_dataset_kwargs, hyp['cache_num'])
         
-
         print(f"Build Aspect Ratio BatchSampler!")
         _start = time()
-        sampler = AspectRatioBatchSampler(
-            dataset, hyp['batch_size'], hyp['drop_last'])
+        ar = None
+        # print(hyp['aspect_ratio_path'])
+        if hyp['aspect_ratio_path'] is not None and Path(hyp['aspect_ratio_path']).exists():
+            ar = pickle.load(open(hyp['aspect_ratio_path'], 'rb'))
+        sampler = AspectRatioBatchSampler(dataset, hyp['batch_size'], hyp['drop_last'], aspect_ratio_list=ar)
         print(f"- Use time {time() - _start:.3f}s")
 
         # 使用自定义的batch_sampler时，不要给DataLoader中的batch_size,shuffle赋值，因为这些参数会在自定义的batch_sampler中已经定义了

@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/8/20 11:15 下午
-# @Author  : jyl
-# @File    : __init__.py.py
 from .layer_tools import Focus
 from .layer_tools import BottleneckCSP
 from .layer_tools import SEBottleneckCSP

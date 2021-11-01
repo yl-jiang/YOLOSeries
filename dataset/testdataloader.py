@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2021/5/12 16:42
-# @Author  : jyl
-# @File    : testdataloader.py
 import torch
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
@@ -57,7 +52,7 @@ def collector(data_in):
     for i in range(batch_size):
         img_out[i] = imgs[i]
         resize_infoes_out.append(infoes[i])
-    return {'imgs': img_out, 'resize_infoes': resize_infoes_out}
+    return {'img': img_out, 'resize_info': resize_infoes_out}
 
 
 def testdataloader(datadir, img_size=640, batch_size=1):
@@ -94,7 +89,7 @@ def test(datadir, img_size, batch_size):
 
 
 if __name__ == '__main__':
-    test('/home/uih/JYL/Dataset/Temp/', 640, 1)
+    test('/Temp/', 640, 1)
 
 
 
