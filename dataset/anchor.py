@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from utils import compute_featuremap_shape
 
+# this code copy from https://github.com/yhenon/pytorch-retinanet, it's just for RetinaNet not Yolo.
 
 class CPUAnchor:
     def __init__(self, pyramid_levels=None, strides=None, sizes=None, ratios=None, scales=None):

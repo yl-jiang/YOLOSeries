@@ -31,6 +31,7 @@ def show_result(class_list, raw_data, center_coordinate):
 
 def skkmeans(data, n_clusters):
     """
+    Return kmeans anchors and save figure of clusters.
     Args:
         data: [[box_width_norm, box_height_norm]] matrix (N, 2) ndarray;
         n_clusters: anchor numbers

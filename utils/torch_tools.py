@@ -7,6 +7,7 @@ from tqdm import trange
 import pickle
 import numpy as np
 
+
 def normalization(img):
     # 输入图像的格式为(h,w,3)
     assert len(img.shape) == 3 and img.shape[-1] == 3
@@ -15,9 +16,12 @@ def normalization(img):
         torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
     return transforms(img)
 
+
 class AspectRatioBatchSampler(Sampler):
     """
     按照图片的长宽比对输入网络训练图片进行从小到大的重新排列
+
+    copy from: https://github.com/yhenon/pytorch-retinanet
     """
 
     def __init__(self, data_source, batch_size, drop_last, aspect_ratio_list=None):
