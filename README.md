@@ -1,5 +1,5 @@
 # Yolov5
-该项目是个人在学习[yolov5官方代码](https://github.com/ultralytics/yolov5)过程中，加入自己的一些理解以及必要注释，并根据个人的习惯对代码结构进行重新组织，该项目主要目的是为了记录学习的过程。
+该项目是个人在学习[yolov5官方代码](https://github.com/ultralytics/yolov5)过程中，加入自己的一些理解以及必要注释，并根据个人习惯对代码结构进行重新组织，该项目主要目的是为了记录学习的过程。
 ## 数据集准备
 ### 1. image以及label文件夹
 将image数据和label数据分别存放到不同的文件夹，对应的文件名相同：
@@ -43,7 +43,7 @@ $ python train.py --img_dir "your-image-dir" --lab_dir "your-label_dir" --name_p
 ## 模型测试
 运行如下命令：
 ```
-python detect.py --cfg "xxx/config/detection.yaml" --img_dir "xxx/image_dir" --pretrained_model_path "xxx/model_xlarge.pth" --model_type "xlarge" --name_path "xxx/names.txt"
+python detect.py --cfg "xxx/config/detection.yaml" --img_dir "your-image-dir" --pretrained_model_path "xxx/model_xlarge.pth" --model_type "xlarge" --name_path "xxx/names.txt"
 ```
 预测结果会保存在```xxx/result/predictions```文件夹下。
-有关预测代码相关的配置参数可到```xxx/config/detection.yaml```文件中修改。
+有关预测代码相关的配置参数可到```xxx/config/detection.yaml```文件中修改。其中```xxx```代表存放该项目代码文件的文件夹路径。
