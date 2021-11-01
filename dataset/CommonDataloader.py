@@ -513,7 +513,7 @@ def test():
     print(f"Build Aspect Ratio BatchSampler!")
     _start = time()
 
-    ar_list = pickle.load(open("/Users/ylj/Desktop/Yolov5Base/dataset/pkl/coco_aspect_ratio.pkl", 'rb'))
+    ar_list = pickle.load(open("xxx/aspect_ratio.pkl", 'rb'))
     sampler = AspectRatioBatchSampler(dataset, batch_size, True, aspect_ratio_list=ar_list)
     print(f"- Use time {time() - _start:.3f}s")
     loader = DataLoader(dataset, collate_fn=collector, batch_sampler=sampler)
