@@ -43,7 +43,8 @@ $ python train.py --img_dir "your-image-dir" --lab_dir "your-label_dir" --name_p
 ## 模型测试
 运行如下命令：
 ```
-python detect.py --cfg "xxx/config/detection.yaml" --img_dir "your-image-dir" --pretrained_model_path "xxx/model_xlarge.pth" --model_type "xlarge" --name_path "xxx/names.txt"
+$ conda activate your-pytorch-environmention
+$ python detect.py --cfg "xxx/config/detection.yaml" --img_dir "your-image-dir" --pretrained_model_path "xxx/model_xlarge.pth" --model_type "xlarge" --name_path "xxx/names.txt"
 ```
 预测结果会保存在```xxx/result/predictions```文件夹下。
 有关预测代码相关的配置参数可到```xxx/config/detection.yaml```文件中修改。其中```xxx```代表存放该项目代码文件的文件夹路径。
