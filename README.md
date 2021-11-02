@@ -1,4 +1,3 @@
-# Yolov5 Pytorch
 该项目是个人在学习[yolov5官方代码](https://github.com/ultralytics/yolov5)过程中，加入自己的一些理解以及必要注释，并根据个人习惯对代码结构进行重新组织，该项目主要目的是为了记录学习的过程。
 
 ## 网络结构
