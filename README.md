@@ -2,9 +2,10 @@
 该项目是个人在学习[yolov5官方代码](https://github.com/ultralytics/yolov5)过程中，加入自己的一些理解以及必要注释，并根据个人习惯对代码结构进行重新组织，该项目主要目的是为了记录学习的过程。
 
 ## 网络结构
-### 宏观结构
+以Yolov5s为例，下面分别是该网络的整体结构图、backbone、Neck以及构成这些模块用到的小组件的结构图。
+### 总体结构
 ![blue-print](https://github.com/yl-jiang/Yolov5/blob/main/figures/yolov5.svg)
-### 骨架网络结构
+### 计算过程
 ![blue-print](https://github.com/yl-jiang/Yolov5/blob/main/figures/detail.svg)
 ### Neck
 ![blue-print](https://github.com/yl-jiang/Yolov5/blob/main/figures/neck.png)
@@ -52,7 +53,7 @@ $ python train.py --img_dir "your-image-dir" --lab_dir "your-label_dir" --name_p
 
 ---
 ## 模型测试
-运行如下命令：
+将预训练模型文件放到```checkpoints```文件夹，只有测试图片，没有对应的label，运行如下命令（需要指定测试的模型```--model_type```，因为要根据该参数构建对应的网络结构）：
 ```
 $ conda activate your-pytorch-environmention
 $ python detect.py --cfg "xxx/config/detection.yaml" --img_dir "your-image-dir" --pretrained_model_path "xxx/model_xlarge.pth" --model_type "xlarge" --name_path "xxx/names.txt"
