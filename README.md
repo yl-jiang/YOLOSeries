@@ -76,8 +76,7 @@ $ python detect.py --cfg "./config/detection.yaml" --img_dir "your-image-dir" --
 [00003/5000] ➡️ 1 🛥 (0.20s)
 ```
 
-预测结果默认会保存在```xxx/result/predictions```文件夹下，如果想保存到自定义目录，请到```xxx/config/detection.yaml```文件中，修改修改相关。
-有关预测代码相关的配置参数可到```xxx/config/detection.yaml```文件中修改。其中```xxx```代表存放该项目代码文件的文件夹路径。
+预测结果默认会保存在```xxx/result/predictions```文件夹下，如果想保存到自定义目录，请到```xxx/config/detection.yaml```文件中，修改output_dir参数即可。其它与预测代码相关的配置参数可到该文件中修改。
 
 ---
 ## 模型性能评估（mAP）
