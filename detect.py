@@ -319,7 +319,7 @@ class Detection:
                 print(f"[{count:>05}/{len(self.testdataset)}] ➡️ " + obj_msg[k] + f" ({(t/len(imgs)):.2f}s)")
                 if self.hyp['save_img']:
                     if Path(str(self.hyp['output_dir'])).exists():
-                        save_path = str(self.hyp['output_dir'])
+                        save_path = str(Path(self.hyp['output_dir']) / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
                     else:
                         save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
                     cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
