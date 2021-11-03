@@ -318,7 +318,10 @@ class Detection:
                 count = i * len(imgs) + k + 1
                 print(f"[{count:>05}/{len(self.testdataset)}] ➡️ " + obj_msg[k] + f" ({(t/len(imgs)):.2f}s)")
                 if self.hyp['save_img']:
-                    save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
+                    if Path(str(self.hyp['output_dir'])).exists():
+                        save_path = str(self.hyp['output_dir'])
+                    else:
+                        save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
                     cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
             del imgs, preds
 
@@ -333,6 +336,7 @@ if __name__ == '__main__':
     parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
     parser.add_argument('--model_type', required=True, dest='model_type', type=str)
     parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    parser.add_argument('--output_dir', default=None, type=str, dest='output_dir')
     args = parser.parse_args()
     config_ = Config()
     stratch_config = config_.config

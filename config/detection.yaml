@@ -21,6 +21,7 @@ test_hyp:
   img_dir: "xxx/image" 
   name_path: "xxx/names.txt"
   lab_dir: ~  # don't change this
+  output_dir: null  # 预测结果将保存在该路径下，如果没有指定该参数，那么预测结果将默认保存在Yolov5/result/tmp文件夹下
   ema_model:  true 
   use_auxiliary_classifier:  false
   batch_size: 2

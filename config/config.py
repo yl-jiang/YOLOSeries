@@ -48,6 +48,8 @@ class Config:
             self.config.update({"model_type": args.model_type})
         if hasattr(args,'aspect_ratio_path'):
             self.config.update({"aspect_ratio_path": args.aspect_ratio_path})
+        if hasattr(args,'output_dir'):
+            self.config.update({"output_dir": args.output_dir})
         
 
 
