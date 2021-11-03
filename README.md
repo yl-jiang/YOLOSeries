@@ -46,6 +46,8 @@ class_id xmin ymin xmax ymax
 数据集准备好之后只需传入合适的参数，并运行Yolov5/train.py文件即可：
 ```
 $ conda activate your-pytorch-environmention
+$ git clone https://github.com/yl-jiang/Yolov5.git
+$ cd Yolov5
 $ python train.py --img_dir "your-image-dir" --lab_dir "your-label_dir" --name_path "your-names-path"
 ```
 其他参数（优化器、NMS参数、损失函数参数以及其他训练参数等）的配置可到xxx/Yolov5/config/train.yaml文件中找到对应的参数名称并修改即可。
@@ -55,6 +57,8 @@ $ python train.py --img_dir "your-image-dir" --lab_dir "your-label_dir" --name_p
 将预训练模型文件放到```checkpoints```文件夹，只有测试图片，没有对应的label，运行如下命令（需要指定测试的模型```--model_type```，因为要根据该参数构建对应的网络结构）：
 ```
 $ conda activate your-pytorch-environmention
+$ git clone https://github.com/yl-jiang/Yolov5.git
+$ cd Yolov5
 $ python detect.py --cfg "xxx/config/detection.yaml" --img_dir "your-image-dir" --pretrained_model_path "xxx/model_xlarge.pth" --model_type "xlarge" --name_path "xxx/names.txt"
 ```
 预测结果会保存在```xxx/result/predictions```文件夹下。
