@@ -110,7 +110,7 @@ class YoloDataset(Dataset, Generator):
         return cls(img_dir, lab_dir)
 
     def parse_names(self, name_path):
-        assert Path(name_path).exists()
+        assert Path(name_path).exists(), f"{name_path} is not exists!"
         classes, labels = [], []
         with open(name_path, 'r') as f:
             for line in f.readlines():
@@ -502,9 +502,9 @@ def test():
               'data_aug_mosaic_thr': 1.
     }
 
-    dataset = YoloDataset('/Volumes/Samsung/Dataset/COCO/train_dataset/image/',
-                          "/Volumes/Samsung/Dataset/COCO/train_dataset/label/",
-                          '/Volumes/Samsung/Dataset/COCO/train_dataset/names.txt',
+    dataset = YoloDataset('/COCO/train_dataset/image/',
+                          "/COCO/train_dataset/label/",
+                          '/COCO/train_dataset/names.txt',
                           [448, 448], aug_hyp, 0)
     mean = torch.tensor([0.485, 0.456, 0.406]).float()
     std = torch.tensor([0.229, 0.224, 0.225]).float()
