@@ -50,6 +50,8 @@ class Config:
             self.config.update({"aspect_ratio_path": args.aspect_ratio_path})
         if hasattr(args,'output_dir'):
             self.config.update({"output_dir": args.output_dir})
+        if hasattr(args, "aspect_ratio"):
+            self.config.update({"aspect_ratio": args.aspect_ratio})
         
 
 

@@ -46,6 +46,7 @@ train_hyp:
   save_ckpt_every: 500  # 每隔多少个epoch保存一次模型
   model_type: 'smalldw'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
+  aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
 
 optim_hyp:
   optimizer: sgd # 优化器类别/['sgd' or 'adam']

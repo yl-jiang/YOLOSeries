@@ -449,21 +449,27 @@ def YoloDataloader(hyp, is_training=True):
             }
         dataset = YoloDataset(hyp['img_dir'], hyp['lab_dir'], hyp['name_path'], hyp['input_img_size'], coco_dataset_kwargs, hyp['cache_num'])
         
-        print(f"Build Aspect Ratio BatchSampler!")
-        _start = time()
-        ar = None
-        # print(hyp['aspect_ratio_path'])
-        if hyp['aspect_ratio_path'] is not None and Path(hyp['aspect_ratio_path']).exists():
-            ar = pickle.load(open(hyp['aspect_ratio_path'], 'rb'))
-        sampler = AspectRatioBatchSampler(dataset, hyp['batch_size'], hyp['drop_last'], aspect_ratio_list=ar)
-        print(f"- Use time {time() - _start:.3f}s")
+        
+        
+        if hyp['aspect_ratio']:  # 是否采用按照数据集中图片长宽比从小到大的顺序sample数据
+            print(f"Build Aspect Ratio BatchSampler!")
+            _start = time()
+            ar = None
+            if hyp['aspect_ratio_path'] is not None and Path(hyp['aspect_ratio_path']).exists():
+                ar = pickle.load(open(hyp['aspect_ratio_path'], 'rb'))
+            sampler = AspectRatioBatchSampler(dataset, hyp['batch_size'], hyp['drop_last'], aspect_ratio_list=ar)
+            print(f"- Use time {time() - _start:.3f}s")
+        else:
+            sampler = None
+        
 
         # 使用自定义的batch_sampler时，不要给DataLoader中的batch_size,shuffle赋值，因为这些参数会在自定义的batch_sampler中已经定义了
         dataloader = DataLoader(dataset,
                                 batch_sampler=sampler,
                                 collate_fn=collector_fn,
                                 num_workers=hyp['num_workers'],
-                                pin_memory=hyp['pin_memory'])
+                                pin_memory=hyp['pin_memory'], 
+                                batch_size=hyp['batch_size'] if sampler is None else None)
     elif not is_training and hyp['lab_dir']:  # validation for compute mAP
         dataset = YoloDataset(hyp['img_dir'], hyp['lab_dir'], hyp['name_path'], hyp['input_img_size'], None)
         dataloader = DataLoader(dataset, batch_size=hyp['batch_size'], 
