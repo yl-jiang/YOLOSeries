@@ -224,3 +224,10 @@ class YOLOV5Loss:
         factor = gamma_factor * alpha_factor
 
         return factor
+
+
+
+class YOLOXLoss:
+
+    def __init__(self) -> None:
+        pass
