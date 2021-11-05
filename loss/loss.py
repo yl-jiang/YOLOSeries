@@ -229,5 +229,50 @@ class YOLOV5Loss:
 
 class YOLOXLoss:
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, num_stages=3, num_anchor=1, img_sz=[224, 224]) -> None:
+        self.grids = [torch.zeros(1) for _ in range(num_stages)]
+        self.num_anchor = num_anchor
+        self.img_sz = img_sz
+
+    def __call__(self, tars, preds):
+        """
+        假设输入训练的图片尺寸为224x224x3
+
+        Args:
+            preds: 字典；{'pred_s': (N, 85, 28, 28), 'pred_m': (N, 85, 14, 14), 'pred_l': (N, 85, 7, 7)}
+            tars: tensor; (N, bbox_num, 6)
+        """
+        batch_size = tars.size(0)
+        dtype = tars.type()
+        for i, k in enumerate(preds.keys()):
+            h, w = preds[k].shape[-2:]
+            stride = self.img_sz[0] / h  # 该stage下采样尺度
+            grid = self.grids[i]
+            pred = preds[i]
+            if grid[i].shape[2:4] != preds[k].shape[2:4]:
+                grid = self._make_grid(h, w, dtype)
+                self.grids[i] = grid
+            # (N, 85, h, w) -> (N, 1, 85, h, w)
+            pred = pred.view(batch_size, self.num_anchor, -1, h, w).contigugous()
+            # (N, 1, 85, h, w) -> (N, 1, h, w, 85)
+            pred = pred.permute(0, 1, 3, 4, 2).contiguous()
+            # (N, 1, h, w, 85) -> (N, h*w, 85)
+            pred = pred.reshape(batch_size, self.num_anchor * h * w, -1).contiguous()
+            # (1, 1, h, w, 2) -> (1, h*w, 2)
+            grid = grid.view(1, -1, 2).contiguous()
+            pred[..., :2] = (pred[..., :2] + grid) * stride
+            pred[..., 2:4] = torch.exp(pred[..., 2:4]) * stride
+
+
+
+    def calculate_each(self, tar, pred, gird):
+        """
+        Args:
+            pred: 某个stage的预测输出：(N, 85, 28, 28)或(N, 85, 14, 14)或(N, 85, 7, 7)
+        """
+
+    def _make_grid(h, w, dtype):
+        ys, xs = torch.meshgrid(torch.arange(h), torch.arange(w))
+        # 排列成(x, y)的形式，是因为模型输出的预测结果的排列是[x, y, w, h, cof, cls1, cls2, ...]
+        grid = torch.stack((xs, ys), dim=2).view(1, 1, h, w, 2).contiguous().type(dtype)
+        return grid

@@ -111,7 +111,8 @@ class Detect(nn.Module):
 
         conv = nn.Sequential(
                 ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True), 
-                ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True))
+                ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True)
+        )
 
         reg = nn.Conv2d(mid_c, 4, 1, 1)
         cof = nn.Conv2d(mid_c, int(self.num_anchors * 1), 1, 1)
@@ -123,13 +124,18 @@ class Detect(nn.Module):
         feat = layers['conv'](x)  # extract features for regression and confidence
         reg_pred = layers['reg'](feat)  # regression
         cof_pred = layers['cof'](feat)  # confidence
-        return {'cls_pred': cls_pred, 'ref_pred': reg_pred, 'cof_pred': cof_pred}
+        # (batch_size, 4+1+80, h, w)
+        output = torch.cat((reg_pred, cof_pred, cls_pred), dim=1).contiguous()
+        return output
 
     def forward(self, x):
         x_s, x_m, x_l = x['x_s'], x['x_m'], x['x_l']
         pred_s = self.forward_each(self.pred_small, x_s)
         pred_m = self.forward_each(self.pred_middle, x_m)
         pred_l = self.forward_each(self.pred_large, x_l)
+        # pred_l: (batch_size, 85, H/32, W/32)
+        # pred_m: (batch_size, 85, H/16, W/16)
+        # pred_s: (batch_size, 85, H/8, W/8)
         return {'pred_s': pred_s, 'pred_m': pred_m, 'pred_l': pred_l}
 
 
@@ -157,7 +163,7 @@ class YoloXSmall(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        
+
         # backbone
         backbone =self.backbone(x)
         x_s = backbone['stage_3']

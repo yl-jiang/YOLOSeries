@@ -414,7 +414,7 @@ class YoloDataset(Dataset, Generator):
             ann['bboxes'] = ann['bboxes'][valid_index]
             ann['classes'] = ann['classes'][valid_index]
 
-        # 如果返回没有bbox的训练数据会造成计算loss时在匹配target和prediction时出现问题
+        # 如果返回没有bbox的训练数据，会造成计算loss时在匹配target和prediction时出现问题
         while np.sum(ann['bboxes']) == 0: 
             i = random.randint(0, len(self)-1)
             img, ann = self.load_img_and_ann(i)
