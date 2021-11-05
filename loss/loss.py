@@ -229,10 +229,11 @@ class YOLOV5Loss:
 
 class YOLOXLoss:
 
-    def __init__(self, num_stages=3, num_anchor=1, img_sz=[224, 224]) -> None:
+    def __init__(self, num_stages=3, num_anchor=1, img_sz=[224, 224], num_classes=80) -> None:
         self.grids = [torch.zeros(1) for _ in range(num_stages)]
         self.num_anchor = num_anchor
         self.img_sz = img_sz
+        self.num_classes = num_classes
 
     def __call__(self, tars, preds):
         """
@@ -262,14 +263,23 @@ class YOLOXLoss:
             grid = grid.view(1, -1, 2).contiguous()
             pred[..., :2] = (pred[..., :2] + grid) * stride
             pred[..., 2:4] = torch.exp(pred[..., 2:4]) * stride
+            self.calculate_each(tars, pred)
 
 
 
-    def calculate_each(self, tar, pred, gird):
+    def calculate_each(self, tars, pred):
         """
         Args:
             pred: 某个stage的预测输出：(N, 85, 28, 28)或(N, 85, 14, 14)或(N, 85, 7, 7)
+            tars: tensor; (N, num_bbox, 6)
         """
+        for i in range(tars.size(0)):  # batch size
+            tar = tars[i]
+            num_valid_gt = (tar[:, 4] >= 0).sum()  # 有效label个数
+            if num_valid_gt == 0:
+                tar_cls = tar.new_zeros((0, self.num_classes))
+                tar_reg = tar.new_zeros((0, 4))
+                tar_cof = tar.new_zeros((self.num_anchor, 1))
 
     def _make_grid(h, w, dtype):
         ys, xs = torch.meshgrid(torch.arange(h), torch.arange(w))
