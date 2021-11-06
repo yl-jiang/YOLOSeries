@@ -226,11 +226,18 @@ class YOLOV5Loss:
         return factor
 
 
-
 class YOLOXLoss:
 
-    def __init__(self, num_stages=3, num_anchor=1, img_sz=[224, 224], num_classes=80) -> None:
-        self.grids = [torch.zeros(1) for _ in range(num_stages)]
+    def __init__(self, num_stage=3, num_anchor=1, img_sz=[224, 224], num_classes=80, use_l1=False) -> None:
+        """
+        Args:
+            num_stage:
+            num_anchor:
+            img_sz:
+            num_class:
+            use_l1: 是否对回归loss额外使用L1 Loss
+        """
+        self.grids = [torch.zeros(1) for _ in range(num_stage)]
         self.num_anchor = num_anchor
         self.img_sz = img_sz
         self.num_classes = num_classes
@@ -241,13 +248,14 @@ class YOLOXLoss:
 
         Args:
             preds: 字典；{'pred_s': (N, 85, 28, 28), 'pred_m': (N, 85, 14, 14), 'pred_l': (N, 85, 7, 7)}
-            tars: tensor; (N, bbox_num, 6)
+            tars: tensor; (N, bbox_num, 6) / [xmin, ymin, xmax, ymax, class_id, img_id]
         """
         batch_size = tars.size(0)
         dtype = tars.type()
-        for i, k in enumerate(preds.keys()):
+        tars[..., :4] = xyxy2xywhn(tars[..., :4], self.img_sz)  # [x_center, y_center, w_norm, h_norm]
+        for i, k in enumerate(preds.keys()):  # each stage
             h, w = preds[k].shape[-2:]
-            stride = self.img_sz[0] / h  # 该stage下采样尺度
+            stride = self.img_sz[0] / h  # 该stage下采样尺度 
             grid = self.grids[i]
             pred = preds[i]
             if grid[i].shape[2:4] != preds[k].shape[2:4]:
@@ -262,27 +270,105 @@ class YOLOXLoss:
             # (1, 1, h, w, 2) -> (1, h*w, 2)
             grid = grid.view(1, -1, 2).contiguous()
             pred[..., :2] = (pred[..., :2] + grid) * stride
+            # restore predictions to input scale / (1, h*w, 85)
             pred[..., 2:4] = torch.exp(pred[..., 2:4]) * stride
-            self.calculate_each(tars, pred)
+            self.calculate_each(tars, pred, grid[0], stride)
 
 
 
-    def calculate_each(self, tars, pred):
+    def calculate_each(self, tars, pred, grid, stride):
         """
         Args:
             pred: 某个stage的预测输出：(N, 85, 28, 28)或(N, 85, 14, 14)或(N, 85, 7, 7)
-            tars: tensor; (N, num_bbox, 6)
+            tars: tensor; (N, num_bbox, 6) / [x_center, y_center, w_norm, h_norm, class_id, img_id]
+            stride: a scalar / 下采样尺度 / 取值：8 or 16 or 32
+            grid: (h*w, 2)
         """
-        for i in range(tars.size(0)):  # batch size
+        for i in range(tars.size(0)):  # each image
             tar = tars[i]
             num_valid_gt = (tar[:, 4] >= 0).sum()  # 有效label个数
             if num_valid_gt == 0:
                 tar_cls = tar.new_zeros((0, self.num_classes))
                 tar_reg = tar.new_zeros((0, 4))
                 tar_cof = tar.new_zeros((self.num_anchor, 1))
+            else:
+                pass
+    
+
+    def self_match(self, tar_box, grid, stride):
+        """
+        Args:
+            tar_box: (X, 4) / [x_center, y_center, w_norm, h_norm] / X表示该image包含的gt box个数
+            grid: (h*w, 2) / [x, y]
+            stride: scalar / downsample scale
+        Returns:
+            is_grid_in_gtbox_or_gtctr: (h*w,)
+            is_grid_in_gtbox_and_gtctr: (h*w,)
+        """
+        # gt_xywh: (X, 4) / [gt_Xctr, gt_Yctr, gt_W, gt_H]
+        gt_xywh = tar_box * stride
+        dtype = tar_box.type()
+        # ======================= 某个grid的中心点坐标是否落到某个gt box的内部 =========================
+        r = 0.5
+        # offsets: (1, 4)
+        offsets = gt_xywh.new_tensor([-1, -1, 1, 1]).unsqueeze(0) * r
+        # (1, 4) & (X, 4) -> (X, 4) / [-0.5*gt_W, -0.5*gt_H, 0.5*gt_W, 0.5*gt_H]
+        wh_offsets = gt_xywh[:, 2:].repeat(1, 2) * offsets
+        # gt_xyxy: (X, 4) & (X, 4) -> (X, 4) / [gt_Xmin, gt_Ymin, gt_Xmax, gt_Ymax]
+        gt_xyxy = gt_xywh.repeat(1, 2) + wh_offsets
+        # (X, 4) & (1, 4) -> (X, 4) / [-gt_Xmin, -gt_Ymin, gt_Xmax, gt_Ymax]
+        gt_xyxy = gt_xyxy * gt_xyxy.new_tensor([-1, -1, 1, 1]).unsqueeze(0) 
+        # ctr_grid: (h*w, 2) / [grid_Xctr, grid_Yctr]
+        ctr_grid = self._make_center_grid(grid, stride)
+        # (h*w, 2) -> (h*w, 4); (h*w, 4) & (1, 4) -> (h*w, 4) / [grid_Xctr, grid_Yctr, -grid_Xctr, -grid_Yctr]
+        ctr_grid = ctr_grid.repeat(1, 2) * ctr_grid.new_tensor([1, 1, -1, -1]).unsqueeze(0)
+        # (X, 1, 4) & (1, h*w, 4) -> (X, h*w, 4)
+        box_delta = gt_xyxy.unsqueeze(1) + ctr_grid.unsqueeze(0)
+        # (X, h*w, 4) -> (X, h*w)
+        is_grid_in_gtbox = box_delta.min(dim=2).values > 0.0
+        # (X, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
+        is_grid_in_gtbox_all = is_grid_in_gtbox.sum(0) > 0.0
+
+        # ====== 某个gird的中心坐标是否落到以某个gt box的中心点为圆心，center_radius为半径的圆形区域内 ========
+        center_radius = 2.5
+        ctr_offsets = gt_xywh.new_tensor([-1, -1, 1, 1]) * center_radius
+        # (X, 2) -> (X, 4); [gt_Xctr, gt_Yctr, gt_Xctr, gt_Yctr]
+        gt_ctr = gt_xywh[:, :2].repeat(1, 2)
+        # (X, 4) & (1, 4) -> (X, 4); [gt_Xctr-radius, gt_Yctr-radius, gt_Xctr+radius, gt_Yctr+radius]
+        gt_ctr_offsets = gt_ctr + offsets.unsequeeze(0)
+        # (X, 4) & (1, 4) -> (X, 4); [-(gt_Xctr-radius), -(gt_Yctr-radius), gt_Xctr+radius, gt_Yctr+radius]
+        gt_ctr_offsets *= gt_ctr_offsets.new_tensor([-1, -1, 1, 1]).unsqueeze(0)
+        # (1, h*w, 4) & (X, 1, 4) -> (X, h*w, 4); [grid_Xctr-(gt_Xctr-radius), grid_Yctr-(gt_Yctr-radius), grid_Xctr+gt_Xctr+radius, grid_Yctr+gt_Yctr+radius]
+        ctr_delta = ctr_grid.unsqueeze(0) + gt_ctr_offsets.unsqueeze(1)
+        # (X, h*w, 4) -> (X, h*w)
+        is_grid_in_gtctr = ctr_delta.min(dim=2).values > 0.0
+        # (X, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
+        is_grid_in_gtctr_all = is_grid_in_gtctr.sum(0) > 0.0
+
+
+        # =================== fliter by conditions ===================
+        is_grid_in_gtbox_or_gtctr = is_grid_in_gtbox_all | is_grid_in_gtctr_all
+        is_grid_in_gtbox_and_gtctr = is_grid_in_gtbox[:, is_grid_in_gtbox_or_gtctr] & is_grid_in_gtctr[:, is_grid_in_gtbox_or_gtctr]
+        return is_grid_in_gtbox_or_gtctr, is_grid_in_gtbox_and_gtctr
+
+
+
+
 
     def _make_grid(h, w, dtype):
         ys, xs = torch.meshgrid(torch.arange(h), torch.arange(w))
         # 排列成(x, y)的形式，是因为模型输出的预测结果的排列是[x, y, w, h, cof, cls1, cls2, ...]
         grid = torch.stack((xs, ys), dim=2).view(1, 1, h, w, 2).contiguous().type(dtype)
         return grid
+
+    def _make_center_grid(self, grid, stride):
+        """
+        Args:
+            grid: tensor / (h*w, 2) / [xmin, ymin]
+            stride: downsample scale
+        Return:
+            ctr_grid: (h*w, 2) / [x_center, y_center]
+        """
+        grid *= stride  # 将grid还原到原始scale
+        ctr_grid = grid + 0.5 * stride  # 左上角坐标 -> 中心点坐标
+        return ctr_grid
