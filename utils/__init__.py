@@ -23,9 +23,10 @@ from .bbox_tools import letter_resize_bbox
 from .bbox_tools import minmax_bbox_resize
 from .bbox_tools import xywh2xyxy
 from .bbox_tools import xyxy2xywhn
+from .bbox_tools import xyxy2xywh
 from .bbox_tools import gpu_nms
 from .bbox_tools import gpu_iou
-from .bbox_tools import gpu_giou
+from .bbox_tools import gpu_Giou
 from .bbox_tools import gpu_CIoU
 from .bbox_tools import gpu_DIoU
 from .bbox_tools import cpu_iou

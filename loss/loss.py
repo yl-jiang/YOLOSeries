@@ -1,17 +1,10 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from utils import xyxy2xywhn
-from utils import xywh2xyxy
+from utils import xyxy2xywhn, xyxy2xywh, xywh2xyxy
 from utils import gpu_CIoU
-
-
-import torch
-import torch.nn as nn
-import numpy as np
-from utils import xyxy2xywhn
-from utils import xywh2xyxy
-from utils import gpu_CIoU
+from utils import gpu_iou, gpu_DIoU, gpu_Giou
+import torch.nn.functional as F
 
 
 class YOLOV5Loss:
@@ -238,21 +231,29 @@ class YOLOXLoss:
             use_l1: 是否对回归loss额外使用L1 Loss
         """
         self.grids = [torch.zeros(1) for _ in range(num_stage)]
-        self.num_anchor = num_anchor
-        self.img_sz = img_sz
-        self.num_classes = num_classes
+        self.num_anchor = hyp['num_anchor']
+        self.img_sz = hyp['input_img_size']
+        self.num_classes = hyp['num_classes']
+        cls_pos_weight = torch.tensor(hyp["cls_pos_weight"], device=self.device)
+        cof_pos_weight = torch.tensor(hyp['cof_pos_weight'], device=self.device)
+        self.bce_cls = nn.BCEWithLogitsLoss(pos_weight=cls_pos_weight, reduction='none').to(self.device)
+        self.bce_cof = nn.BCEWithLogitsLoss(pos_weight=cof_pos_weight, reduction='none').to(self.device)
+
+        iou_loss = {'iou': gpu_iou, 'ciou': gpu_CIoU, 'giou': gpu_Giou, 'diou': gpu_DIoU}
+        self.reg_loss = iou_loss[hyp['iou_loss']]  # ['iou', 'ciou', 'diou', 'giou']
+        self.label_smooth = hyp['label_smooth']
 
     def __call__(self, tars, preds):
         """
         假设输入训练的图片尺寸为224x224x3
 
         Args:
-            preds: 字典；{'pred_s': (N, 85, 28, 28), 'pred_m': (N, 85, 14, 14), 'pred_l': (N, 85, 7, 7)}
+            preds: 字典；{'pred_s': (N, 85, 28, 28), 'pred_m': (N, 85, 14, 14), 'pred_l': (N, 85, 7, 7)} / [x, y, w, h, cof, cls1, cls2, ...]
             tars: tensor; (N, bbox_num, 6) / [xmin, ymin, xmax, ymax, class_id, img_id]
         """
         batch_size = tars.size(0)
         dtype = tars.type()
-        tars[..., :4] = xyxy2xywhn(tars[..., :4], self.img_sz)  # [x_center, y_center, w_norm, h_norm]
+        tars[..., :4] = xyxy2xywh(tars[..., :4], self.img_sz)  # [x_ctr, y_ctr, w, h]
         for i, k in enumerate(preds.keys()):  # each stage
             h, w = preds[k].shape[-2:]
             stride = self.img_sz[0] / h  # 该stage下采样尺度 
@@ -276,39 +277,62 @@ class YOLOXLoss:
 
 
 
-    def calculate_each(self, tars, pred, grid, stride):
+    def calculate_each(self, tars, preds, grid, stride):
         """
         Args:
-            pred: 某个stage的预测输出：(N, 85, 28, 28)或(N, 85, 14, 14)或(N, 85, 7, 7)
-            tars: tensor; (N, num_bbox, 6) / [x_center, y_center, w_norm, h_norm, class_id, img_id]
+            preds: 某个stage的预测输出：(N, 28*28, 85)或(N, 14*14, 85)或(N, 7*7, 85) / [x, y, w, h, cof, cls1, cls2, ...]
+            tars: tensor; (N, num_bbox, 6) / [x_ctr, y_ctr, w, h, class_id, img_id]
             stride: a scalar / 下采样尺度 / 取值：8 or 16 or 32
             grid: (h*w, 2)
         """
         for i in range(tars.size(0)):  # each image
-            tar = tars[i]
-            num_valid_gt = (tar[:, 4] >= 0).sum()  # 有效label个数
-            if num_valid_gt == 0:
+            tar = tars[i]  # (num_bbox, 6)
+            pred = preds[i]  # (h*w, 85)
+            valid_gt_idx = tar[:, 4] >= 0  # 有效label个数
+            if valid_gt_idx.sum() == 0:
                 tar_cls = tar.new_zeros((0, self.num_classes))
                 tar_reg = tar.new_zeros((0, 4))
                 tar_cof = tar.new_zeros((self.num_anchor, 1))
             else:
-                pass
+                tar_box_i = tar[valid_gt_idx, :4]  # (valid_num_box, 4) / [x, y, w, h]
+                tar_cls_i = F.one_hot(tar[valid_gt_idx, 4].long(), num_classes=self.num_classes) * self.label_smooth # (valid_num_box, 80)
+                
+                # frontground_mask: (h*w,); is_grid_in_gtbox_and_gtctr: (valid_num_box, N)
+                frontground_mask, is_grid_in_gtbox_and_gtctr = self.select_grid(tar_box_i, grid, stride)
+                pred_box_i = pred[frontground_mask, :4]  # (Y, 4) / [x, y, w, h] / 提取那些满足限制条件的prediction
+                # 每个gt box与所有满足条件的prediction计算iou
+                iou = gpu_iou(xywh2xyxy(tar_box_i), xywh2xyxy(pred_box_i))  # (valid_num_box, Y)
+                # (valid_num_box, Y)
+                iou = -torch.log(iou + 1e-8)
+                pred_cof_i = pred[frontground_mask, 4]  # (Y, )
+                pred_cls_i = pred[frontground_mask, 5:]  # (Y, 80)
+                # (Y, 80) & (Y, 1) -> (Y, 80)
+                pred_cls_i_for_loss = pred_cls_i.sigmoid_() * pred_cof_i.unsqueeze(1).sigmoid_()
+                # 每个gt cls与所有满足条件的prediction计算binary cross entropy
+                # (Y, 80) -> (valid_num_box, Y, 80) ;(valid_num_box, 80) -> (valid_num_box, Y, 80); 
+                # (valid_num_box, Y, 80) & (valid_num_box, Y, 80) -> (valid_num_box, Y, 80)
+                cls = F.binary_cross_entropy(input=pred_cls_i_for_loss.unsqueeze(0).repeat(tar_cls_i.size(0), 1, 1).sqrt_(), target=tar_cls_i.unsqueeze(1).repeat(1, pred_cls_i.size(0), 1), reduce='none')
+                # (valid_num_box, Y, 80) -> (valid_num_box, Y)
+                cls = cls.sum(-1)
+                # (valid_num_box, Y) & (valid_num_box, Y) & (valid_num_box, Y) -> (valid_num_box, Y)
+                cost = cls + 3 * iou + 100000 * (~is_grid_in_gtbox_and_gtctr)
+
     
 
-    def self_match(self, tar_box, grid, stride):
+    def select_grid(self, tar_box, grid, stride):
         """
+        根据target box选择合适的grid（选择合适的grid即是选择合适的prediction）参与loss的计算
         Args:
-            tar_box: (X, 4) / [x_center, y_center, w_norm, h_norm] / X表示该image包含的gt box个数
+            tar_box: (X, 4) / [x, y, w, h] / X -> 该image包含的有效的gt box个数
             grid: (h*w, 2) / [x, y]
             stride: scalar / downsample scale
         Returns:
-            is_grid_in_gtbox_or_gtctr: (h*w,)
-            is_grid_in_gtbox_and_gtctr: (h*w,)
+            is_grid_in_gtbox_or_gtctr: (h*w,) / front ground mask
+            is_grid_in_gtbox_and_gtctr: (valid_num_box, Y)
         """
         # gt_xywh: (X, 4) / [gt_Xctr, gt_Yctr, gt_W, gt_H]
-        gt_xywh = tar_box * stride
-        dtype = tar_box.type()
-        # ======================= 某个grid的中心点坐标是否落到某个gt box的内部 =========================
+        gt_xywh = tar_box.clone().detach()
+        # ======================= 某个grid的中心点坐标是否落到某个gt box的内部 ========================
         r = 0.5
         # offsets: (1, 4)
         offsets = gt_xywh.new_tensor([-1, -1, 1, 1]).unsqueeze(0) * r
@@ -346,13 +370,12 @@ class YOLOXLoss:
         is_grid_in_gtctr_all = is_grid_in_gtctr.sum(0) > 0.0
 
 
-        # =================== fliter by conditions ===================
+        # ================================ fliter by conditions ================================
+        # (h*w,) & (h*w,) -> (h*w,)
         is_grid_in_gtbox_or_gtctr = is_grid_in_gtbox_all | is_grid_in_gtctr_all
+        # (X, M) & (X, M) -> (X, Y)
         is_grid_in_gtbox_and_gtctr = is_grid_in_gtbox[:, is_grid_in_gtbox_or_gtctr] & is_grid_in_gtctr[:, is_grid_in_gtbox_or_gtctr]
         return is_grid_in_gtbox_or_gtctr, is_grid_in_gtbox_and_gtctr
-
-
-
 
 
     def _make_grid(h, w, dtype):

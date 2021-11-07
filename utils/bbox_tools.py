@@ -190,7 +190,7 @@ def gpu_iou(bbox1, bbox2):
     return iou_out
 
 
-def gpu_giou(bbox1, bbox2):
+def gpu_Giou(bbox1, bbox2):
     """
     :param bbox1: [[xmin, ymin, xmax, ymax], ...] / type: torch.Tensor
     :param bbox2: [[xmin, ymin, xmax, ymax], ...] / type: torch.Tensor
