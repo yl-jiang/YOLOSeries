@@ -221,7 +221,7 @@ class YOLOV5Loss:
 
 class YOLOXLoss:
 
-    def __init__(self, num_stage=3, num_anchor=1, img_sz=[224, 224], num_classes=80, use_l1=False) -> None:
+    def __init__(self, hyp) -> None:
         """
         Args:
             num_stage:
@@ -230,10 +230,12 @@ class YOLOXLoss:
             num_class:
             use_l1: 是否对回归loss额外使用L1 Loss
         """
-        self.grids = [torch.zeros(1) for _ in range(num_stage)]
+        self.num_stage = hyp['num_stage']
+        self.grids = [torch.zeros(1) for _ in range(self.num_stage)]
         self.num_anchor = hyp['num_anchor']
         self.img_sz = hyp['input_img_size']
         self.num_classes = hyp['num_classes']
+        self.use_l1 = hyp['use_l1']
         cls_pos_weight = torch.tensor(hyp["cls_pos_weight"], device=self.device)
         cof_pos_weight = torch.tensor(hyp['cof_pos_weight'], device=self.device)
         self.bce_cls = nn.BCEWithLogitsLoss(pos_weight=cls_pos_weight, reduction='none').to(self.device)
@@ -288,7 +290,7 @@ class YOLOXLoss:
         for i in range(tars.size(0)):  # each image
             tar = tars[i]  # (num_bbox, 6)
             pred = preds[i]  # (h*w, 85)
-            valid_gt_idx = tar[:, 4] >= 0  # 有效label个数
+            valid_gt_idx = tar[:, 4] >= 0  # 有效label索引（那些没有bbox的gt对应的class值为-1）
             if valid_gt_idx.sum() == 0:
                 tar_cls = tar.new_zeros((0, self.num_classes))
                 tar_reg = tar.new_zeros((0, 4))
@@ -300,7 +302,7 @@ class YOLOXLoss:
                 # frontground_mask: (h*w,); is_grid_in_gtbox_and_gtctr: (valid_num_box, N)
                 frontground_mask, is_grid_in_gtbox_and_gtctr = self.select_grid(tar_box_i, grid, stride)
                 pred_box_i = pred[frontground_mask, :4]  # (Y, 4) / [x, y, w, h] / 提取那些满足限制条件的prediction
-                # 每个gt box与所有满足条件的prediction计算iou
+                # 每个gt box与所有满足条件(被选为前景)的prediction计算iou
                 iou = gpu_iou(xywh2xyxy(tar_box_i), xywh2xyxy(pred_box_i))  # (valid_num_box, Y)
                 # (valid_num_box, Y)
                 iou = -torch.log(iou + 1e-8)
@@ -311,7 +313,9 @@ class YOLOXLoss:
                 # 每个gt cls与所有满足条件的prediction计算binary cross entropy
                 # (Y, 80) -> (valid_num_box, Y, 80) ;(valid_num_box, 80) -> (valid_num_box, Y, 80); 
                 # (valid_num_box, Y, 80) & (valid_num_box, Y, 80) -> (valid_num_box, Y, 80)
-                cls = F.binary_cross_entropy(input=pred_cls_i_for_loss.unsqueeze(0).repeat(tar_cls_i.size(0), 1, 1).sqrt_(), target=tar_cls_i.unsqueeze(1).repeat(1, pred_cls_i.size(0), 1), reduce='none')
+                cls = F.binary_cross_entropy(input=pred_cls_i_for_loss.unsqueeze(0).repeat(tar_cls_i.size(0), 1, 1).sqrt_(), 
+                                             target=tar_cls_i.unsqueeze(1).repeat(1, pred_cls_i.size(0), 1), 
+                                             reduce='none')
                 # (valid_num_box, Y, 80) -> (valid_num_box, Y)
                 cls = cls.sum(-1)
                 # (valid_num_box, Y) & (valid_num_box, Y) & (valid_num_box, Y) -> (valid_num_box, Y)
@@ -332,7 +336,7 @@ class YOLOXLoss:
         """
         # gt_xywh: (X, 4) / [gt_Xctr, gt_Yctr, gt_W, gt_H]
         gt_xywh = tar_box.clone().detach()
-        # ======================= 某个grid的中心点坐标是否落到某个gt box的内部 ========================
+        # =========================== 某个grid的中心点坐标是否落到某个gt box的内部 ===========================
         r = 0.5
         # offsets: (1, 4)
         offsets = gt_xywh.new_tensor([-1, -1, 1, 1]).unsqueeze(0) * r
@@ -353,13 +357,13 @@ class YOLOXLoss:
         # (X, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
         is_grid_in_gtbox_all = is_grid_in_gtbox.sum(0) > 0.0
 
-        # ====== 某个gird的中心坐标是否落到以某个gt box的中心点为圆心，center_radius为半径的圆形区域内 ========
+        # ======== 某个gird的中心坐标是否落到以某个gt box的中心点为圆心，center_radius为半径的圆形区域内 =========
         center_radius = 2.5
         ctr_offsets = gt_xywh.new_tensor([-1, -1, 1, 1]) * center_radius
         # (X, 2) -> (X, 4); [gt_Xctr, gt_Yctr, gt_Xctr, gt_Yctr]
         gt_ctr = gt_xywh[:, :2].repeat(1, 2)
         # (X, 4) & (1, 4) -> (X, 4); [gt_Xctr-radius, gt_Yctr-radius, gt_Xctr+radius, gt_Yctr+radius]
-        gt_ctr_offsets = gt_ctr + offsets.unsequeeze(0)
+        gt_ctr_offsets = gt_ctr + ctr_offsets.unsequeeze(0)
         # (X, 4) & (1, 4) -> (X, 4); [-(gt_Xctr-radius), -(gt_Yctr-radius), gt_Xctr+radius, gt_Yctr+radius]
         gt_ctr_offsets *= gt_ctr_offsets.new_tensor([-1, -1, 1, 1]).unsqueeze(0)
         # (1, h*w, 4) & (X, 1, 4) -> (X, h*w, 4); [grid_Xctr-(gt_Xctr-radius), grid_Yctr-(gt_Yctr-radius), grid_Xctr+gt_Xctr+radius, grid_Yctr+gt_Yctr+radius]
@@ -370,13 +374,45 @@ class YOLOXLoss:
         is_grid_in_gtctr_all = is_grid_in_gtctr.sum(0) > 0.0
 
 
-        # ================================ fliter by conditions ================================
+        # ====================================== fliter by conditions ======================================
         # (h*w,) & (h*w,) -> (h*w,)
         is_grid_in_gtbox_or_gtctr = is_grid_in_gtbox_all | is_grid_in_gtctr_all
         # (X, M) & (X, M) -> (X, Y)
         is_grid_in_gtbox_and_gtctr = is_grid_in_gtbox[:, is_grid_in_gtbox_or_gtctr] & is_grid_in_gtctr[:, is_grid_in_gtbox_or_gtctr]
         return is_grid_in_gtbox_or_gtctr, is_grid_in_gtbox_and_gtctr
 
+
+    def simple_ota(self, cost, iou, frontground_mask):
+        """
+        每个gt box都可能有好几个满足条件的（位于前景）prediction，这一步需要在其中挑选出最有价值的参与loss的计算
+        """
+        matching_matrix = torch.zeros_like(cost, dtype=torch.uint8)
+        k = min(10, iou.size(1))  # 如果位于前景的prediction个数大于10，则每个gt box最多选择10个最适合的预测作为后续的loss计算
+        # (valid_num_box, k)
+        topk_iou, _ = torch.topk(iou, k, dim=1)
+        # (valid_num_box, k) -> (valid_num_box, )
+        dynamic_k = torch.clamp(topk_iou.sum(1).int(), min=1).tolist()
+        for i in range(cost.size(0)):  # each valid gt
+            _, pos_idx = torch.topk(cost[i], dynamic_k[i], largest=False)  # 选取最小的dynamic_k[i]个值（因为不满足条件的prediction对应的cost加上了1000000）
+            matching_matrix[i][pos_idx] = 1
+
+        # (valid_num_box, Y) -> (Y,)  / 满足条件的prediction的并集(存在某个prediction匹配到多个gt box)
+        all_matching_gt = matching_matrix.sum(0)  # 
+        if (all_matching_gt > 1).sum() > 0:  # 经过上面的matching后，仍然存在符合要求的prediction
+            _, cost_argmin = torch.min(cost[:, all_matching_gt > 1], dim=0)
+            # 处理某些prediction匹配到多个gt box的情况，将这些prediction只分配到与其匹配度最高的gt box
+            matching_matrix[:, all_matching_gt > 1] = 0
+            matching_matrix[cost_argmin, all_matching_gt > 1] = 1
+
+        # (valid_num_box, Y) -> (Y,)
+        fg_mask = matching_matrix.sum(0) > 0
+        num_fg = fg_mask.sum().item()
+        # update front ground mask
+        frontground_mask[frontground_mask.clone()] = fg_mask
+
+        # (valid_num_box, M) / 假设fg_mask中为True的个数为M
+        matched_gt = matching_matrix[:, fg_mask]
+        pass
 
     def _make_grid(h, w, dtype):
         ys, xs = torch.meshgrid(torch.arange(h), torch.arange(w))
