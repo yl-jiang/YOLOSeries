@@ -355,7 +355,7 @@ def gpu_nms(boxes, scores, iou_type, iou_threshold):
     if iou_type.lower() == 'iou':
         iou = gpu_iou
     elif iou_type.lower() == 'giou':
-        iou = gpu_giou
+        iou = gpu_Giou
     elif iou_type.lower() == 'diou':
         iou = gpu_DIoU
     elif iou_type.lower() == 'ciou':
@@ -393,7 +393,7 @@ def gpu_linear_soft_nms(boxes, scores, iou_type, iou_threshold=0.3, thresh=0.001
     if iou_type == 'iou':
         iou = gpu_iou
     elif iou_type == 'giou':
-        iou = gpu_giou
+        iou = gpu_Giou
     elif iou_type == 'diou':
         iou = gpu_DIoU
     elif iou_type == 'ciou':
@@ -430,7 +430,7 @@ def gpu_exponential_soft_nms(boxes, scores, iou_type, iou_threshold, sigmma=0.5,
     if iou_type == 'iou':
         iou = gpu_iou
     elif iou_type == 'giou':
-        iou = gpu_giou
+        iou = gpu_Giou
     elif iou_type == 'diou':
         iou = gpu_DIoU
     elif iou_type == 'ciou':
