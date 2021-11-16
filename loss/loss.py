@@ -275,9 +275,7 @@ class YOLOXLoss:
             # (1, 1, h, w, 2) -> (1, h*w, 2)
             grid = grid.view(1, -1, 2).contiguous()
             
-            self.calculate_each_stage(tars, pred, grid[0], stride)
-
-
+            stage_out_dict = self.calculate_each_stage(tars, pred, grid[0], stride)
 
     def calculate_each_stage(self, tars, preds, grid, stride):
         """
@@ -518,6 +516,7 @@ class YOLOXLoss:
             fg: (N*h*w) / 其中为True的元素个数为X
         """
         assert pred_box.size(-1) == tar_box.size(-1)
+        # (X, 4)
         pred = pred_box.view(-1, 4)[fg]
         assert pred.size() == tar_box.size()
         
