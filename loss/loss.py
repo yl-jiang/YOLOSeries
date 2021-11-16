@@ -515,7 +515,7 @@ class YOLOXLoss:
         Args:
             pred_box: (N, h*w, 4) / [x, y, w, h]
             tar_box: (X, 4) / [x, y, w, h]
-            fg: (N*h*w)
+            fg: (N*h*w) / 其中为True的元素个数为X
         """
         assert pred_box.size(-1) == tar_box.size(-1)
         pred = pred_box.view(-1, 4)[fg]
