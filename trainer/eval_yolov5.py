@@ -206,9 +206,9 @@ class Evaluate:
             cur_preds[..., [0, 1]] = (cur_preds[..., [0, 1]] * 2 - 0.5 + grid_coords) * self.ds_scales[i]
             # (bn, 3, h, w, 2) & (1, 3, 1, 1, 2) -> (bn, 3, h, w, 2)
             cur_preds[..., [2, 3]] = (cur_preds[..., [2, 3]] * 2) ** 2 * stage_anchor * self.ds_scales[i]
-            # [(bs, 20*20, 85), (bs, 40*40, 85), (bs, 80*80, 85)]
+            # [(bs, 20*20*3, 85), (bs, 40*40*3, 85), (bs, 80*80*3, 85)]
             preds_out.append(cur_preds.reshape(batch_size, -1, self.num_class+5).contiguous())
-        # (bs, 20*20+40*40+80*80, 85)
+        # (bs, (20*20+40*40+80*80)*3, 85)
         return torch.cat(preds_out, dim=1).contiguous()
 
     @staticmethod

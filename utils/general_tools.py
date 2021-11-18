@@ -55,7 +55,7 @@ def summary_model(model, input_img_size=[640, 640], verbose=False, prefix=""):
             flops, params = profile(deepcopy(model), inputs=(dummy_img, ), verbose=verbose)
             flops /= 1e9 * 2
         except (ImportError, Exception) as err:
-            print(f"error occur in summary_model\t{err}")
+            print(f"error occur in summary_model: {err}")
             flops = ""
         
         if verbose:

@@ -1,7 +1,7 @@
 import sys
 import torch
 from torch import nn
-from utils import Focus, DepthWiseConvBnAct, SPP, Upsample, Concat, Detect, DepthWiseC3BottleneckCSP
+from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect, SEBottleneckCSP, C3BottleneckCSP
 
 class Yolov5Middle(nn.Module):
 
@@ -14,29 +14,29 @@ class Yolov5Middle(nn.Module):
         # focus layer
         self.focus = Focus(3, 48, 3, 1, 1)
 
-        self.backbone_stage1_conv = DepthWiseConvBnAct(48, 96, 3, 2, 1)  # /2
-        self.backbone_stage1_bscp = DepthWiseC3BottleneckCSP(96, 96, shortcut=True, num_block=2)
-        self.backbone_stage2_conv = DepthWiseConvBnAct(96, 192, 3, 2, 1)  # /2
-        self.backbone_stage2_bscp = DepthWiseC3BottleneckCSP(192, 192, shortcut=True, num_block=6)
-        self.backbone_stage3_conv = DepthWiseConvBnAct(192, 384, 3, 2, 1)  # /2
-        self.backbone_stage3_bscp = DepthWiseC3BottleneckCSP(384, 384, shortcut=True, num_block=6)
-        self.backbone_stage4_conv = DepthWiseConvBnAct(384, 768, 3, 2, 1)  # /2
+        self.backbone_stage1_conv = ConvBnAct(48, 96, 3, 2, 1)  # /2
+        self.backbone_stage1_bscp = C3BottleneckCSP(96, 96, shortcut=True, num_block=2)
+        self.backbone_stage2_conv = ConvBnAct(96, 192, 3, 2, 1)  # /2
+        self.backbone_stage2_bscp = C3BottleneckCSP(192, 192, shortcut=True, num_block=6)
+        self.backbone_stage3_conv = ConvBnAct(192, 384, 3, 2, 1)  # /2
+        self.backbone_stage3_bscp = C3BottleneckCSP(384, 384, shortcut=True, num_block=6)
+        self.backbone_stage4_conv = ConvBnAct(384, 768, 3, 2, 1)  # /2
         self.backbone_stage4_spp = SPP(768, 768, kernels=[5, 9, 13])
-        self.backbone_stage4_bscp = DepthWiseC3BottleneckCSP(768, 768, shortcut=False, num_block=2)
+        self.backbone_stage4_bscp = C3BottleneckCSP(768, 768, shortcut=False, num_block=2)
         # ============================== head ==============================
 
         # common layers
         self.head_upsample = Upsample()
         self.head_concat = Concat()
 
-        self.head_stage1_conv = DepthWiseConvBnAct(768, 384, 1, 1, 0)
-        self.head_stage1_bscp = DepthWiseC3BottleneckCSP(768, 384, shortcut=False, num_block=2)
-        self.head_stage2_conv = DepthWiseConvBnAct(384, 192, 1, 1, 0)
-        self.head_stage2_bscp = DepthWiseC3BottleneckCSP(384, 192, shortcut=False, num_block=2)
-        self.head_stage3_conv = DepthWiseConvBnAct(192, 192, 3, 2, 1)
-        self.head_stage3_bscp = DepthWiseC3BottleneckCSP(384, 384, shortcut=False, num_block=2)
-        self.head_stage4_conv = DepthWiseConvBnAct(384, 384, 3, 2, 1)
-        self.head_stage4_bscp = DepthWiseC3BottleneckCSP(768, 768, shortcut=False, num_block=2)
+        self.head_stage1_conv = ConvBnAct(768, 384, 1, 1, 0)
+        self.head_stage1_bscp = C3BottleneckCSP(768, 384, shortcut=False, num_block=2)
+        self.head_stage2_conv = ConvBnAct(384, 192, 1, 1, 0)
+        self.head_stage2_bscp = C3BottleneckCSP(384, 192, shortcut=False, num_block=2)
+        self.head_stage3_conv = ConvBnAct(192, 192, 3, 2, 1)
+        self.head_stage3_bscp = C3BottleneckCSP(384, 384, shortcut=False, num_block=2)
+        self.head_stage4_conv = ConvBnAct(384, 384, 3, 2, 1)
+        self.head_stage4_bscp = C3BottleneckCSP(768, 768, shortcut=False, num_block=2)
 
         # detect layers
         self.num_anchor = anchor_num  # number anchor for each stage

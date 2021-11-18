@@ -2,15 +2,14 @@ loss_hyp:
   use_focal_loss: false
   focal_loss_gamma: 1.5
   focal_loss_alpha: 0.25
-  reg_loss_scale: 0.0296
-  cls_loss_scale: 0.243
-  cof_loss_scale: 0.301
-  anchor_match_thr: 2.91
+  reg_loss_scale: 0.5
+  cls_loss_scale: 1.0
+  cof_loss_scale: 1.0
   class_smooth_factor: 1.0
   cls_pos_weight: 0.631
   cof_pos_weight: 0.911
 
-coco_train_hyp:
+train_hyp:
   data_dir: "/COCO2017"
   set_name: "train2017"
   use_crowb: false
@@ -18,6 +17,7 @@ coco_train_hyp:
     - 640
     - 640
   batch_size: 16
+  weight_init_prior_prob: 0.001
   drop_last: true
   pin_memory: true
   shuffle: true
@@ -35,8 +35,7 @@ coco_train_hyp:
   show_tbar_every: 5
   use_tta: true
   save_log_txt: true
-  use_pretrained_mdoel: true
-  pretrained_model_path: "./checkpoints/my_yolov5_xlarge_for_coco.pth"
+  pretrained_model_path: ""
   mutil_scale_training: true
   current_work_path: null
   calculate_map_every: 800

@@ -1,3 +1,4 @@
+from math import cos
 import torch
 import torch.nn as nn
 import numpy as np
@@ -5,6 +6,7 @@ from utils import xyxy2xywhn, xyxy2xywh, xywh2xyxy
 from utils import gpu_CIoU
 from utils import gpu_iou, gpu_DIoU, gpu_Giou
 import torch.nn.functional as F
+from torch.cuda.amp import autocast
 
 
 class YOLOV5Loss:
@@ -58,11 +60,11 @@ class YOLOV5Loss:
         targets = torch.cat([targets, anchor_ids], dim=-1).contiguous()
         assert torch.sum(targets[0][..., -1]) == 0., f"please check the data format of anchor_ids"
 
-        cls_loss, obj_loss, cof_loss = torch.zeros(1).to(self.device), torch.zeros(1).to(self.device), torch.zeros(1).to(self.device)
+        cls_loss, reg_loss, cof_loss = torch.zeros(1).to(self.device), torch.zeros(1).to(self.device), torch.zeros(1).to(self.device)
         balances = [4., 1., 0.4] if len(stage_preds) == 3 else [4., 1., 0.4, 0.1]
         tot_tar_num = 0
         s = 3 / len(stage_preds)
-        for i in range(len(stage_preds)):
+        for i in range(len(stage_preds)):  # each stage
             bn, fm_h, fm_w = torch.tensor(stage_preds[i].shape)[[0, 2, 3]]
             ds_scale = self.input_img_size[1] / fm_w  # downsample scale
             # anchor: (3, 2)
@@ -109,7 +111,7 @@ class YOLOV5Loss:
                 pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
                 # iou: (N,)
                 iou = gpu_CIoU(pred_box, tar_box)
-                obj_loss += (1. - iou).mean()
+                reg_loss += (1. - iou).mean()
                 # t_cof: (bn, 3, h, w) / 所有grid均参与confidence loss的计算
                 t_cof[img_idx, anc_idx, gy, gx] = iou.detach().clamp(0).type_as(t_cof)
 
@@ -124,11 +126,11 @@ class YOLOV5Loss:
             cof_loss += cof_loss_tmp
 
         self.balances = [x/self.balances[1] for x in self.balances]
-        obj_loss *= self.hyp['obj_loss_scale'] * s
+        reg_loss *= self.hyp['reg_loss_scale'] * s
         cof_loss *= self.hyp['cof_loss_scale'] * s * (1. if len(stage_preds) == 3 else 1.4)
         cls_loss *= self.hyp['cls_loss_scale'] * s
-        tot_loss = (obj_loss + cof_loss + cls_loss) * batch_size
-        return tot_loss, obj_loss.detach().item(), cof_loss.detach().item(), cls_loss.detach().item(), tot_tar_num
+        tot_loss = (reg_loss + cof_loss + cls_loss) * batch_size
+        return tot_loss, reg_loss.detach().item(), cof_loss.detach().item(), cls_loss.detach().item(), tot_tar_num
 
     def match(self, targets, anchor_stage, fm_shape):
         """
@@ -222,60 +224,75 @@ class YOLOV5Loss:
 class YOLOXLoss:
 
     def __init__(self, hyp) -> None:
-        """
-        Args:
-            num_stage:
-            num_anchor:
-            img_sz:
-            num_class:
-            use_l1: 是否对回归loss额外使用L1 Loss
-        """
-        self.num_stage = hyp['num_stage']
+        self.num_stage = hyp.get('num_stage', 3)
         self.grids = [torch.zeros(1) for _ in range(self.num_stage)]
-        self.num_anchor = hyp['num_anchor']
         self.img_sz = hyp['input_img_size']
-        self.num_classes = hyp['num_classes']
-        self.use_l1 = hyp.get('use_l1', False)
+        self.num_class = hyp['num_class']
+        self.use_l1 = hyp.get('use_l1', True)
         self.reg_loss_scale = hyp.get('reg_loss_scale', 0.5)
+        self.device = hyp['device']
         cls_pos_weight = torch.tensor(hyp.get("cls_pos_weight", 1.), device=self.device)
         cof_pos_weight = torch.tensor(hyp.get('cof_pos_weight', 1.), device=self.device)
         self.bce_cls = nn.BCEWithLogitsLoss(pos_weight=cls_pos_weight, reduction='none').to(self.device)
         self.bce_cof = nn.BCEWithLogitsLoss(pos_weight=cof_pos_weight, reduction='none').to(self.device)
         self.l1_loss = nn.L1Loss(reduction='none')
-
-        iou_loss = {'iou': gpu_iou, 'ciou': gpu_CIoU, 'giou': gpu_Giou, 'diou': gpu_DIoU}
-        self.reg_loss = iou_loss[hyp['iou_loss']]  # ['iou', 'ciou', 'diou', 'giou']
-        self.label_smooth = hyp['label_smooth']
+        self.cls_smoothness = hyp['class_smooth_factor']
 
     def __call__(self, tars, preds):
         """
         假设输入训练的图片尺寸为224x224x3
 
         Args:
-            preds: 字典；{'pred_s': (N, 85, 28, 28), 'pred_m': (N, 85, 14, 14), 'pred_l': (N, 85, 7, 7)} / [x, y, w, h, cof, cls1, cls2, ...]
+            preds: 字典;{'pred_s': (N, 85, 28, 28), 'pred_m': (N, 85, 14, 14), 'pred_l': (N, 85, 7, 7)} / [x, y, w, h, cof, cls1, cls2, ...]
             tars: tensor; (N, bbox_num, 6) / [xmin, ymin, xmax, ymax, class_id, img_id]
         """
         batch_size = tars.size(0)
         dtype = tars.type()
-        tars[..., :4] = xyxy2xywh(tars[..., :4])  # [x_ctr, y_ctr, w, h]
+        tars_xywh = torch.zeros_like(tars)
+        tars_xywh[..., 2:4] = tars[..., 2:4] - tars[..., :2]  # wh
+        tars_xywh[..., :2] = (tars[..., :2] + tars[..., 2:4]) / 2  # (ctr_x, ctr_y)
+        tars_xywh[..., 4:] = tars[..., 4:]
+
+        tot_num_fg, tot_num_gt = 0, 0
+        tot_cls_loss, tot_reg_loss, tot_cof_loss, tot_l1_loss = 0, 0, 0, 0
         for i, k in enumerate(preds.keys()):  # each stage
             h, w = preds[k].shape[-2:]
             stride = self.img_sz[0] / h  # 该stage下采样尺度 
             grid = self.grids[i]
-            pred = preds[i]
-            if grid[i].shape[2:4] != preds[k].shape[2:4]:
+            pred = preds[k]
+            if self.grids[i].shape[2:4] != preds[k].shape[2:4]:
                 grid = self._make_grid(h, w, dtype)
                 self.grids[i] = grid
-            # (N, 85, h, w) -> (N, 1, 85, h, w)
-            pred = pred.view(batch_size, self.num_anchor, -1, h, w).contigugous()
-            # (N, 1, 85, h, w) -> (N, 1, h, w, 85)
-            pred = pred.permute(0, 1, 3, 4, 2).contiguous()
-            # (N, 1, h, w, 85) -> (N, h*w, 85)
-            pred = pred.reshape(batch_size, self.num_anchor * h * w, -1).contiguous()
+
+            # (N, 85, h, w) -> (N, h, w, 85)
+            pred = pred.permute(0, 2, 3, 1).contiguous()
+            # (N, h, w, 85) -> (N, h*w, 85)
+            pred = pred.reshape(batch_size, h * w, -1).contiguous()
             # (1, 1, h, w, 2) -> (1, h*w, 2)
             grid = grid.view(1, -1, 2).contiguous()
             
-            stage_out_dict = self.calculate_each_stage(tars, pred, grid[0], stride)
+            stage_out_dict = self.calculate_each_stage(tars_xywh, pred, grid[0], stride)
+            tot_num_fg += stage_out_dict['num_fg']
+            tot_num_gt += stage_out_dict['num_gt']
+            tot_cls_loss += stage_out_dict['cls_loss'] 
+            tot_reg_loss += stage_out_dict['reg_loss'] 
+            tot_cof_loss += stage_out_dict['cof_loss'] 
+            tot_l1_loss += stage_out_dict['l1_loss']
+            del stage_out_dict
+
+        tot_reg_loss /= tot_num_fg
+        tot_cls_loss /= tot_num_fg
+        tot_cof_loss /= tot_num_fg
+        tot_l1_loss /= tot_num_fg
+        
+        if self.num_class == 1:
+            tot_cls_loss = tot_cof_loss.new_tensor(0.0)
+
+        tot_loss = self.reg_loss_scale * tot_reg_loss + tot_cls_loss + tot_cof_loss + tot_l1_loss
+        loss_dict = {'tot_loss': tot_loss, 'reg_loss': tot_reg_loss, 'cls_loss': tot_cls_loss, 
+                     'cof_loss': tot_cof_loss, 'l1_loss': tot_l1_loss, 
+                     'num_fg': tot_num_fg, 'num_gt': tot_num_gt}
+        return loss_dict
 
     def calculate_each_stage(self, tars, preds, grid, stride):
         """
@@ -299,14 +316,14 @@ class YOLOXLoss:
             valid_gt_idx = tar[:, 4] >= 0  # 有效label索引（那些没有bbox的gt对应的class值为-1）
             tot_num_gt += valid_gt_idx.sum()
             if valid_gt_idx.sum() == 0:
-                tar_cls_i = tar.new_zeros((0, self.num_classes))  # (0, 80)
+                tar_cls_i = tar.new_zeros((0, self.num_class))  # (0, 80)
                 tar_box_i = tar.new_zeros((0, 4))  # (0, 4)
-                tar_cof_i = tar.new_zeros((self.num_anchor, 1))  # (num_anchor, 1)
-                frontground_mask = tar.new_zeros(self.num_anchor).bool()  # (num_anchor,)
+                tar_cof_i = tar.new_zeros((pred.size(0), 1))  # (h*w, 1)
+                frontground_mask = tar.new_zeros(pred.size(0)).bool()  # (h*w,)
                 tar_l1_box_i = tar.new_zeros((0, 4))
             else:
                 tar_box_i = tar[valid_gt_idx, :4]  # (valid_num_box, 4) / [x, y, w, h]
-                tar_cls_i = F.one_hot(tar[valid_gt_idx, 4].long(), num_classes=self.num_classes) * self.label_smooth # (valid_num_box, 80)
+                tar_cls_i = F.one_hot(tar[valid_gt_idx, 4].long(), num_classes=self.num_class) * self.cls_smoothness # (valid_num_box, 80)
                 
                 # frontground_mask: (h*w,) 其中为True的元素个数设为Y; is_grid_in_gtbox_and_gtctr: (valid_num_box, N)
                 frontground_mask, is_grid_in_gtbox_and_gtctr = self.select_grid(tar_box_i, grid, stride)
@@ -314,23 +331,23 @@ class YOLOXLoss:
                 # 每个gt box与所有满足条件(被选为前景)的prediction计算iou
                 iou = gpu_iou(xywh2xyxy(tar_box_i), xywh2xyxy(pred_box_i))  # (valid_num_box, Y)
                 # (valid_num_box, Y)
-                iou = -torch.log(iou + 1e-8)
+                iou_loss = -torch.log(iou + 1e-8)
                 pred_cof_i = pred[frontground_mask, 4]  # (Y, )
                 pred_cls_i = pred[frontground_mask, 5:]  # (Y, 80)
                 # (Y, 80) & (Y, 1) -> (Y, 80)
-                pred_cls_i_for_loss = pred_cls_i.sigmoid_() * pred_cof_i.unsqueeze(1).sigmoid_()
+                pred_cls_i_for_loss = pred_cls_i.sigmoid_() * pred_cof_i.sigmoid_().unsqueeze(1)
+                # (Y, 80) -> (valid_num_box, Y, 80)
+                pred_cls_i_for_loss = torch.sqrt(pred_cls_i_for_loss.unsqueeze(0).repeat(tar_cls_i.size(0), 1, 1))
+                # (valid_num_box, 80) -> (valid_num_box, Y, 80)
+                tar_cls_i_for_loss = tar_cls_i.unsqueeze(1).repeat(1, pred_cls_i.size(0), 1)
                 # 每个gt cls与所有满足条件的prediction计算binary cross entropy
-                # (Y, 80) -> (valid_num_box, Y, 80) ;(valid_num_box, 80) -> (valid_num_box, Y, 80); 
-                # (valid_num_box, Y, 80) & (valid_num_box, Y, 80) -> (valid_num_box, Y, 80)
-                cls = F.binary_cross_entropy(input=pred_cls_i_for_loss.unsqueeze(0).repeat(tar_cls_i.size(0), 1, 1).sqrt_(), 
-                                             target=tar_cls_i.unsqueeze(1).repeat(1, pred_cls_i.size(0), 1), 
-                                             reduce='none')
+                cls_loss = -(tar_cls_i_for_loss * torch.log(pred_cls_i_for_loss) + (1 - tar_cls_i_for_loss) * torch.log(1 - pred_cls_i_for_loss))
                 # (valid_num_box, Y, 80) -> (valid_num_box, Y)
-                cls = cls.sum(-1)
+                cls_loss = cls_loss.sum(-1)
                 # (valid_num_box, Y) & (valid_num_box, Y) & (valid_num_box, Y) -> (valid_num_box, Y)
-                cost = cls + 3 * iou + 100000 * (~is_grid_in_gtbox_and_gtctr)
+                cost = cls_loss + 3 * iou_loss + 100000 * (~is_grid_in_gtbox_and_gtctr)
                 # matched_iou: (M,); matched_gt_idx: (M,)
-                num_fg, matched_iou, matched_gt_idx = self.simple_ota(cost, iou, frontground_mask)
+                frontground_mask, num_fg, matched_iou, matched_gt_idx = self.simple_ota(cost, iou, frontground_mask.clone())
                 tot_num_fg += num_fg
                 # ================================= build target =================================
                 # (valid_num_box, 80) -> (M, 80) & (M, 1) -> (M, 80) / label smoothness with iou
@@ -342,13 +359,14 @@ class YOLOXLoss:
 
                 if self.use_l1:
                     # (M, 4)
-                    tar_l1_box_i = self.build_l1_target(grid, stride, tar_box_i, num_fg)
+                    tar_l1_box_i = self.build_l1_target(grid, stride, tar_box_i, num_fg, frontground_mask)
 
             batch_tar_cls.append(tar_cls_i)
             batch_tar_box.append(tar_box_i)
             batch_tar_cof.append(tar_cof_i)
             fg.append(frontground_mask)
-            batch_tar_l1_box.append(tar_l1_box_i)
+            if self.use_l1:
+                batch_tar_l1_box.append(tar_l1_box_i)
 
         # one stage and whole batch
         batch_tar_cls = torch.cat(batch_tar_cls, 0)  # (X, 80)
@@ -360,21 +378,22 @@ class YOLOXLoss:
 
         # =================================== compute losses ===================================
         tot_num_fg = max(tot_num_fg, 1)
-        reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg).sum() / tot_num_fg
-        cof_loss = self.bce_cof(preds[..., 4].view(-1, 1), batch_tar_cof).sum() / tot_num_fg
-        assert preds[..., 5:].view(-1, self.num_classes)[fg].size() == batch_tar_cls.size()
-        cls_loss = self.bce_cls(preds[..., 5:].view(-1, self.num_classes)[fg], batch_tar_cls).sum() / tot_num_fg
+        reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg).sum()  # regression
+        cof_loss = self.bce_cof(preds[..., 4].view(-1, 1), batch_tar_cof.type(preds.type())).sum()  # cofidence
+        assert preds[..., 5:].view(-1, self.num_class)[fg].size() == batch_tar_cls.size()
+        cls_loss = self.bce_cls(preds[..., 5:].view(-1, self.num_class)[fg], batch_tar_cls).sum()  # classification
         
         if self.use_l1:
-            l1_loss = self.l1_loss(origin_pred_box.view(-1, 4)[fg], batch_tar_l1_box).sum() / tot_num_fg
+            l1_loss = self.l1_loss(origin_pred_box.view(-1, 4)[fg], batch_tar_l1_box).sum()  # l1
         else:
             l1_loss = 0.0
 
-        tot_loss = self.reg_loss_scale * reg_loss + cof_loss + cls_loss + l1_loss
-        out_dict = {'tot_loss': tot_loss, 'reg_loss': reg_loss, 
-                    'cls_loss': cls_loss, 'l1_loss': l1_loss, 
-                    'num_fg': num_fg, 'tot_num_fg': tot_num_fg, 
-                    'tot_num_gt': tot_num_gt}
+        out_dict = {'reg_loss': reg_loss, 
+                    'cls_loss': cls_loss, 
+                    'l1_loss': l1_loss, 
+                    'cof_loss': cof_loss, 
+                    'num_fg': num_fg, 'num_fg': tot_num_fg, 
+                    'num_gt': tot_num_gt}
         return out_dict
 
     def select_grid(self, tar_box, grid, stride):
@@ -397,7 +416,7 @@ class YOLOXLoss:
         # (1, 4) & (X, 4) -> (X, 4) / [-0.5*gt_W, -0.5*gt_H, 0.5*gt_W, 0.5*gt_H]
         wh_offsets = gt_xywh[:, 2:].repeat(1, 2) * offsets
         # gt_xyxy: (X, 4) & (X, 4) -> (X, 4) / [gt_Xmin, gt_Ymin, gt_Xmax, gt_Ymax]
-        gt_xyxy = gt_xywh.repeat(1, 2) + wh_offsets
+        gt_xyxy = gt_xywh[:, :2].repeat(1, 2) + wh_offsets
         # (X, 4) & (1, 4) -> (X, 4) / [-gt_Xmin, -gt_Ymin, gt_Xmax, gt_Ymax]
         gt_xyxy = gt_xyxy * gt_xyxy.new_tensor([-1, -1, 1, 1]).unsqueeze(0) 
         # ctr_grid: (h*w, 2) / [grid_Xctr, grid_Yctr]
@@ -417,7 +436,7 @@ class YOLOXLoss:
         # (X, 2) -> (X, 4); [gt_Xctr, gt_Yctr, gt_Xctr, gt_Yctr]
         gt_ctr = gt_xywh[:, :2].repeat(1, 2)
         # (X, 4) & (1, 4) -> (X, 4); [gt_Xctr-radius, gt_Yctr-radius, gt_Xctr+radius, gt_Yctr+radius]
-        gt_ctr_offsets = gt_ctr + ctr_offsets.unsequeeze(0)
+        gt_ctr_offsets = gt_ctr + ctr_offsets.unsqueeze(0)
         # (X, 4) & (1, 4) -> (X, 4); [-(gt_Xctr-radius), -(gt_Yctr-radius), gt_Xctr+radius, gt_Yctr+radius]
         gt_ctr_offsets *= gt_ctr_offsets.new_tensor([-1, -1, 1, 1]).unsqueeze(0)
         # (1, h*w, 4) & (X, 1, 4) -> (X, h*w, 4); [grid_Xctr-(gt_Xctr-radius), grid_Yctr-(gt_Yctr-radius), grid_Xctr+gt_Xctr+radius, grid_Yctr+gt_Yctr+radius]
@@ -427,6 +446,8 @@ class YOLOXLoss:
         # (X, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
         is_grid_in_gtctr_all = is_grid_in_gtctr.sum(0) > 0.0
 
+        del gt_xywh, gt_xyxy, ctr_grid, box_delta, gt_ctr, ctr_delta
+        
         # ====================================== fliter by conditions ======================================
         # (h*w,) & (h*w,) -> (h*w,)
         is_grid_in_gtbox_or_gtctr = is_grid_in_gtbox_all | is_grid_in_gtctr_all
@@ -459,10 +480,10 @@ class YOLOXLoss:
         # (valid_num_box, k)
         topk_iou, _ = torch.topk(iou, k, dim=1)
         # (valid_num_box, k) -> (valid_num_box, )
-        dynamic_k = torch.clamp(topk_iou.sum(1).int(), min=1).tolist()
+        dynamic_k = torch.clamp(topk_iou.sum(1).int(), min=1, max=cost.size(1)).tolist()
         for i in range(cost.size(0)):  # each valid gt
             # 选取最小的dynamic_k[i]个值（因为不满足条件的prediction对应的cost加上了1000000）
-            _, pos_idx = torch.topk(cost[i], dynamic_k[i], largest=False)  
+            _, pos_idx = torch.topk(cost[i], k=dynamic_k[i], largest=False)
             matching_matrix[i][pos_idx] = 1
 
         del topk_iou, dynamic_k
@@ -488,12 +509,13 @@ class YOLOXLoss:
         matched_gt_idx = matching_matrix[:, fg_mask].argmax(0)
         # (valid_num_box, Y) & (valid_num_box, Y) -> (valid_num_box, Y) -> (Y,) -> (M,)
         matched_iou = (matching_matrix * iou).sum(0)[fg_mask]
-        return num_fg, matched_iou, matched_gt_idx
+        return frontground_mask, num_fg, matched_iou, matched_gt_idx
 
-    def _make_grid(h, w, dtype):
+    def _make_grid(self, h, w, dtype):
         ys, xs = torch.meshgrid(torch.arange(h), torch.arange(w))
         # 排列成(x, y)的形式，是因为模型输出的预测结果的排列是[x, y, w, h, cof, cls1, cls2, ...]
         grid = torch.stack((xs, ys), dim=2).view(1, 1, h, w, 2).contiguous().type(dtype)
+        del xs, ys
         return grid
 
     def _make_center_grid(self, grid, stride):
@@ -504,8 +526,8 @@ class YOLOXLoss:
         Return:
             ctr_grid: (h*w, 2) / [x_center, y_center]
         """
-        grid *= stride  # 将grid还原到原始scale
-        ctr_grid = grid + 0.5 * stride  # 左上角坐标 -> 中心点坐标
+        grid_ = grid * stride  # 将grid还原到原始scale
+        ctr_grid = grid_ + 0.5 * stride  # 左上角坐标 -> 中心点坐标
         return ctr_grid
 
     def iou_loss(self, pred_box, tar_box, fg, iou_type='iou'):
@@ -541,6 +563,7 @@ class YOLOXLoss:
 
     def build_l1_target(self, grid, stride, tar_box, num_fg, fg):
         """
+        将target转换到对应stage的prediction模式（及将(ctr_x, ctr_y)转换为相对于对应的grid左上角的偏移量，将(w, h)转换为对应尺度下的长和宽）
         Args:
             grid: (h*w, 2)
             stride: a scaler

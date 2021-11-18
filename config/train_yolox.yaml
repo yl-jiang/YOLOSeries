@@ -2,10 +2,9 @@ loss_hyp:
   use_focal_loss: false # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  reg_loss_scale: 0.05  # 回归损失（bbox损失）权重
-  cls_loss_scale: 0.5  # 分类损失权重
+  reg_loss_scale: 0.5  # 回归损失（bbox损失）权重
+  cls_loss_scale: 1.0  # 分类损失权重
   cof_loss_scale: 1.0  # 置信度损失权重
-  anchor_match_thr: 4.0  # 该参数用于过滤预测框与标签框之间匹配的阈值
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 
   cof_pos_weight: 1.0  # 
@@ -20,7 +19,7 @@ train_hyp:
   input_img_size:  # 输入训练网络的图片大小
     - 640
     - 640
-  batch_size: 4
+  batch_size: 2
   drop_last: true  # Pytorch DataLoader中的参数
   pin_memory: true  # Pytorch DataLoader中的参数
   shuffle: true  # Pytorch DataLoader中的参数
@@ -36,15 +35,15 @@ train_hyp:
   validation_every: 0.5  # 每隔多少个epoch validate一次
   show_tbar_every: 5  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
-  log_save_path: ~  # 是否保存log文件
-  save_log_txt: true
+  save_log_txt: true  # 是否保存log文件
+  log_save_path: ~
   pretrained_model_path: "xxx/xxx.pth"  # 预训练模型路径
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_path: null  # 当前工作目录（可以不设置）
   calculate_map_every: ~
   calculate_map: false
-  save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
-  model_type: 'middle'  # 使用模型类型
+  save_ckpt_every: 500  # 每隔多少个epoch保存一次模型
+  model_type: 'smalldw'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
 

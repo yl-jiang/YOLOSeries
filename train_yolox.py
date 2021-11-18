@@ -9,8 +9,7 @@ sys.path.insert(0, str(current_work_directionary))
 import cv2
 import torch.cuda
 from torch.utils.tensorboard import SummaryWriter
-from models import Yolov5Small, Yolov5Middle, Yolov5Large, Yolov5SmallWithPlainBscp, Yolov5XLarge
-from models import Yolov5SmallDW, Yolov5MiddleDW, Yolov5LargeDW, Yolov5XLargeDW
+from models import YoloXSmall
 from tqdm import tqdm
 from config import Config
 import logging
@@ -24,11 +23,11 @@ import torch.nn.functional as F
 import math
 import torch.optim.lr_scheduler as lr_scheduler
 from torch.cuda import amp
-from loss import YOLOV5Loss
+from loss import YOLOXLoss
 from trainer import ExponentialMovingAverageModel
 import torch.optim as optim
 from torchnet.meter import AverageValueMeter
-from trainer import Evaluate
+from trainer import YOLOXEvaluater as Evaluate
 from torch import nn
 from dataset import testdataloader, YoloDataloader
 import argparse
@@ -38,17 +37,11 @@ from utils import mAP_v2, cv2_save_img_plot_pred_gt
 
 class Training:
 
-    def __init__(self, anchors, hyp):
+    def __init__(self, hyp):
         # parameters
         self.hyp = hyp
         self.select_device()
         self.use_cuda = self.hyp['device'] == 'cuda'
-        self.anchors = anchors
-
-        if isinstance(anchors, (list, tuple)):
-            self.anchors = torch.tensor(anchors)  # (3, 3, 2)
-        self.anchors = self.anchors.to(self.hyp['device'])
-        anchor_num_per_stage = self.anchors.size(0)  # 3
 
         # 确保输入图片的shape必须能够被32整除（对yolov5s而言），如果不满足条件则对设置的输入shape进行调整
         self.hyp['input_img_size'] = self.padding(self.hyp['input_img_size'], 32)
@@ -75,12 +68,12 @@ class Training:
         self.init_lr = self.hyp['init_lr']
         
         # model, optimizer, loss, lr_scheduler, ema
-        self.model = self.select_model(anchor_num_per_stage, self.hyp['num_class']).to(hyp['device'])
+        self.model = YoloXSmall(num_classes=self.dataset.num_class).to(hyp['device'])
         self.optimizer = self._init_optimizer()
         self.optim_scheduler = lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=self._lr_lambda)
-        self.loss_fcn = YOLOV5Loss(self.anchors, self.hyp)
+        self.loss_fcn = YOLOXLoss(self.hyp)
         self.ema_model = ExponentialMovingAverageModel(self.model)
-        self.validate = Evaluate(self.ema_model.ema, self.anchors, self.hyp)
+        self.validate = Evaluate(self.ema_model.ema, self.hyp)
 
         # load pretrained model or initialize model's parameters
         # self.load_model(True, 'cpu')
@@ -106,27 +99,6 @@ class Training:
         dataloader, dataset = YoloDataloader(self.hyp)
         return dataloader, dataset
 
-    @property
-    def select_model(self):
-        if self.hyp['model_type'].lower() == "plainsmall":
-            return Yolov5SmallWithPlainBscp
-        elif self.hyp['model_type'].lower() == "middle":
-            return Yolov5Middle
-        elif self.hyp['model_type'].lower() == "large":
-            return Yolov5Large
-        elif self.hyp['model_type'].lower() == "xlarge":
-            return Yolov5XLarge
-        elif self.hyp['model_type'].lower() == "smalldw":
-            return Yolov5SmallDW
-        elif self.hyp['model_type'].lower() == "middledw":
-            return Yolov5MiddleDW
-        elif self.hyp['model_type'].lower() == "largedw":
-            return Yolov5LargeDW
-        elif self.hyp['model_type'].lower() == "xlargedw":
-            return Yolov5XLargeDW
-        else:
-            return Yolov5Small
-
     @staticmethod
     def padding(hw, factor=32):
         h, w = hw
@@ -141,10 +113,10 @@ class Training:
     def _config_logger(self):
         clear_dir(str(self.cwd / 'log'))  # 再写入log文件前先清空log文件夹
         model_summary = summary_model(self.model, self.hyp['input_img_size'], verbose=False)
-        logger = logging.getLogger("SimpleYolov5")
+        logger = logging.getLogger("SimpleYOLOX")
         logger.setLevel(logging.INFO)
         if self.hyp['save_log_txt']:
-            if self.hyp['log_save_path'] and Path(self.hyp['log_save_path']).exists():
+            if self.hyp.get('log_save_path', None) and Path(self.hyp['log_save_path']).exists():
                 txt_log_path = self.hyp['log_save_path']
             else:
                 txt_log_path = str(self.cwd / 'log' / 'log.txt')
@@ -160,7 +132,7 @@ class Training:
         msg += f"Model Summary:\tlayers {model_summary['number_layers']}; parameters {model_summary['number_params']}; gradients {model_summary['number_gradients']}; flops {model_summary['flops']}GFLOPs"
         msg += f"\n{'=' * 70} Training {'=' * 70}\n"
         logger.info(msg)
-        tags = ("all_mem(G)", "cac_mem(G)", "epoch", "step", "batchsz", "img_shape", "tot_loss", "obj_loss",
+        tags = ("all_mem(G)", "cac_mem(G)", "epoch", "step", "batchsz", "img_shape", "tot_loss", "reg_loss",
                 "cof_loss", "cls_loss", "use_time(s)", "tar_num", "model_saved")
         logger.info("{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}".format(*tags))
         return logger
@@ -198,7 +170,7 @@ class Training:
         del param_group_weight, param_group_bias, param_group_other
         return optimizer
 
-    def _init_weight(self):
+    def _init_bias(self, p):
         """
         初始化模型参数，主要是对detection layers的bias参数进行特殊初始化，参考RetinaNet那篇论文，这种初始化方法可让网络较容易度过前期训练困难阶段
         （使用该初始化方法可能针对coco数据集有效，在对global wheat数据集的测试中，该方法根本train不起来）
@@ -214,113 +186,116 @@ class Training:
             elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6)):
                 m.inplace = True
 
-        detect_layer = [self.model.detect.detect_small,
-                        self.model.detect.detect_mid,
-                        self.model.detect.detect_large]
+        cls_layer = [self.model.head.pred_small['cls'],
+                     self.model.head.pred_middle['cls'],
+                     self.model.head.pred_large['cls']]
 
-        input_img_shape = 128
-        stage_outputs = self.model(torch.zeros(1, 3, input_img_shape, input_img_shape).float().to(self.hyp['device']))
-        strides = torch.tensor([input_img_shape / x.size(2) for x in stage_outputs])
-        class_frequency = None  # 各类别占整个数据集的比例
-        for m, stride in zip(detect_layer, strides):
-            bias = m.bias.view(self.model.num_anchor, -1)  # (255,) -> (3, 85)
-            with torch.no_grad():
-                bias[:, 4] += math.log(8 / (self.hyp['input_img_size'][0] / stride) ** 2)
-                if class_frequency is None:
-                    bias[:, 5:] += math.log(0.6 / (self.model.num_class - 0.99))  # cls
-                else:
-                    # 类别较多的那一类给予较大的对应bias值，类别较少的那些类给予较小的bias。
-                    # 这样做的目的是为了解决类别不平衡问题，因为这种初始化方式只在分类层进行，会使得网络在进行分类预测时，预测到类别较少的那一类case较为容易（因为对应的bias较小，容易在预测这些类别时给出较大的预测值）
-                    # 使用这种初始化方式的好处主要是为了解决数据类别不平衡问题造成的早期训练不稳定情况。
-                    # 注：这种初始化方法只针对二分类（因为多分类不能针对各个class给予不同的bias）
-                    assert isinstance(class_frequency, torch.Tensor), f"class_frequency should be a tensor but we got {type(class_frequency)}"
-                    bias[:, 5:] += torch.log(class_frequency / class_frequency.sum())
+        reg_layer = [self.model.head.pred_small['reg'],
+                     self.model.head.pred_middle['reg'],
+                     self.model.head.pred_large['reg']]
+        
+        for layer in cls_layer:
+            for m in layer:
+                if isinstance(m, nn.Conv2d):
+                    bias = m.bias.view(1, -1) 
+                    bias.data.fill_(-math.log((1-p) / p))
+                    m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
+
+        for m in reg_layer:
+            if isinstance(m, nn.Conv2d):
+                bias = m.bias.view(1, -1) 
+                bias.data.fill_(-math.log((1-p) / p))
                 m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
-        del stage_outputs
 
     def step(self):
-        self.optimizer.zero_grad()
-        tot_loss_before = float('inf')
-        APFifty, meanAP, = 0, 0
-        epoch_period = 0
-        for epoch in range(self.hyp['total_epoch']):
-            self.model.train()
-            epoch_start = time_synchronize()
-            with tqdm(total=len(self.dataloader), ncols=180, file=sys.stdout) as tbar:
-                for i, x in enumerate(self.dataloader):
-                    start_t = time_synchronize()
-                    cur_steps = len(self.dataloader) * epoch + i + 1
-                    ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
-                    img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
-                    img, ann = self.mutil_scale_training(img, ann)
-                    batchsz, inp_c, inp_h, inp_w = img.shape
+        with torch.autograd.set_detect_anomaly(True):  # debug backward bugs
+            self.optimizer.zero_grad()
+            tot_loss_before = float('inf')
+            APFifty, meanAP, = 0, 0
+            epoch_period = 0
+            for epoch in range(self.hyp['total_epoch']):
+                self.model.train()
+                epoch_start = time_synchronize()
+                with tqdm(total=len(self.dataloader), ncols=180, file=sys.stdout) as tbar:
+                    for i, x in enumerate(self.dataloader):
+                        start_t = time_synchronize()
+                        cur_steps = len(self.dataloader) * epoch + i + 1
+                        ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
+                        img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
+                        img, ann = self.mutil_scale_training(img, ann)
+                        batchsz, inp_c, inp_h, inp_w = img.shape
 
-                    # warmup
-                    self.warmup(epoch, cur_steps)
+                        # warmup
+                        self.warmup(epoch, cur_steps)
 
-                    # forward
-                    with amp.autocast(enabled=self.use_cuda):
-                        stage_preds = self.model(img)
-                        tot_loss, obj_loss, cof_loss, cls_loss, targets_num = self.loss_fcn(stage_preds, ann)
+                        # forward
+                        with amp.autocast(enabled=self.use_cuda):
+                            stage_preds = self.model(img)
+                            loss_dict = self.loss_fcn(ann, stage_preds)
+                            tot_loss = loss_dict['tot_loss']
+                            reg_loss = loss_dict['reg_loss']  # reg_loss
+                            cof_loss = loss_dict['cof_loss']
+                            cls_loss = loss_dict['cls_loss']
+                            targets_num = loss_dict['num_gt']
 
-                    # backward
-                    self.scaler.scale(tot_loss).backward()
+                        # backward
+                        self.scaler.scale(tot_loss).backward()
 
-                    # optimize
-                    if cur_steps % self.accumulate == 0:
-                        self.scaler.step(self.optimizer)
-                        self.scaler.update()
-                        self.optimizer.zero_grad()
-                        # maintain a model and update it every time, but it only using for inference
-                        if self.hyp['do_ema']:
-                            self.ema_model.update(self.model)
+                        # optimize
+                        if cur_steps % self.accumulate == 0:
+                            self.scaler.step(self.optimizer)
+                            self.scaler.update()
+                            self.optimizer.zero_grad()
+                            # maintain a model and update it every time, but it only using for inference
+                            if self.hyp['do_ema']:
+                                self.ema_model.update(self.model)
 
-                    # tensorboard
-                    tot_loss, obj_loss, cof_loss, cls_loss = self.update_loss_meter(tot_loss.item(), obj_loss, cof_loss, cls_loss)
-                    is_best = tot_loss < tot_loss_before
-                    self.summarywriter(cur_steps, tot_loss, obj_loss, cof_loss, cls_loss)
-                    tot_loss_before = tot_loss
+                        # tensorboard
+                        tot_loss, reg_loss, cof_loss, cls_loss = self.update_loss_meter(tot_loss.item(), reg_loss.item(), cof_loss.item(), cls_loss.item())
+                        is_best = tot_loss < tot_loss_before
+                        self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss)
+                        tot_loss_before = tot_loss
 
-                    # validation
-                    if cur_steps % (self.hyp['validation_every']*len(self.dataloader))== 0:
-                        for j, y in enumerate(self.testdataloader):
-                            inp = y['img'].to(self.hyp['device'])  # (1, 3, h, w)
-                            info = y['resize_info']
-                            outputs = self.validate(inp)
-                            if outputs:
-                                imgs, preds = self.preds_postprocess(inp.cpu(), outputs, info)
-                                for k in range(len(imgs)):
-                                    save_path = str(self.cwd / 'result' / 'predictions' / f"{j + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
-                                    maybe_mkdir(Path(save_path).parent)
-                                    cv2_save_img(imgs[k], preds[k][:, :4], preds[k][:, 5].astype(np.uint8), preds[k][:, 4], save_path)
-                                del imgs, preds, outputs
-                    
-                    # mAP
-                    if self.hyp['calculate_map_every'] is not None and cur_steps % self.hyp['calculate_map_every'] == 0:
-                        self.calculate_mAP()
+                        # validation
+                        if cur_steps % (self.hyp['validation_every']*len(self.dataloader))== 0:
+                            for j, y in enumerate(self.testdataloader):
+                                inp = y['img'].to(self.hyp['device'])  # (1, 3, h, w)
+                                info = y['resize_info']
+                                outputs = self.validate(inp)
+                                if outputs:
+                                    imgs, preds = self.preds_postprocess(inp.cpu(), outputs, info)
+                                    for k in range(len(imgs)):
+                                        save_path = str(self.cwd / 'result' / 'predictions' / f"{j + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
+                                        maybe_mkdir(Path(save_path).parent)
+                                        cv2_save_img(imgs[k], preds[k][:, :4], preds[k][:, 5].astype(np.uint8), preds[k][:, 4], save_path)
+                                    del imgs, preds, outputs
+                        
+                        # mAP
+                        if self.hyp['calculate_map_every'] is not None and cur_steps % self.hyp['calculate_map_every'] == 0:
+                            self.calculate_mAP()
 
-                    # verbose
-                    if cur_steps % self.hyp['show_tbar_every'] == 0:
-                        self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, obj_loss, cof_loss, cls_loss, targets_num, inp_h, APFifty, meanAP, epoch_period)
+                        # verbose
+                        if cur_steps % self.hyp['show_tbar_every'] == 0:
+                            self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, reg_loss, cof_loss, cls_loss, targets_num, inp_h, APFifty, meanAP, epoch_period)
 
-                    # save model
-                    if cur_steps % (self.hyp['save_ckpt_every']*len(self.dataloader)) == 0:
-                        self.save(tot_loss, epoch+1, cur_steps, True)
+                        # save model
+                        if cur_steps % (self.hyp['save_ckpt_every']*len(self.dataloader)) == 0:
+                            self.save(tot_loss, epoch+1, cur_steps, True)
 
-                    del img, ann
-                    tbar.update()
-                tbar.close()
+                        del img, ann
+                        tbar.update()
+                    tbar.close()
 
-            epoch_period = time_synchronize() - epoch_start
-            # update lr
-            self.optim_scheduler.step()
+                epoch_period = time_synchronize() - epoch_start
+                # update lr
+                self.optim_scheduler.step()
 
-        # save the lastest model
-        if self.hyp['model_save_dir'] and Path(self.hyp['model_save_dir']).exists():
-            save_path = self.hyp['model_save_dir']
-        else:
-            save_path = str(self.cwd / 'checkpoints' / f'final.pth')
-        self.save(tot_loss, 'finally', 'finally', True, save_path)
+            # save the lastest model
+            if self.hyp['model_save_dir'] and Path(self.hyp['model_save_dir']).exists():
+                save_path = self.hyp['model_save_dir']
+            else:
+                save_path = str(self.cwd / 'checkpoints' / f'final.pth')
+            self.save(tot_loss, 'finally', 'finally', True, save_path)
 
     def show_tbar(self, tbar, epoch, step, batchsz, start_t, is_best, tot_loss, box_loss, cof_loss, cls_loss, 
                   targets_num, img_shape, elevenPointAP, everyPointAP, epoch_period):
@@ -370,7 +345,7 @@ class Training:
     def preds_postprocess(self, inp, outputs, info):
         """
 
-        :param inp: normalization image
+        :param inp: normalized image
         :param outputs:
         :param info:
         :return:
@@ -426,10 +401,10 @@ class Training:
             else:
                 self.hyp['device'] = 'cpu'
 
-    def summarywriter(self, steps, tot_loss, obj_loss, cof_loss, cls_loss):
+    def summarywriter(self, steps, tot_loss, reg_loss, cof_loss, cls_loss):
         lrs = [x['lr'] for x in self.optimizer.param_groups]
         self.writer.add_scalar(tag='train/tot_loss', scalar_value=tot_loss, global_step=steps)
-        self.writer.add_scalar('train/obj_loss', obj_loss, steps)
+        self.writer.add_scalar('train/reg_loss', reg_loss, steps)
         self.writer.add_scalar('train/cof_loss', cof_loss, steps)
         self.writer.add_scalar('train/cls_loss', cls_loss, steps)
         self.writer.add_scalar('train/lr', lrs[0], steps)
@@ -458,8 +433,8 @@ class Training:
         """
         load pretrained model, EMA model, optimizer(注意：__init_weights()方法并不适用于所有数据集)
         """
-        self._init_weight()
-        if self.hyp['use_pretrained_mdoel'] and self.hyp["pretrained_model_path"] is not None:
+        self._init_bias(self.hyp.get('weight_init_prior_prob', 0.01))
+        if self.hyp.get("pretrained_model_path", None):
             model_path = self.hyp["pretrained_model_path"]
             if Path(model_path).exists():
                 try:
@@ -493,7 +468,7 @@ class Training:
             print('training from stratch!')
 
     def save(self, loss, epoch, step, save_optimizer, save_path=None):
-        if self.hyp['model_save_dir'] and Path(self.hyp['model_save_dir']).exists():
+        if self.hyp.get('model_save_dir', None) and Path(self.hyp['model_save_dir']).exists():
             save_path = self.hyp['model_save_dir']
         else:
             save_path = str(self.cwd / 'checkpoints' / f'every_{self.hyp["model_type"]}.pth')            
@@ -619,30 +594,37 @@ class Training:
 
 if __name__ == '__main__':
     config_ = Config()
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, required=True,dest='cfg', help='path to config file')
-    parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
-    parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
-    parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
-    parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
-    parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
-    parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
-    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
-    parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
-    parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
-    parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
-    parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
-    parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
-    parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
-    parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
-    parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
-    parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
-    parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
-    parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
+    # parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
+    # parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
+    # parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
+    # parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
+    # parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
+    # parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
+    # parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    # parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
+    # parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
+    # parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
+    # parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
+    # parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
+    # parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
+    # parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
+    # parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
+    # parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
+    # parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
+    # parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
+    # parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
 
-    args = parser.parse_args()
+    class Args:
+        cfg = "/home/uih/JYL/Dataset/github/config/train_yolox.yaml"
+        img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
+        lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
+        name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+
+
+    # args = parser.parse_args()
+    args = Args()
     hyp = config_.get_config(args.cfg, args)
-    anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
-    train = Training(anchors, hyp)
+    train = Training(hyp)
     train.step()
