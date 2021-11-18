@@ -19,7 +19,7 @@ train_hyp:
   input_img_size:  # 输入训练网络的图片大小
     - 640
     - 640
-  batch_size: 2
+  batch_size: 4
   drop_last: true  # Pytorch DataLoader中的参数
   pin_memory: true  # Pytorch DataLoader中的参数
   shuffle: true  # Pytorch DataLoader中的参数

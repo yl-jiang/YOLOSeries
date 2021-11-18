@@ -335,7 +335,7 @@ class YOLOXLoss:
                 pred_cof_i = pred[frontground_mask, 4]  # (Y, )
                 pred_cls_i = pred[frontground_mask, 5:]  # (Y, 80)
                 # (Y, 80) & (Y, 1) -> (Y, 80)
-                pred_cls_i_for_loss = pred_cls_i.sigmoid_() * pred_cof_i.sigmoid_().unsqueeze(1)
+                pred_cls_i_for_loss = torch.sigmoid(pred_cls_i) * torch.sigmoid(pred_cof_i).unsqueeze(1)
                 # (Y, 80) -> (valid_num_box, Y, 80)
                 pred_cls_i_for_loss = torch.sqrt(pred_cls_i_for_loss.unsqueeze(0).repeat(tar_cls_i.size(0), 1, 1))
                 # (valid_num_box, 80) -> (valid_num_box, Y, 80)
@@ -420,7 +420,7 @@ class YOLOXLoss:
         # (X, 4) & (1, 4) -> (X, 4) / [-gt_Xmin, -gt_Ymin, gt_Xmax, gt_Ymax]
         gt_xyxy = gt_xyxy * gt_xyxy.new_tensor([-1, -1, 1, 1]).unsqueeze(0) 
         # ctr_grid: (h*w, 2) / [grid_Xctr, grid_Yctr]
-        ctr_grid = self._make_center_grid(grid, stride)
+        ctr_grid = self._make_center_grid(grid.clone(), stride)
         # (h*w, 2) -> (h*w, 4); (h*w, 4) & (1, 4) -> (h*w, 4) / [grid_Xctr, grid_Yctr, -grid_Xctr, -grid_Yctr]
         ctr_grid = ctr_grid.repeat(1, 2) * ctr_grid.new_tensor([1, 1, -1, -1]).unsqueeze(0)
         # (X, 1, 4) & (1, h*w, 4) -> (X, h*w, 4)
@@ -446,13 +446,14 @@ class YOLOXLoss:
         # (X, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
         is_grid_in_gtctr_all = is_grid_in_gtctr.sum(0) > 0.0
 
-        del gt_xywh, gt_xyxy, ctr_grid, box_delta, gt_ctr, ctr_delta
-        
         # ====================================== fliter by conditions ======================================
         # (h*w,) & (h*w,) -> (h*w,)
         is_grid_in_gtbox_or_gtctr = is_grid_in_gtbox_all | is_grid_in_gtctr_all
         # (X, M) & (X, M) -> (X, N)
         is_grid_in_gtbox_and_gtctr = is_grid_in_gtbox[:, is_grid_in_gtbox_or_gtctr] & is_grid_in_gtctr[:, is_grid_in_gtbox_or_gtctr]
+
+        if is_grid_in_gtbox_or_gtctr.sum() == 0:
+            a = 1
         return is_grid_in_gtbox_or_gtctr, is_grid_in_gtbox_and_gtctr
 
     def simple_ota(self, cost, iou, frontground_mask):
@@ -515,7 +516,6 @@ class YOLOXLoss:
         ys, xs = torch.meshgrid(torch.arange(h), torch.arange(w))
         # 排列成(x, y)的形式，是因为模型输出的预测结果的排列是[x, y, w, h, cof, cls1, cls2, ...]
         grid = torch.stack((xs, ys), dim=2).view(1, 1, h, w, 2).contiguous().type(dtype)
-        del xs, ys
         return grid
 
     def _make_center_grid(self, grid, stride):
@@ -526,8 +526,8 @@ class YOLOXLoss:
         Return:
             ctr_grid: (h*w, 2) / [x_center, y_center]
         """
-        grid_ = grid * stride  # 将grid还原到原始scale
-        ctr_grid = grid_ + 0.5 * stride  # 左上角坐标 -> 中心点坐标
+        grid_tmp = grid * stride  # 将grid还原到原始scale
+        ctr_grid = grid_tmp + 0.5 * stride  # 左上角坐标 -> 中心点坐标
         return ctr_grid
 
     def iou_loss(self, pred_box, tar_box, fg, iou_type='iou'):
