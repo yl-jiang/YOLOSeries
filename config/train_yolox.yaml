@@ -21,17 +21,18 @@ train_hyp:
     - 640
   batch_size: 4
   drop_last: true  # Pytorch DataLoader中的参数
-  pin_memory: true  # Pytorch DataLoader中的参数
+  pin_memory: false  # Pytorch DataLoader中的参数
   shuffle: true  # Pytorch DataLoader中的参数
-  num_workers: 6  # Pytorch DataLoader中的参数
+  num_workers: 0  # Pytorch DataLoader中的参数
   total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
   do_warmup: true  # 是否开启预热训练
   accumulate_loss_step: 64  # 累积梯度下降
   warmup_epoch: 3
   do_ema: true  # 是否维持一个Everage Moving Model
-  warmup_bias_lr: 0.1
+  warmup_bias_lr: 0.01  # warmup lr for bias
   warmup_momentum: 0.8
+  weight_init_prior_prob: 0.01  # 用于网络中的bias参数初始化
   validation_every: 0.5  # 每隔多少个epoch validate一次
   show_tbar_every: 5  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
@@ -43,15 +44,15 @@ train_hyp:
   calculate_map_every: ~
   calculate_map: false
   save_ckpt_every: 500  # 每隔多少个epoch保存一次模型
-  model_type: 'smalldw'  # 使用模型类型
+  model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
 
 optim_hyp:
-  optimizer: sgd # 优化器类别/['sgd' or 'adam']
+  optimizer: adam # 优化器类别/['sgd' or 'adam']
   init_lr: 0.01
-  weight_decay: 0.0005
-  momentum: 0.937
+  weight_decay: 0.0001
+  momentum: 0.999
   lr_scheculer_bias: 0.2
 
 

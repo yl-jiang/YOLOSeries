@@ -19,9 +19,9 @@ coco_train_hyp:
     - 640
   batch_size: 16
   drop_last: true
-  pin_memory: true
+  pin_memory: false
   shuffle: true
-  num_workers: 6
+  num_workers: 0
   total_epoch: 300
   device: "cpu"
   do_warmup: true

@@ -4,4 +4,4 @@ from .yolov5l import Yolov5Large
 from .yolov5s_plain_bscp import Yolov5SmallWithPlainBscp
 from .yolov5x import Yolov5XLarge
 
-from .yolox_s import YoloXSmall
+from .yolox_s import YoloXSmall, YoloXMiddle

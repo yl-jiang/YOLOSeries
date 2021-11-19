@@ -493,7 +493,7 @@ class Training:
             print('training from stratch!')
 
     def save(self, loss, epoch, step, save_optimizer, save_path=None):
-        if Path(self.hyp['model_save_dir']).exists():
+        if self.hyp.get('model_save_dir', None) and Path(self.hyp['model_save_dir']).exists():
             save_path = self.hyp['model_save_dir']
         else:
             save_path = str(self.cwd / 'checkpoints' / f'every_{self.hyp["model_type"]}.pth')            
@@ -644,7 +644,7 @@ if __name__ == '__main__':
     # args = parser.parse_args()
 
     class Args:
-        cfg = "/home/uih/JYL/Dataset/github/config/train.yaml"
+        cfg = "/home/uih/JYL/Dataset/github/config/train_yolov5.yaml"
         img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
         lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
         name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'

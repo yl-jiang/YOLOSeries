@@ -308,7 +308,7 @@ class YOLOXLoss:
         origin_pred_box = preds[..., :4].clone()
         # restore predictions to input scale / (N, h*w, 85)
         preds[..., :2] = (preds[..., :2] + grid) * stride
-        preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride
+        preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride  # 这一步可能会由于preds[..., 2:4]值过大而导致进行exp计算后出现Nan
 
         for i in range(tars.size(0)):  # each image
             tar = tars[i]  # (num_bbox, 6)
@@ -407,33 +407,41 @@ class YOLOXLoss:
             is_grid_in_gtbox_or_gtctr: (h*w,) / front ground mask / 其中为True的元素个数设为Y，则Y >= N
             is_grid_in_gtbox_and_gtctr: (valid_num_box, N)
         """
-        # gt_xywh: (X, 4) / [gt_Xctr, gt_Yctr, gt_W, gt_H]
+        # gt_xywh: (valid_num_box, 4) / [gt_Xctr, gt_Yctr, gt_W, gt_H]
         gt_xywh = tar_box.clone().detach()
         # =========================== 某个grid的中心点坐标是否落到某个gt box的内部 ===========================
-        r = 0.5
+        
         # offsets: (1, 4)
-        offsets = gt_xywh.new_tensor([-1, -1, 1, 1]).unsqueeze(0) * r
-        # (1, 4) & (X, 4) -> (X, 4) / [-0.5*gt_W, -0.5*gt_H, 0.5*gt_W, 0.5*gt_H]
+        offsets = gt_xywh.new_tensor([-1, -1, 1, 1]).unsqueeze(0) * 0.5
+        # (1, 4) & (valid_num_box, 4) -> (valid_num_box, 4) / [-0.5*gt_W, -0.5*gt_H, 0.5*gt_W, 0.5*gt_H]
         wh_offsets = gt_xywh[:, 2:].repeat(1, 2) * offsets
-        # gt_xyxy: (X, 4) & (X, 4) -> (X, 4) / [gt_Xmin, gt_Ymin, gt_Xmax, gt_Ymax]
+        # gt_xyxy: (valid_num_box, 4) & (valid_num_box, 4) -> (valid_num_box, 4) / [gt_Xmin, gt_Ymin, gt_Xmax, gt_Ymax]
         gt_xyxy = gt_xywh[:, :2].repeat(1, 2) + wh_offsets
-        # (X, 4) & (1, 4) -> (X, 4) / [-gt_Xmin, -gt_Ymin, gt_Xmax, gt_Ymax]
+        # (valid_num_box, 4) & (1, 4) -> (valid_num_box, 4) / [-gt_Xmin, -gt_Ymin, gt_Xmax, gt_Ymax]
         gt_xyxy = gt_xyxy * gt_xyxy.new_tensor([-1, -1, 1, 1]).unsqueeze(0) 
         # ctr_grid: (h*w, 2) / [grid_Xctr, grid_Yctr]
         ctr_grid = self._make_center_grid(grid.clone(), stride)
         # (h*w, 2) -> (h*w, 4); (h*w, 4) & (1, 4) -> (h*w, 4) / [grid_Xctr, grid_Yctr, -grid_Xctr, -grid_Yctr]
         ctr_grid = ctr_grid.repeat(1, 2) * ctr_grid.new_tensor([1, 1, -1, -1]).unsqueeze(0)
-        # (X, 1, 4) & (1, h*w, 4) -> (X, h*w, 4)
+        # (valid_num_box, 1, 4) & (1, h*w, 4) -> (valid_num_box, h*w, 4) / []
         box_delta = gt_xyxy.unsqueeze(1) + ctr_grid.unsqueeze(0)
-        # (X, h*w, 4) -> (X, h*w)
+        # (valid_num_box, h*w, 4) -> (valid_num_box, h*w)
         is_grid_in_gtbox = box_delta.min(dim=2).values > 0.0
-        # (X, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
+        # (valid_num_box, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
         is_grid_in_gtbox_all = is_grid_in_gtbox.sum(0) > 0.0
+
+        # 如果grid的中心点坐标均没有在任何gt box内部，则对每个gt box而言，选取与距离最近的grid作为匹配的grid
+        if is_grid_in_gtbox_all.sum() == 0:
+            # (valid_num_box, 1, 2) & (1, h*w, 2) -> (valid_num_box, h*w, 2) -> (valid_num_box, h*w)
+            ctr_distance = torch.norm(tar_box[:, :2].unsqueeze(1) - ctr_grid[:, :2].unsqueeze(0), dim=2)
+            # (valid_num_box,)
+            dist_argmin = torch.argmin(ctr_distance, dim=1)
+            is_grid_in_gtbox_all[dist_argmin] = True
 
         # ======== 某个gird的中心坐标是否落到以某个gt box的中心点为圆心，center_radius为半径的圆形区域内 =========
         center_radius = 2.5
         ctr_offsets = gt_xywh.new_tensor([-1, -1, 1, 1]) * center_radius
-        # (X, 2) -> (X, 4); [gt_Xctr, gt_Yctr, gt_Xctr, gt_Yctr]
+        # (valid_num_box, 2) -> (valid_num_box, 4); [gt_Xctr, gt_Yctr, gt_Xctr, gt_Yctr]
         gt_ctr = gt_xywh[:, :2].repeat(1, 2)
         # (X, 4) & (1, 4) -> (X, 4); [gt_Xctr-radius, gt_Yctr-radius, gt_Xctr+radius, gt_Yctr+radius]
         gt_ctr_offsets = gt_ctr + ctr_offsets.unsqueeze(0)
@@ -446,14 +454,14 @@ class YOLOXLoss:
         # (X, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
         is_grid_in_gtctr_all = is_grid_in_gtctr.sum(0) > 0.0
 
+        if is_grid_in_gtctr_all.sum() == 0:
+            is_grid_in_gtctr_all = is_grid_in_gtbox_all
+
         # ====================================== fliter by conditions ======================================
         # (h*w,) & (h*w,) -> (h*w,)
         is_grid_in_gtbox_or_gtctr = is_grid_in_gtbox_all | is_grid_in_gtctr_all
         # (X, M) & (X, M) -> (X, N)
         is_grid_in_gtbox_and_gtctr = is_grid_in_gtbox[:, is_grid_in_gtbox_or_gtctr] & is_grid_in_gtctr[:, is_grid_in_gtbox_or_gtctr]
-
-        if is_grid_in_gtbox_or_gtctr.sum() == 0:
-            a = 1
         return is_grid_in_gtbox_or_gtctr, is_grid_in_gtbox_and_gtctr
 
     def simple_ota(self, cost, iou, frontground_mask):

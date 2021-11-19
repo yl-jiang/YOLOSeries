@@ -20,11 +20,11 @@ train_hyp:
   input_img_size:  # 输入训练网络的图片大小
     - 640
     - 640
-  batch_size: 4
+  batch_size: 2
   drop_last: true  # Pytorch DataLoader中的参数
-  pin_memory: true  # Pytorch DataLoader中的参数
+  pin_memory: false  # Pytorch DataLoader中的参数
   shuffle: true  # Pytorch DataLoader中的参数
-  num_workers: 6  # Pytorch DataLoader中的参数
+  num_workers: 0  # Pytorch DataLoader中的参数
   total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
   do_warmup: true  # 是否开启预热训练
@@ -39,12 +39,13 @@ train_hyp:
   log_save_path: ~  # 是否保存log文件
   save_log_txt: true
   pretrained_model_path: "xxx/xxx.pth"  # 预训练模型路径
+  model_save_dir: ~
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_path: null  # 当前工作目录（可以不设置）
   calculate_map_every: ~
   calculate_map: false
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
-  model_type: 'middle'  # 使用模型类型
+  model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
 

@@ -9,7 +9,7 @@ sys.path.insert(0, str(current_work_directionary))
 import cv2
 import torch.cuda
 from torch.utils.tensorboard import SummaryWriter
-from models import YoloXSmall
+from models import YoloXSmall, YoloXMiddle
 from tqdm import tqdm
 from config import Config
 import logging
@@ -55,6 +55,7 @@ class Training:
         self.box_loss_meter = AverageValueMeter()
         self.cof_loss_meter = AverageValueMeter()
         self.cls_loss_meter = AverageValueMeter()
+        self.l1_loss_meter = AverageValueMeter()
 
         # current work path
         if self.hyp['current_work_path'] is None:
@@ -68,7 +69,7 @@ class Training:
         self.init_lr = self.hyp['init_lr']
         
         # model, optimizer, loss, lr_scheduler, ema
-        self.model = YoloXSmall(num_classes=self.dataset.num_class).to(hyp['device'])
+        self.model = self.select_model(num_classes=self.dataset.num_class).to(hyp['device'])
         self.optimizer = self._init_optimizer()
         self.optim_scheduler = lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=self._lr_lambda)
         self.loss_fcn = YOLOXLoss(self.hyp)
@@ -80,7 +81,7 @@ class Training:
 
         # logger
         self.logger = self._config_logger()
-        tbar_tags = ("epoch", "tot", "box", "cof", "cls", "tnum", "imgsz", "lr", 'AP@.5', 'mAP', "time(s)")
+        tbar_tags = ("epoch", "tot", "box", "cof", "cls", "l1", "tnum", "imgsz", "lr", 'AP@.5', 'mAP', "time(s)")
         msg = "%10s" * len(tbar_tags)
         print(msg % tbar_tags)
 
@@ -94,6 +95,15 @@ class Training:
         if self.hyp['do_warmup']:
             self.hyp['warmup_steps'] = max(self.hyp.get('warmup_epoch', 3) * len(self.dataloader), 1000)
         self.accumulate = self.hyp['accumulate_loss_step'] / self.hyp['batch_size']
+
+    @property
+    def select_model(self):
+        if self.hyp['model_type'].lower() == "small":
+            return YoloXSmall
+        elif self.hyp['model_type'].lower() == "middle":
+            return YoloXMiddle
+        else:
+            return YoloXSmall
 
     def load_dataset(self):
         dataloader, dataset = YoloDataloader(self.hyp)
@@ -133,8 +143,8 @@ class Training:
         msg += f"\n{'=' * 70} Training {'=' * 70}\n"
         logger.info(msg)
         tags = ("all_mem(G)", "cac_mem(G)", "epoch", "step", "batchsz", "img_shape", "tot_loss", "reg_loss",
-                "cof_loss", "cls_loss", "use_time(s)", "tar_num", "model_saved")
-        logger.info("{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}".format(*tags))
+                "cof_loss", "cls_loss", "l1_loss", "use_time(s)", "tar_num", "model_saved")
+        logger.info("{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}".format(*tags))
         return logger
 
     def _lr_lambda(self, epoch, scheduler_type='linear'):
@@ -236,6 +246,7 @@ class Training:
                             reg_loss = loss_dict['reg_loss']  # reg_loss
                             cof_loss = loss_dict['cof_loss']
                             cls_loss = loss_dict['cls_loss']
+                            l1_loss = loss_dict['l1_loss']
                             targets_num = loss_dict['num_gt']
 
                         # backward
@@ -251,9 +262,9 @@ class Training:
                                 self.ema_model.update(self.model)
 
                         # tensorboard
-                        tot_loss, reg_loss, cof_loss, cls_loss = self.update_loss_meter(tot_loss.item(), reg_loss.item(), cof_loss.item(), cls_loss.item())
+                        tot_loss, reg_loss, cof_loss, cls_loss, l1_loss = self.update_loss_meter(tot_loss.item(), reg_loss.item(), cof_loss.item(), cls_loss.item(), l1_loss.item())
                         is_best = tot_loss < tot_loss_before
-                        self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss)
+                        self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_loss)
                         tot_loss_before = tot_loss
 
                         # validation
@@ -276,7 +287,7 @@ class Training:
 
                         # verbose
                         if cur_steps % self.hyp['show_tbar_every'] == 0:
-                            self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, reg_loss, cof_loss, cls_loss, targets_num, inp_h, APFifty, meanAP, epoch_period)
+                            self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, reg_loss, cof_loss, cls_loss, l1_loss, targets_num, inp_h, APFifty, meanAP, epoch_period)
 
                         # save model
                         if cur_steps % (self.hyp['save_ckpt_every']*len(self.dataloader)) == 0:
@@ -297,16 +308,16 @@ class Training:
                 save_path = str(self.cwd / 'checkpoints' / f'final.pth')
             self.save(tot_loss, 'finally', 'finally', True, save_path)
 
-    def show_tbar(self, tbar, epoch, step, batchsz, start_t, is_best, tot_loss, box_loss, cof_loss, cls_loss, 
+    def show_tbar(self, tbar, epoch, step, batchsz, start_t, is_best, tot_loss, box_loss, cof_loss, cls_loss, l1_loss, 
                   targets_num, img_shape, elevenPointAP, everyPointAP, epoch_period):
         # tbar
         lrs = [x['lr'] for x in self.optimizer.param_groups]
         if epoch_period == 0.0:  # 不显示第一个epoch的用时
             epoch_period = ""
-            tbar_msg = "#  {:^10d}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10d}{:^10d}{:^10.6f}{:^10.1f}{:^10.1f}{:^10s}"
+            tbar_msg = "#  {:^10d}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10d}{:^10d}{:^10.6f}{:^10.1f}{:^10.1f}{:^10s}"
         else:
-            tbar_msg = "#  {:^10d}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10d}{:^10d}{:^10.6f}{:^10.1f}{:^10.1f}{:^10.1f}"
-        values = (epoch, tot_loss, box_loss, cof_loss, cls_loss, targets_num, img_shape, lrs[0], elevenPointAP*100, everyPointAP*100, epoch_period)
+            tbar_msg = "#  {:^10d}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10d}{:^10d}{:^10.6f}{:^10.1f}{:^10.1f}{:^10.1f}"
+        values = (epoch, tot_loss, box_loss, cof_loss, cls_loss, l1_loss, targets_num, img_shape, lrs[0], elevenPointAP*100, everyPointAP*100, epoch_period)
         tbar.set_description_str(tbar_msg.format(*values))
 
         # maybe save info to log.txt
@@ -318,11 +329,14 @@ class Training:
             cached_memory = 0.
         if self.logger is not None:
             log_msg = f"{allocated_memory:^15.2f}{cached_memory:^15.2f}{(epoch+1):^15d}{step:^15d}{batchsz:^15d}{str(img_shape):^15s}"
-            log_msg += f"{tot_loss:^15.5f}{box_loss:^15.5f}{cof_loss:^15.5f}{cls_loss:^15.5f}"
+            log_msg += f"{tot_loss:^15.5f}{box_loss:^15.5f}{cof_loss:^15.5f}{cls_loss:^15.5f}{l1_loss:^15.5f}"
             period_t = time_synchronize() - start_t
             self.logger.info(log_msg + f"{period_t:^15.1e}" + f"{targets_num:^15d}" + f"{'yes' if is_best else 'no':^15s}")
 
     def warmup(self, epoch, cur_steps):
+        """
+        模型各部分参数的lr分别从一个很小的值开始，逐渐（一般线性）增大到设定的初始lr。这样做的目的是减少参数初始化带来的影响，使training过程平稳的度过前期的训练。
+        """
         if self.hyp['do_warmup'] and cur_steps < self.hyp["warmup_steps"]:
             self.accumulate = max(1, np.interp(cur_steps,
                                                [0., self.hyp['warmup_steps']],
@@ -401,12 +415,13 @@ class Training:
             else:
                 self.hyp['device'] = 'cpu'
 
-    def summarywriter(self, steps, tot_loss, reg_loss, cof_loss, cls_loss):
+    def summarywriter(self, steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_loss):
         lrs = [x['lr'] for x in self.optimizer.param_groups]
         self.writer.add_scalar(tag='train/tot_loss', scalar_value=tot_loss, global_step=steps)
         self.writer.add_scalar('train/reg_loss', reg_loss, steps)
         self.writer.add_scalar('train/cof_loss', cof_loss, steps)
         self.writer.add_scalar('train/cls_loss', cls_loss, steps)
+        self.writer.add_scalar('train/l1_loss', l1_loss, steps)
         self.writer.add_scalar('train/lr', lrs[0], steps)
 
     def mutil_scale_training(self, imgs, targets):
@@ -492,7 +507,7 @@ class Training:
         torch.save(state_dict, save_path, _use_new_zipfile_serialization=False)
         del state_dict, optim_state, hyp
 
-    def update_loss_meter(self, tot_loss, box_loss, cof_loss, cls_loss):
+    def update_loss_meter(self, tot_loss, box_loss, cof_loss, cls_loss, l1_loss):
         if not math.isnan(tot_loss):
             self.tot_loss_meter.add(tot_loss)
         if not math.isnan(box_loss):
@@ -501,7 +516,9 @@ class Training:
             self.cof_loss_meter.add(cof_loss)
         if not math.isnan(cls_loss):
             self.cls_loss_meter.add(cls_loss)
-        return self.tot_loss_meter.value()[0], self.box_loss_meter.value()[0], self.cof_loss_meter.value()[0], self.cls_loss_meter.value()[0]
+        if not math.isnan(l1_loss):
+            self.l1_loss_meter.add(l1_loss)
+        return self.tot_loss_meter.value()[0], self.box_loss_meter.value()[0], self.cof_loss_meter.value()[0], self.cls_loss_meter.value()[0], self.l1_loss_meter.value()[0]
 
     def calculate_mAP(self):
         """

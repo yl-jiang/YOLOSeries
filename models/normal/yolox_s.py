@@ -143,6 +143,56 @@ class YoloXSmall(nn.Module):
 
     def __init__(self, in_channel=3, num_classes=80):
         super().__init__()
+        self.backbone = DarkNet21(in_channel)
+        self.upsample = Upsample()
+        self.cat = Concat()
+        self.cba_middle = ConvBnAct(512, 256, 1, 1, act=True)
+        self.cba_small = ConvBnAct(256, 128, 1, 1, act=True)
+        self.branch_middle = self._make_layers(512+256, 512, 256)
+        self.branch_small = self._make_layers(256+128, 256, 128)
+        self.head = Detect(in_channels=[128, 256, 512], mid_channel=128, wid_mul=1.0, num_classes=num_classes)
+
+    def _make_layers(self, in_c, mid_c, out_c):  # in_c: 512; out_c 256
+        layers = [
+            ConvBnAct(in_c, out_c, 1, 1, act=True),   # in: 512+256; out: 256
+            ConvBnAct(out_c, mid_c, 3, 1, 1, act=True),   # in: 256; out: 512
+            ConvBnAct(mid_c, out_c, 1, 1, act=True), 
+            ConvBnAct(out_c, mid_c, 3, 1, 1, act=True), 
+            ConvBnAct(mid_c, out_c, 1, 1, act=True)
+        ]
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+
+        # backbone
+        backbone =self.backbone(x)
+        x_s = backbone['stage_3']
+        x_m = backbone['stage_4']
+        x_l = backbone['stage_5']
+
+        # Neck
+        x_m_in = self.cba_middle(x_l)
+        x_m_x = self.upsample(x_m_in)
+        x_m_x = self.cat([x_m_x, x_m])
+        x_m = self.branch_middle(x_m_x)
+
+        x_s_in = self.cba_small(x_m)
+        x_s_x = self.upsample(x_s_in)
+        x_s_x = self.cat([x_s_x, x_s])
+        x_s = self.branch_small(x_s_x)
+
+        neck = {'x_s': x_s, 'x_m': x_m, 'x_l': x_l}
+
+        # head
+        preds = self.head(neck)
+
+        return preds
+
+
+class YoloXMiddle(nn.Module):
+
+    def __init__(self, in_channel=3, num_classes=80):
+        super().__init__()
         self.backbone = DarkNet53(in_channel)
         self.upsample = Upsample()
         self.cat = Concat()
@@ -187,6 +237,7 @@ class YoloXSmall(nn.Module):
         preds = self.head(neck)
 
         return preds
+
 
 
 if __name__ == "__main__":

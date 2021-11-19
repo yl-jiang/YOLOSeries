@@ -9,3 +9,4 @@ from .depthwise import Yolov5SmallDW
 from .depthwise import Yolov5LargeDW
 from .depthwise import Yolov5XLargeDW
 from .normal import YoloXSmall
+from .normal import YoloXMiddle
