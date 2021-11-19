@@ -302,7 +302,7 @@ class Training:
                 self.optim_scheduler.step()
 
             # save the lastest model
-            if self.hyp['model_save_dir'] and Path(self.hyp['model_save_dir']).exists():
+            if self.hyp.get('model_save_dir', None) and Path(self.hyp['model_save_dir']).exists():
                 save_path = self.hyp['model_save_dir']
             else:
                 save_path = str(self.cwd / 'checkpoints' / f'final.pth')
@@ -351,7 +351,7 @@ class Training:
                     para_g['lr'] = np.interp(cur_steps,
                                              [0., self.hyp['warmup_steps']],
                                              [self.hyp['warmup_bias_lr'], para_g['initial_lr'] * self._lr_lambda(epoch)])
-                if "momentum" in para_g:  # momentum(momentum在warmup阶段逐渐增大)
+                if "momentum" in para_g:  # momentum(momentum在warmup阶段逐渐增大，训练前期减少动量部分对整体梯度的影响)
                     para_g['momentum'] = np.interp(cur_steps,
                                                    [0., self.hyp['warmup_steps']],
                                                    [self.hyp['warmup_momentum'], self.hyp['momentum']])
@@ -611,37 +611,32 @@ class Training:
 
 if __name__ == '__main__':
     config_ = Config()
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
-    # parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
-    # parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
-    # parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
-    # parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
-    # parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
-    # parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
-    # parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    # parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
-    # parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
-    # parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
-    # parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
-    # parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
-    # parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
-    # parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
-    # parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
-    # parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
-    # parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
-    # parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
-    # parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
-
-    class Args:
-        cfg = "/home/uih/JYL/Dataset/github/config/train_yolox.yaml"
-        img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
-        lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
-        name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
+    parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
+    parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
+    parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
+    parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
+    parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
+    parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
+    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
+    parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
+    parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
+    parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
+    parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
+    parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
+    parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
+    parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
+    parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
+    parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
+    parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
+    parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
 
 
-    # args = parser.parse_args()
-    args = Args()
+
+    args = parser.parse_args()
+    
     hyp = config_.get_config(args.cfg, args)
     train = Training(hyp)
     train.step()

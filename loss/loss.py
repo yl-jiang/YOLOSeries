@@ -308,7 +308,7 @@ class YOLOXLoss:
         origin_pred_box = preds[..., :4].clone()
         # restore predictions to input scale / (N, h*w, 85)
         preds[..., :2] = (preds[..., :2] + grid) * stride
-        preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride  # 这一步可能会由于preds[..., 2:4]值过大而导致进行exp计算后出现Nan
+        preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride  # 这一步可能由于preds[..., 2:4]值过大而导致进行exp计算后溢出导致出现Nan
 
         for i in range(tars.size(0)):  # each image
             tar = tars[i]  # (num_bbox, 6)

@@ -30,8 +30,8 @@ train_hyp:
   accumulate_loss_step: 64  # 累积梯度下降
   warmup_epoch: 3
   do_ema: true  # 是否维持一个Everage Moving Model
-  warmup_bias_lr: 0.01  # warmup lr for bias
-  warmup_momentum: 0.8
+  warmup_bias_lr: 0.1  # warmup lr for bias
+  warmup_momentum: 0.9
   weight_init_prior_prob: 0.01  # 用于网络中的bias参数初始化
   validation_every: 0.5  # 每隔多少个epoch validate一次
   show_tbar_every: 5  # 每个多少个step显示实时训练状态信息
@@ -50,7 +50,7 @@ train_hyp:
 
 optim_hyp:
   optimizer: adam # 优化器类别/['sgd' or 'adam']
-  init_lr: 0.01
+  init_lr: 0.0001  # 0.01 for sgd / 0.0001 for adam
   weight_decay: 0.0001
   momentum: 0.999
   lr_scheculer_bias: 0.2
