@@ -1,5 +1,4 @@
 from pathlib import Path
-from re import T
 import sys
 
 from numpy.lib.npyio import save

@@ -3,7 +3,6 @@ import emoji
 from pathlib import Path
 import sys
 
-from torch.autograd.grad_mode import F
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
 
