@@ -238,6 +238,9 @@ class YOLOXLoss:
         self.num_class = hyp['num_class']
         self.use_l1 = hyp.get('use_l1', True)
         self.reg_loss_scale = hyp.get('reg_loss_scale', 0.5)
+        self.cls_loss_scale = hyp.get('cls_loss_scale', 1.0)
+        self.l1_loss_scale = hyp.get('l1_loss_scale', 1.0)
+        self.cof_loss_scale = hyp.get('cof_loss_scale', 1.0)
         self.device = hyp['device']
         cls_pos_weight = torch.tensor(hyp.get("cls_pos_weight", 1.), device=self.device)
         cof_pos_weight = torch.tensor(hyp.get('cof_pos_weight', 1.), device=self.device)
@@ -296,7 +299,7 @@ class YOLOXLoss:
         if self.num_class == 1:
             tot_cls_loss = tot_cof_loss.new_tensor(0.0)
 
-        tot_loss = self.reg_loss_scale * tot_reg_loss + tot_cls_loss + tot_cof_loss + tot_l1_loss
+        tot_loss = self.reg_loss_scale * tot_reg_loss + self.cls_loss_scale * tot_cls_loss + self.cof_loss_scale * tot_cof_loss + self.l1_loss_scale * tot_l1_loss
         loss_dict = {'tot_loss': tot_loss, 'reg_loss': tot_reg_loss, 'cls_loss': tot_cls_loss, 
                      'cof_loss': tot_cof_loss, 'l1_loss': tot_l1_loss, 
                      'num_fg': tot_num_fg, 'num_gt': tot_num_gt}
@@ -310,13 +313,13 @@ class YOLOXLoss:
             stride: a scalar / 下采样尺度 / 取值：8 or 16 or 32
             grid: (h*w, 2)
         """
-        batch_tar_cls, batch_tar_box, batch_tar_cof, fg, batch_tar_l1_box = [], [], [], [], []
+        batch_tar_cls, batch_tar_box, batch_tar_cof, fg, batch_tar_box_l1 = [], [], [], [], []
         tot_num_gt, tot_num_fg = 0, 0
         # (N, h*w, 4)
         origin_pred_box = preds[..., :4].clone()
         # restore predictions to input scale / (N, h*w, 85)
         preds[..., :2] = (preds[..., :2] + grid) * stride
-        preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride  # 这一步可能由于preds[..., 2:4]值过大而导致进行exp计算后溢出导致出现Nan
+        preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride  # 这一步可能由于preds[..., 2:4]值过大，进而导致exp计算后溢出得到Nan值
 
         for i in range(tars.size(0)):  # each image
             tar = tars[i]  # (num_bbox, 6)
@@ -328,7 +331,7 @@ class YOLOXLoss:
                 tar_box_i = tar.new_zeros((0, 4))  # (0, 4)
                 tar_cof_i = tar.new_zeros((pred.size(0), 1))  # (h*w, 1)
                 frontground_mask = tar.new_zeros(pred.size(0)).bool()  # (h*w,)
-                tar_l1_box_i = tar.new_zeros((0, 4))
+                tar_box_l1_i = tar.new_zeros((0, 4))
             else:
                 tar_box_i = tar[valid_gt_idx, :4]  # (valid_num_box, 4) / [x, y, w, h]
                 tar_cls_i = F.one_hot(tar[valid_gt_idx, 4].long(), num_classes=self.num_class) * self.cls_smoothness # (valid_num_box, 80)
@@ -367,14 +370,14 @@ class YOLOXLoss:
 
                 if self.use_l1:
                     # (M, 4)
-                    tar_l1_box_i = self.build_l1_target(grid, stride, tar_box_i, num_fg, frontground_mask)
+                    tar_box_l1_i = self.build_l1_target(grid, stride, tar_box_i, num_fg, frontground_mask)
 
             batch_tar_cls.append(tar_cls_i)
             batch_tar_box.append(tar_box_i)
             batch_tar_cof.append(tar_cof_i)
             fg.append(frontground_mask)
             if self.use_l1:
-                batch_tar_l1_box.append(tar_l1_box_i)
+                batch_tar_box_l1.append(tar_box_l1_i)
 
         # one stage and whole batch
         batch_tar_cls = torch.cat(batch_tar_cls, 0)  # (X, 80)
@@ -382,11 +385,11 @@ class YOLOXLoss:
         batch_tar_cof = torch.cat(batch_tar_cof, 0)  # (N*h*w, 1)
         fg = torch.cat(fg, 0)  # (N*h*w) / 其中为True的元素个数为X
         if self.use_l1:
-            batch_tar_l1_box = torch.cat(batch_tar_l1_box, 0)  # (X, 4)
+            batch_tar_box_l1 = torch.cat(batch_tar_box_l1, 0)  # (X, 4)
 
         # =================================== compute losses ===================================
         tot_num_fg = max(tot_num_fg, 1)
-        reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg).sum()  # regression
+        reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg, self.hyp['iou_type']).sum()  # regression
         cof_loss = self.bce_cof(preds[..., 4].view(-1, 1), batch_tar_cof.type(preds.type())).sum()  # cofidence
 
         assert preds[..., 5:].view(-1, self.num_class)[fg].size() == batch_tar_cls.size()
@@ -397,7 +400,7 @@ class YOLOXLoss:
         cls_loss = (self.bce_cls(preds[..., 5:].view(-1, self.num_class)[fg], batch_tar_cls) * cls_factor).sum()  # classification
         
         if self.use_l1:
-            l1_loss = self.l1_loss(origin_pred_box.view(-1, 4)[fg], batch_tar_l1_box).sum()  # l1
+            l1_loss = self.l1_loss(origin_pred_box.view(-1, 4)[fg], batch_tar_box_l1).sum()  # l1
         else:
             l1_loss = 0.0
 
@@ -571,23 +574,45 @@ class YOLOXLoss:
         area_tar = torch.prod(tar_box[:, 2:], dim=1)
         area_inter = torch.prod(inter_xy_max - inter_xy_min, dim=1) * mask
         area_union = area_pred + area_tar - area_inter
-        iou = area_inter / (area_union + 1e-18)
+        iou = area_inter / (area_union + 1e-16)
 
-        if iou_type == 'iou':
+        if iou_type == 'iou':  # 使用iou训练，使用sgd作为优化器且lr设置稍大时，训练过程中容易出现Nan
             return 1 - iou ** 2
-        else:
+        elif iou_type == 'giou': 
             convex_xy_min = torch.min((pred[:, :2] - pred[:, 2:] / 2), (tar_box[:, :2] - tar_box[:, 2:] / 2))
             convex_xy_max = torch.max((pred[:, :2] + pred[:, 2:] / 2), (tar_box[:, :2] + tar_box[:, 2:] / 2))
             area_convex = torch.prod(convex_xy_max - convex_xy_min, dim=1)
-            giou = iou - (area_convex - area_union) / area_convex.clamp(1e-18)
+            giou = iou - (area_convex - area_union) / area_convex.clamp(1e-16)
             return 1 - giou.clamp(min=-1., max=1.)
+        elif iou_type == 'ciou':  # 使用ciou训练较为稳定
+            # convex box's diagonal length
+            c_xmin = torch.min(pred[:, 0] - pred[:, 2] / 2, tar_box[:, 0] - tar_box[:, 2] / 2)  # (N,)
+            c_xmax = torch.max(pred[:, 0] + pred[:, 2] / 2, tar_box[:, 0] + tar_box[:, 2] / 2)  # (N,)
+            c_ymin = torch.min(pred[:, 1] - pred[:, 3] / 2, tar_box[:, 1] - tar_box[:, 3] / 2)  # (N,)
+            c_ymax = torch.max(pred[:, 1] + pred[:, 3] / 2, tar_box[:, 1] + tar_box[:, 3] / 2)  # (N,)
+            c_hs = c_ymax - c_ymin  # (N,)
+            c_ws = c_xmax - c_xmin  # (N,)
+            c_diagonal = torch.pow(c_ws, 2) + torch.pow(c_hs, 2) + 1e-16  # (N,)
+            # distance of two bbox center
+            ctr_ws = pred[:, 0] - tar_box[:, 0]  # (N,)
+            ctr_hs = pred[:, 1] - tar_box[:, 1]  # (N,)
+            ctr_distance = torch.pow(ctr_hs, 2) + torch.pow(ctr_ws, 2)  # (N,)
+            h1, w1 = pred[:, [2, 3]].T
+            h2, w2 = tar_box[:, [2, 3]].T
+            v = (4 / (np.pi ** 2)) * torch.pow(torch.atan(w2 / h2) - torch.atan(w1 / h1), 2)  # (N,)
+            with torch.no_grad():
+                alpha = v / (1 - iou + v + 1e-16)
+            ciou = iou - (ctr_distance / c_diagonal + v * alpha)  # (N,)
+            return ciou
+        else:
+            raise ValueError(f"Unknow iou_type '{iou_type}', must be one of ['iou', 'giou', 'ciou']")
 
     def build_l1_target(self, grid, stride, tar_box, num_fg, fg):
         """
-        将target转换到对应stage的prediction模式（及将(ctr_x, ctr_y)转换为相对于对应的grid左上角的偏移量，将(w, h)转换为对应尺度下的长和宽）
+        将target转换到对应stage的prediction一致的数据格式（及将(ctr_x, ctr_y)转换为相对于对应的grid左上角的偏移量，将(w, h)转换为对应尺度下的长和宽）
         Args:
             grid: (h*w, 2)
-            stride: a scaler
+            stride: scaler
             tar_box: (M, 4) / [x, y, w, h]
             num_fg: M
             fg: (h*w,) / 其中为True的元素个数为M
@@ -599,8 +624,8 @@ class YOLOXLoss:
         tar_l1 = tar_box.new_zeros((num_fg, 4))
         tar_l1[:, 0] = tar_box[:, 0] / stride - grid[fg, 0]
         tar_l1[:, 1] = tar_box[:, 1] / stride - grid[fg, 1]
-        tar_l1[:, 2] = torch.log(tar_box[:, 2] / stride + 1e-18)
-        tar_l1[:, 3] = torch.log(tar_box[:, 3] / stride + 1e-18)
+        tar_l1[:, 2] = torch.log(tar_box[:, 2] / stride + 1e-16)
+        tar_l1[:, 3] = torch.log(tar_box[:, 3] / stride + 1e-16)
         return tar_l1
     
     def focal_loss_factor(self, pred, target):

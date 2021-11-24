@@ -50,7 +50,7 @@ def summary_model(model, input_img_size=[640, 640], verbose=False, prefix=""):
         number_gradients = sum(x.numel() for x in model.parameters() if x.requires_grad)
         number_layers = len(list(model.modules()))
         try:
-            from tho import profile
+            from thop import profile
             dummy_img = torch.rand(1, 3, input_img_size[0], input_img_size[1], device=next(model.parameters()).device)
             flops, params = profile(deepcopy(model), inputs=(dummy_img, ), verbose=verbose)
             flops /= 1e9 * 2

@@ -131,7 +131,7 @@ class YOLOXEvaluater:
                 box_offset = x[:, 5] * 0.
             bboxes_offseted = x[:, :4] + box_offset[:, None]  # M
             scores = x[:, 4]
-            keep_index = gpu_nms(bboxes_offseted, scores, self.hyp['iou_type'], self.hyp['iou_threshold'])
+            keep_index = gpu_nms(bboxes_offseted, scores, self.hyp['nms_type'], self.hyp['iou_threshold'])
 
             if len(keep_index) > self.hyp['max_predictions_per_img']:
                 keep_index = keep_index[:self.hyp['max_predictions_per_img']]  # N

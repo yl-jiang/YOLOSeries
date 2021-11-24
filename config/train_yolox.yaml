@@ -4,6 +4,7 @@ loss_hyp:
   focal_loss_alpha: 0.25  # focal loss参数
   reg_loss_scale: 0.5  # 回归损失（bbox损失）权重
   cls_loss_scale: 1.0  # 分类损失权重
+  l1_loss_scale: 1.0  # L1 loss损失权重
   cof_loss_scale: 1.0  # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 
@@ -47,12 +48,13 @@ train_hyp:
   model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
+  iou_type: 'ciou'
 
 optim_hyp:
-  optimizer: adam # 优化器类别/['sgd' or 'adam']
-  init_lr: 0.0001  # 0.01 for sgd / 0.0001 for adam
+  optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
+  init_lr: 0.01  # 0.01 for sgd / 0.0001 for adam
   weight_decay: 0.0001
-  momentum: 0.999
+  momentum: 0.9999
   lr_scheculer_bias: 0.2
 
 
@@ -79,7 +81,7 @@ nms_hyp:
   max_predictions_per_img: 300
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096
-  iou_type: iou
+  nms_type: 'iou'
   infer_img_save_path: ~
   mutil_label: false  # 一个object是否可以有多个标签
   agnostic: true  # 是否在同类别的bbox之间进行NMS
@@ -93,7 +95,7 @@ nms_hyp:
   wfb_skip_box_threshold: 0.001
 
 
-va_hyp:
+val_hyp:
   save_img: false
   show_gt_bbox: false
   save_pred_bbox: false

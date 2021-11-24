@@ -52,6 +52,8 @@ class Config:
             self.config.update({"output_dir": args.output_dir})
         if hasattr(args, "aspect_ratio"):
             self.config.update({"aspect_ratio": args.aspect_ratio})
+        if hasattr(args, "iou_type"):
+            self.config.update({"iou_type": args.iou_type})
         
 
 

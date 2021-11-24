@@ -1,17 +1,13 @@
 from pathlib import Path
 from re import T
 import sys
-
-from numpy.lib.npyio import save
-
-from models.normal.yolox_l import YoloXLarge
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
 
 import cv2
 import torch.cuda
 from torch.utils.tensorboard import SummaryWriter
-from models import YoloXSmall, YoloXMiddle, Yolov5XLarge, YoloXDarkNet21, YoloXDarkNet53
+from models import YoloXSmall, YoloXMiddle, YoloXLarge, YoloXDarkNet21, YoloXDarkNet53
 from tqdm import tqdm
 from config import Config
 import logging
@@ -619,29 +615,37 @@ class Training:
 
 if __name__ == '__main__':
     config_ = Config()
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
-    parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
-    parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
-    parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
-    parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
-    parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
-    parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
-    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
-    parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
-    parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
-    parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
-    parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
-    parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
-    parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
-    parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
-    parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
-    parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
-    parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
-    parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--cfg', required=True, dest='cfg', type=str, help='config file path')
+    # parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
+    # parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
+    # parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    # parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
+    # parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
+    # parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
+    # parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
+    # parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
+    # parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
+    # parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
+    # parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
+    # parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
+    # parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
+    # parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
+    # parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
+    # parser.add_argument('--iou_type', default='giou', type=str, dest='iou_type', choices=['iou', 'giou', 'ciou'])
+    # parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
+    # parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
+    # parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
+    # parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
+    # args = parser.parse_args()
 
-    args = parser.parse_args()
+    class Args:
+        cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolox.yaml"
+        img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
+        lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
+        name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+    args = Args()
+
     hyp = config_.get_config(args.cfg, args)
     train = Training(hyp)
     train.step()
