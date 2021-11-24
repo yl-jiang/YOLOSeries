@@ -1,5 +1,5 @@
-该项目是个人在学习[yolov5官方代码](https://github.com/ultralytics/yolov5)过程中，加入自己的一些理解以及必要注释，并根据个人习惯对代码结构进行重新组织，该项目主要目的是为了记录学习的过程。
-
+该项目是个人在学习[YOLOV5官方代码](https://github.com/ultralytics/yolov5)过程中，加入自己的一些理解以及必要注释，并根据个人习惯对代码结构进行重新组织，该项目主要目的是为了记录学习的过程。
+其实，从代码结构上看，YOLO系列的模型代码结构大部分是可以复用的，在学习了官方[YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)代码后，也将YOLOX集成到本项目中，使用方法与YOLOV5类似。
 ## 网络结构
 以Yolov5s为例，下面分别是该网络的整体结构图、backbone、Neck以及构成这些模块用到的小组件的结构图。
 ### 总体结构
@@ -48,16 +48,21 @@ class_id xmin ymin xmax ymax
 $ conda activate your-pytorch-environmention
 $ git clone https://github.com/yl-jiang/Yolov5.git
 $ cd Yolov5
-$ python train.py --img_dir "your-image-dir" --lab_dir "your-label_dir" --name_path "your-names-path"
+$ python train_yolov5.py --img_dir "your-image-dir" --lab_dir "your-label_dir" --name_path "your-names-path"
 ```
 
 类似输出为：
 ```
+Use Nvidia GPU Quadro P5000, find 1 GPU devices, current device id: 0, total memory=15251.6MB, major=6, minor=1, multi_processor_count=20
+Checking the consistency of dataset!
+- Use time 0.031s
+Parser names!
+- Use time 0.000s
  epoch       tot       box       cof       cls      tnum     imgsz        lr     AP@.5       mAP   time(s)
 #   1       2.475     0.111     1.127     0.000      776       640     0.000069    0.0       0.0              :   2%|▌                         | 36/1686 [00:11<05:34,  4.93it/s]
 ```
 
-其他参数（优化器、NMS参数、损失函数参数以及其他训练参数等）的配置可到xxx/Yolov5/config/train.yaml文件中找到对应的参数名称并修改即可。
+其他参数（优化器、NMS参数、损失函数参数以及其他训练参数等）的配置可到xxx/Yolov5/config/train_yolov5.yaml文件中找到对应的参数名称并修改即可。
 
 ---
 ## 模型测试
@@ -66,7 +71,7 @@ $ python train.py --img_dir "your-image-dir" --lab_dir "your-label_dir" --name_p
 $ conda activate your-pytorch-environmention
 $ git clone https://github.com/yl-jiang/Yolov5.git
 $ cd Yolov5
-$ python detect.py --cfg "./config/detection.yaml" --img_dir "your-image-dir" --pretrained_model_path "xxx/model_xlarge.pth" --model_type "xlarge" --name_path "xxx/names.txt"
+$ python detect_yolov5.py --cfg "./config/detection.yaml" --img_dir "your-image-dir" --pretrained_model_path "xxx/model_xlarge.pth" --model_type "xlarge" --name_path "xxx/names.txt"
 ```
 
 类似输出为：
@@ -76,17 +81,17 @@ $ python detect.py --cfg "./config/detection.yaml" --img_dir "your-image-dir" --
 [00003/5000] ➡️ 1 🛥 (0.20s)
 ```
 
-预测结果默认会保存在```xxx/result/predictions```文件夹下，如果想保存到自定义目录，请到```xxx/config/detection.yaml```文件中，修改output_dir参数即可。其它与预测代码相关的配置参数可到该文件中修改。
+预测结果默认会保存在```xxx/result/predictions```文件夹下，如果想保存到自定义目录，请到```xxx/config/detection.yaml```文件中，修改```output_dir```参数即可。其它与预测代码相关的配置参数可到该文件中修改，根据参数的名称即可大概得知该参数的作用。
 
 ---
 ## 模型性能评估（mAP）
 
-需要评估训练模型的性能（mAP）时，需要准备好测试图片以及对应标签，并分别将图片和标签数据放到不同的文件夹，并运行如下命令(使用xlarge模型为例)：
+需要评估训练模型的性能（mAP）时，需要准备好测试图片以及对应标签，并分别将图片和标签数据放到不同的文件夹，并运行如下命令(以使用xlarge模型为例)：
 ```
 $ conda activate your-pytorch-environmention
 $ git clone https://github.com/yl-jiang/Yolov5.git
 $ cd Yolov5
-$ python val.py --cfg "./config/validation.yaml" --img_dir "your-image-dir" --lab_dir "your-label-dir" --pretrained_model_path "./checkpoints/model_xlarge.pth" --model_type "xlarge" --name_path "./dataset/other/coco_names.txt"
+$ python val_yolov5.py --cfg "./config/validation.yaml" --img_dir "your-image-dir" --lab_dir "your-label-dir" --pretrained_model_path "./checkpoints/model_xlarge.pth" --model_type "xlarge" --name_path "./dataset/other/coco_names.txt"
 ```
 类似输出为：
 ```
@@ -94,3 +99,8 @@ $ python val.py --cfg "./config/validation.yaml" --img_dir "your-image-dir" --la
 [00002/5000] ➡️ 77 🧑; 41 🏏; 34 🪑; 20 🧤; 20 ⚾; 11 :bench:; 3 🚗; 1 🍼; 1 🪴 (0.70s)
 [00003/5000] ➡️ 43 🧑; 32 :bench:; 24 🪁; 10 🚗; 3 ⚾; 2 🚦; 2 🥏; 1 ☂; 1 🚚 (0.70s)
 ```
+---
+## Reference
+1. [YOLOV5-Pytorch]((https://github.com/ultralytics/yolov5)
+2. [YOLOX-Pytorch](https://github.com/Megvii-BaseDetection/YOLOX)
+3. [RetinaNet-Pytorch](https://github.com/yhenon/pytorch-retinanet)
