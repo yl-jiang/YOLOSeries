@@ -101,6 +101,6 @@ $ python val_yolov5.py --cfg "./config/validation.yaml" --img_dir "your-image-di
 ```
 ---
 ## Reference
-1. [YOLOV5-Pytorch]((https://github.com/ultralytics/yolov5)
+1. [YOLOV5-Pytorch](https://github.com/ultralytics/yolov5)
 2. [YOLOX-Pytorch](https://github.com/Megvii-BaseDetection/YOLOX)
 3. [RetinaNet-Pytorch](https://github.com/yhenon/pytorch-retinanet)
