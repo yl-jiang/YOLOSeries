@@ -231,6 +231,7 @@ class YOLOV5Loss:
 class YOLOXLoss:
 
     def __init__(self, hyp) -> None:
+        self.hyp = hyp
         self.num_stage = hyp.get('num_stage', 3)
         self.grids = [torch.zeros(1) for _ in range(self.num_stage)]
         self.img_sz = hyp['input_img_size']
