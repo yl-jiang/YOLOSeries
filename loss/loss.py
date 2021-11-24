@@ -207,6 +207,13 @@ class YOLOV5Loss:
         return tar_box, tar_cls.long(), tar_img_idx.long(), tar_anc_idx.long(), tar_grid_y.long(), tar_grid_x.long()
 
     def focal_loss_factor(self, pred, target):
+        """
+        Args:
+            pred: (N, 80)
+            target: (N, 80)
+        Return:
+            focal loss factor: (N, 80)
+        """
         prob = torch.sigmoid(pred)
         # target * prob：将正样本预测正确的概率； (1.0 - target) * (1.0 - prob)：将负样本预测正确的概率
         acc_scale = target * prob + (1.0 - target) * (1.0 - prob)
@@ -380,8 +387,13 @@ class YOLOXLoss:
         tot_num_fg = max(tot_num_fg, 1)
         reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg).sum()  # regression
         cof_loss = self.bce_cof(preds[..., 4].view(-1, 1), batch_tar_cof.type(preds.type())).sum()  # cofidence
+
         assert preds[..., 5:].view(-1, self.num_class)[fg].size() == batch_tar_cls.size()
-        cls_loss = self.bce_cls(preds[..., 5:].view(-1, self.num_class)[fg], batch_tar_cls).sum()  # classification
+        if self.hyp['use_focal_loss']:
+            cls_factor = self.focal_loss_factor(preds[..., 5:].view(-1, self.num_class)[fg], batch_tar_cls)
+        else:
+            cls_factor = torch.ones_like(batch_tar_cls)
+        cls_loss = (self.bce_cls(preds[..., 5:].view(-1, self.num_class)[fg], batch_tar_cls) * cls_factor).sum()  # classification
         
         if self.use_l1:
             l1_loss = self.l1_loss(origin_pred_box.view(-1, 4)[fg], batch_tar_l1_box).sum()  # l1
@@ -589,3 +601,25 @@ class YOLOXLoss:
         tar_l1[:, 2] = torch.log(tar_box[:, 2] / stride + 1e-18)
         tar_l1[:, 3] = torch.log(tar_box[:, 3] / stride + 1e-18)
         return tar_l1
+    
+    def focal_loss_factor(self, pred, target):
+        """
+        compute classification loss weights
+        Args:
+            pred: (N, 80)
+            target: (N, 80)
+        Return:
+            focal loss factor: (N, 80)
+        """
+        prob = torch.sigmoid(pred)
+        # target * prob：将正样本预测正确的概率； (1.0 - target) * (1.0 - prob)：将负样本预测正确的概率
+        acc_scale = target * prob + (1.0 - target) * (1.0 - prob)
+        # 对那些预测错误程度越大的预测加大惩罚力度
+        gamma = self.hyp.get('focal_loss_gamma', 1.5)
+        gamma_factor = (1.0 - acc_scale) ** gamma
+        # 当alpha值小于0.5时，意味着更加关注将负类样本预测错误的情况
+        alpha = self.hyp.get('focal_loss_alpha', 0.25)
+        alpha_factor = target * alpha + (1.0 - target) * (1.0 - alpha)
+        factor = gamma_factor * alpha_factor
+
+        return factor
