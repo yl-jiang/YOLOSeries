@@ -8,39 +8,38 @@ from torch import nn
 from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect, SEBottleneckCSP, C3BottleneckCSP
 
 
-class SmallYOLOXBackboneAndNeck(nn.Module):
+class MiddleYOLOXBackboneAndNeck(nn.Module):
 
     def __init__(self, in_channel=3):
         super().__init__()
         # ============================== backbone ==============================
         # focus layer
-        self.focus = Focus(in_channel, 32, 3, 1, 1)
+        self.focus = Focus(3, 64, 3, 1, 1)
 
-        self.backbone_stage1_conv = ConvBnAct(32, 64, 3, 2, 1)  # /2
-        self.backbone_stage1_bscp = C3BottleneckCSP(64, 64, shortcut=True, num_block=1)
-        self.backbone_stage2_conv = ConvBnAct(64, 128, 3, 2, 1)  # /2
-        self.backbone_stage2_bscp = C3BottleneckCSP(128, 128, shortcut=True, num_block=3)
-        self.backbone_stage3_conv = ConvBnAct(128, 256, 3, 2, 1)  # /2
-        self.backbone_stage3_bscp = C3BottleneckCSP(256, 256, shortcut=True, num_block=3)
-        self.backbone_stage4_conv = ConvBnAct(256, 512, 3, 2, 1)  # /2
-        self.backbone_stage4_spp = SPP(512, 512, kernels=[5, 9, 13])
-        self.backbone_stage4_bscp = C3BottleneckCSP(512, 512, shortcut=False, num_block=1)
-
+        self.backbone_stage1_conv = ConvBnAct(64, 128, 3, 2, 1)  # /2
+        self.backbone_stage1_bscp = C3BottleneckCSP(128, 128, shortcut=True, num_block=3)
+        self.backbone_stage2_conv = ConvBnAct(128, 256, 3, 2, 1)  # /2
+        self.backbone_stage2_bscp = C3BottleneckCSP(256, 256, shortcut=True, num_block=9)
+        self.backbone_stage3_conv = ConvBnAct(256, 512, 3, 2, 1)  # /2
+        self.backbone_stage3_bscp = C3BottleneckCSP(512, 512, shortcut=True, num_block=9)
+        self.backbone_stage4_conv = ConvBnAct(512, 1024, 3, 2, 1)  # /2
+        self.backbone_stage4_spp = SPP(1024, 1024, kernels=[5, 9, 13])
+        self.backbone_stage4_bscp = C3BottleneckCSP(1024, 1024, shortcut=False, num_block=3)
         # ============================== head ==============================
+
         # common layers
         self.head_upsample = Upsample()
         self.head_concat = Concat()
 
-        self.head_stage1_conv = ConvBnAct(512, 256, 1, 1, 0)
-        self.head_stage1_bscp = C3BottleneckCSP(512, 256, shortcut=False, num_block=1)
-        self.head_stage2_conv = ConvBnAct(256, 128, 1, 1, 0)
-        self.head_stage2_bscp = C3BottleneckCSP(256, 128, shortcut=False, num_block=1)
-        self.head_stage3_conv = ConvBnAct(128, 128, 3, 2, 1)
-        self.head_stage3_bscp = C3BottleneckCSP(256, 256, shortcut=False, num_block=1)
-        self.head_stage4_conv = ConvBnAct(256, 256, 3, 2, 1)
-        self.head_stage4_bscp = C3BottleneckCSP(512, 512, shortcut=False, num_block=1)
+        self.head_stage1_conv = ConvBnAct(1024, 512, 1, 1, 0)
+        self.head_stage1_bscp = C3BottleneckCSP(1024, 512, shortcut=False, num_block=3)
+        self.head_stage2_conv = ConvBnAct(512, 256, 1, 1, 0)
+        self.head_stage2_bscp = C3BottleneckCSP(512, 256, shortcut=False, num_block=3)
+        self.head_stage3_conv = ConvBnAct(256, 256, 3, 2, 1)
+        self.head_stage3_bscp = C3BottleneckCSP(512, 512, shortcut=False, num_block=3)
+        self.head_stage4_conv = ConvBnAct(512, 512, 3, 2, 1)
+        self.head_stage4_bscp = C3BottleneckCSP(1024, 1024, shortcut=False, num_block=3)
 
-        self.output_features = ['stage_3', 'stage_4', 'stage_5']
 
 
     def forward(self, x):
@@ -129,12 +128,12 @@ class Detect(nn.Module):
         return {'pred_s': pred_s, 'pred_m': pred_m, 'pred_l': pred_l}
 
 
-class YoloXSmall(nn.Module):
+class YoloXLarge(nn.Module):
 
     def __init__(self, in_channel=3, num_classes=80):
         super().__init__()
-        self.neck = SmallYOLOXBackboneAndNeck(in_channel)
-        self.detect = Detect(in_channels=[128, 256, 512], mid_channel=128, wid_mul=1.0, num_classes=num_classes)
+        self.neck = MiddleYOLOXBackboneAndNeck(in_channel)
+        self.detect = Detect(in_channels=[256, 512, 1024], mid_channel=256, wid_mul=1.0, num_classes=num_classes)
 
     def forward(self, x):
         # backbone & neck
@@ -155,7 +154,7 @@ class YoloXSmall(nn.Module):
 if __name__ == "__main__":
 
     dummy = torch.rand(1, 3, 224, 224)
-    yolox = YoloXSmall()
+    yolox = YoloXLarge()
     out = yolox(dummy)
     
     for k, v in out.items():
