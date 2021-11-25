@@ -61,3 +61,5 @@ from .data_aug import RandomHSV
 
 from .torch_tools import fixed_imgsize_collector
 from .torch_tools import AspectRatioBatchSampler
+
+from .logger import assemble_hyp

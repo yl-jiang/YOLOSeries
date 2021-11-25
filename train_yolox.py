@@ -12,7 +12,7 @@ from tqdm import tqdm
 from config import Config
 import logging
 import numpy as np
-from utils import cv2_save_img
+from utils import cv2_save_img, assemble_hyp
 from utils import maybe_mkdir, clear_dir
 from utils import time_synchronize, summary_model
 from datetime import datetime
@@ -67,7 +67,7 @@ class Training:
         self.init_lr = self.hyp['init_lr']
         
         # model, optimizer, loss, lr_scheduler, ema
-        self.model = self.select_model(num_classes=self.dataset.num_class).to(hyp['device'])
+        self.model = self.select_model(num_anchors=self.hyp['num_anchors'], num_classes=self.dataset.num_class).to(hyp['device'])
         self.optimizer = self._init_optimizer()
         self.optim_scheduler = lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=self._lr_lambda)
         self.loss_fcn = YOLOXLoss(self.hyp)
@@ -145,7 +145,8 @@ class Training:
         msg = f"\n{'=' * 70} Model Summary {'=' * 70}\n"
         msg += f"Model Summary:\tlayers {model_summary['number_layers']}; parameters {model_summary['number_params']}; gradients {model_summary['number_gradients']}; flops {model_summary['flops']}GFLOPs"
         msg += f"\n{'=' * 70} Training {'=' * 70}\n"
-        logger.info(msg)
+        logger.info(msg)  # 将模型信息保存到log中
+        logger.info(assemble_hyp(self.hyp))  # 将所有超参数保存到log日志中
         tags = ("all_mem(G)", "cac_mem(G)", "epoch", "step", "batchsz", "img_shape", "tot_loss", "reg_loss",
                 "cof_loss", "cls_loss", "l1_loss", "use_time(s)", "tar_num", "model_saved")
         logger.info("{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}{:^15s}".format(*tags))
@@ -615,31 +616,37 @@ class Training:
 
 if __name__ == '__main__':
     config_ = Config()
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', required=True, dest='cfg', type=str, help='config file path')
-    parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
-    parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
-    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
-    parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
-    parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
-    parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
-    parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
-    parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
-    parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
-    parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
-    parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
-    parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
-    parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
-    parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
-    parser.add_argument('--iou_type', default='giou', type=str, dest='iou_type', choices=['iou', 'giou', 'ciou'])
-    parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
-    parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
-    parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
-    parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--cfg', required=True, dest='cfg', type=str, help='config file path')
+    # parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
+    # parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
+    # parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    # parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
+    # parser.add_argument('--num_anchors', type=int, default=1, dest='num_anchors')
+    # parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
+    # parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
+    # parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
+    # parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
+    # parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
+    # parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
+    # parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
+    # parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
+    # parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
+    # parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
+    # parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
+    # parser.add_argument('--iou_type', default='giou', type=str, dest='iou_type', choices=['iou', 'giou', 'ciou'])
+    # parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
+    # parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
+    # parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
+    # parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
+    # args = parser.parse_args()
 
-   
+    class Args:
+        cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolox.yaml"
+        img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
+        lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
+        name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+    args = Args()
 
     hyp = config_.get_config(args.cfg, args)
     train = Training(hyp)

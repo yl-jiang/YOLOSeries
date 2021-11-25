@@ -51,9 +51,9 @@ class DarkNet21(nn.Module):
 
 class Detect(nn.Module):
 
-    def __init__(self, in_channels=[256, 512, 1024], mid_channel=256, wid_mul=1.0, num_classes=80):
+    def __init__(self, num_anchors=1, in_channels=[256, 512, 1024], mid_channel=256, wid_mul=1.0, num_classes=80):
         super().__init__()
-        self.num_anchors = 1
+        self.num_anchors = num_anchors
         self.num_classes = num_classes
 
         self.pred_small = self._make_layers(int(in_channels[0] * wid_mul), int(mid_channel * wid_mul))
@@ -74,7 +74,7 @@ class Detect(nn.Module):
                 ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True)
         )
 
-        reg = nn.Conv2d(mid_c, 4, 1, 1)
+        reg = nn.Conv2d(mid_c, self.num_anchors * 4, 1, 1)
         cof = nn.Conv2d(mid_c, int(self.num_anchors * 1), 1, 1)
         return nn.ModuleDict({'stem': stem, 'conv': conv, 'cls': cls, 'reg': reg, 'cof': cof})
 
@@ -90,18 +90,29 @@ class Detect(nn.Module):
 
     def forward(self, x):
         x_s, x_m, x_l = x['x_s'], x['x_m'], x['x_l']
+        batch_size = x_s.size(0)
+
         pred_s = self.forward_each(self.pred_small, x_s)
+        _, _, h_s, w_s = pred_s.size() 
+        pred_s = pred_s.reshape(batch_size, self.num_anchors, -1, h_s, w_s).contiguous()
+
         pred_m = self.forward_each(self.pred_middle, x_m)
+        _, _, h_m, w_m = pred_m.size() 
+        pred_m = pred_m.reshape(batch_size, self.num_anchors, -1, h_m, w_m).contiguous()
+
         pred_l = self.forward_each(self.pred_large, x_l)
-        # pred_l: (batch_size, 85, H/32, W/32)
-        # pred_m: (batch_size, 85, H/16, W/16)
-        # pred_s: (batch_size, 85, H/8, W/8)
+        _, _, h_l, w_l = pred_l.size() 
+        pred_l = pred_l.reshape(batch_size, self.num_anchors, -1, h_l, w_l).contiguous()
+
+        # pred_l: (batch_size, num_anchors, 85, H/32, W/32)
+        # pred_m: (batch_size, num_anchors, 85, H/16, W/16)
+        # pred_s: (batch_size, num_anchors, 85, H/8, W/8)
         return {'pred_s': pred_s, 'pred_m': pred_m, 'pred_l': pred_l}
 
 
 class YoloXDarkNet21(nn.Module):
 
-    def __init__(self, in_channel=3, num_classes=80):
+    def __init__(self, num_anchors=1, in_channel=3, num_classes=80):
         super().__init__()
         self.backbone = DarkNet21(in_channel)
         self.upsample = Upsample()
@@ -110,7 +121,7 @@ class YoloXDarkNet21(nn.Module):
         self.cba_small = ConvBnAct(256, 128, 1, 1, act=True)
         self.branch_middle = self._make_layers(512+256, 512, 256)
         self.branch_small = self._make_layers(256+128, 256, 128)
-        self.head = Detect(in_channels=[128, 256, 512], mid_channel=128, wid_mul=1.0, num_classes=num_classes)
+        self.head = Detect(num_anchors=num_anchors, in_channels=[128, 256, 512], mid_channel=128, wid_mul=1.0, num_classes=num_classes)
 
     def _make_layers(self, in_c, mid_c, out_c):  # in_c: 512; out_c 256
         layers = [
@@ -151,7 +162,10 @@ class YoloXDarkNet21(nn.Module):
 if __name__ == "__main__":
 
     dummy = torch.rand(1, 3, 224, 224)
-    yolox = YoloXDarkNet21()
+    yolox = YoloXDarkNet21(2)
     out = yolox(dummy)
+
+    for k, v in out.items():
+        print(f"{k}\t{v.shape}")
     
 

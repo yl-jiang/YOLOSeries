@@ -11,9 +11,9 @@ loss_hyp:
   cof_pos_weight: 1.0  # 
 
 train_hyp:
-  img_dir: "xxx/image"
+  img_dir: ~
   val_data_dir: "./result/wheat_test_imgs"
-  lab_dir: "xxx/label"
+  lab_dir: ~
   aspect_ratio_path: ~
   use_crowb: false
   cache_num: 0
@@ -26,6 +26,7 @@ train_hyp:
   shuffle: true  # Pytorch DataLoader中的参数
   num_workers: 0  # Pytorch DataLoader中的参数
   total_epoch: 300
+  num_anchors: 2  # 每个grid给出多少个预测框
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
   do_warmup: true  # 是否开启预热训练
   accumulate_loss_step: 64  # 累积梯度下降
@@ -39,23 +40,23 @@ train_hyp:
   use_tta: true  # validation时是否使用TTA
   save_log_txt: true  # 是否保存log文件
   log_save_path: ~
-  pretrained_model_path: "xxx/xxx.pth"  # 预训练模型路径
+  pretrained_model_path: ~  # 预训练模型路径
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_path: null  # 当前工作目录（可以不设置）
   calculate_map_every: ~
   calculate_map: false
-  save_ckpt_every: 500  # 每隔多少个epoch保存一次模型
+  save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
-  iou_type: 'ciou'
+  iou_type: 'giou'
 
 optim_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
-  init_lr: 0.01  # 0.01 for sgd / 0.0001 for adam
-  weight_decay: 0.0001
-  momentum: 0.9999
-  lr_scheculer_bias: 0.2
+  init_lr: 0.01  # 0.01 for sgd / 0.001 for adam
+  weight_decay: 0.0005
+  momentum: 0.999
+  lr_scheculer_bias: 0.1
 
 
 data_hyp:

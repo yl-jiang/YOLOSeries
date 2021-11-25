@@ -232,6 +232,7 @@ class YOLOXLoss:
 
     def __init__(self, hyp) -> None:
         self.hyp = hyp
+        self.num_anchors = hyp['num_anchors']
         self.num_stage = hyp.get('num_stage', 3)
         self.grids = [torch.zeros(1) for _ in range(self.num_stage)]
         self.img_sz = hyp['input_img_size']
@@ -254,7 +255,7 @@ class YOLOXLoss:
         假设输入训练的图片尺寸为224x224x3
 
         Args:
-            preds: 字典;{'pred_s': (N, 85, 28, 28), 'pred_m': (N, 85, 14, 14), 'pred_l': (N, 85, 7, 7)} / [x, y, w, h, cof, cls1, cls2, ...]
+            preds: 字典;{'pred_s': (N, num_anchors, 85, 28, 28), 'pred_m': (N, num_anchors, 85, 14, 14), 'pred_l': (N, num_anchors, 85, 7, 7)} / [x, y, w, h, cof, cls1, cls2, ...]
             tars: tensor; (N, bbox_num, 6) / [xmin, ymin, xmax, ymax, class_id, img_id]
         """
         batch_size = tars.size(0)
@@ -275,12 +276,12 @@ class YOLOXLoss:
                 grid = self._make_grid(h, w, dtype)
                 self.grids[i] = grid
 
-            # (N, 85, h, w) -> (N, h, w, 85)
-            pred = pred.permute(0, 2, 3, 1).contiguous()
-            # (N, h, w, 85) -> (N, h*w, 85)
-            pred = pred.reshape(batch_size, h * w, -1).contiguous()
-            # (1, 1, h, w, 2) -> (1, h*w, 2)
-            grid = grid.view(1, -1, 2).contiguous()
+            # (N, num_anchors, 85, h, w) -> (N, num_anchors, h, w, 85)
+            pred = pred.permute(0, 1, 3, 4, 2).contiguous()
+            # (N, num_anchors, h, w, 85) -> (N, num_anchors*h*w, 85)
+            pred = pred.reshape(batch_size, self.num_anchors * h * w, -1).contiguous()
+            # (1, 1, h, w, 2) -> (1, num_anchors*h*w, 2)
+            grid = grid.repeat(1, self.num_anchors, 1, 1, 1).view(1, -1, 2).contiguous()
             
             stage_out_dict = self.calculate_each_stage(tars_xywh, pred, grid[0], stride)
             tot_num_fg += stage_out_dict['num_fg']
@@ -300,6 +301,7 @@ class YOLOXLoss:
             tot_cls_loss = tot_cof_loss.new_tensor(0.0)
 
         tot_loss = self.reg_loss_scale * tot_reg_loss + self.cls_loss_scale * tot_cls_loss + self.cof_loss_scale * tot_cof_loss + self.l1_loss_scale * tot_l1_loss
+       
         loss_dict = {'tot_loss': tot_loss, 'reg_loss': tot_reg_loss, 'cls_loss': tot_cls_loss, 
                      'cof_loss': tot_cof_loss, 'l1_loss': tot_l1_loss, 
                      'num_fg': tot_num_fg, 'num_gt': tot_num_gt}
@@ -308,35 +310,35 @@ class YOLOXLoss:
     def calculate_each_stage(self, tars, preds, grid, stride):
         """
         Args:
-            preds: 某个stage的预测输出 (N, h*w, 85)：(N, 28*28, 85)或(N, 14*14, 85)或(N, 7*7, 85) / [x, y, w, h, cof, cls1, cls2, ...]
+            preds: 某个stage的预测输出 (N, num_anchors*h*w, 85)：(N, num_anchors*28*28, 85)或(N, num_anchors*14*14, 85)或(N, num_anchors*7*7, 85) / [x, y, w, h, cof, cls1, cls2, ...]
             tars: tensor; (N, num_bbox, 6) / [x_ctr, y_ctr, w, h, class_id, img_id]
             stride: a scalar / 下采样尺度 / 取值：8 or 16 or 32
-            grid: (h*w, 2)
+            grid: (num_anchors*h*w, 2)
         """
         batch_tar_cls, batch_tar_box, batch_tar_cof, fg, batch_tar_box_l1 = [], [], [], [], []
         tot_num_gt, tot_num_fg = 0, 0
-        # (N, h*w, 4)
+        # (N, num_anchors*h*w, 4)
         origin_pred_box = preds[..., :4].clone()
-        # restore predictions to input scale / (N, h*w, 85)
+        # restore predictions to input scale / (N, num_anchors*h*w, 85)
         preds[..., :2] = (preds[..., :2] + grid) * stride
         preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride  # 这一步可能由于preds[..., 2:4]值过大，进而导致exp计算后溢出得到Nan值
 
         for i in range(tars.size(0)):  # each image
             tar = tars[i]  # (num_bbox, 6)
-            pred = preds[i]  # (h*w, 85)
+            pred = preds[i]  # (num_anchors*h*w, 85)
             valid_gt_idx = tar[:, 4] >= 0  # 有效label索引（那些没有bbox的gt对应的class值为-1）
             tot_num_gt += valid_gt_idx.sum()
             if valid_gt_idx.sum() == 0:
                 tar_cls_i = tar.new_zeros((0, self.num_class))  # (0, 80)
                 tar_box_i = tar.new_zeros((0, 4))  # (0, 4)
-                tar_cof_i = tar.new_zeros((pred.size(0), 1))  # (h*w, 1)
-                frontground_mask = tar.new_zeros(pred.size(0)).bool()  # (h*w,)
+                tar_cof_i = tar.new_zeros((pred.size(0), 1))  # (num_anchors*h*w, 1)
+                frontground_mask = tar.new_zeros(pred.size(0)).bool()  # (num_anchors*h*w,)
                 tar_box_l1_i = tar.new_zeros((0, 4))
             else:
                 tar_box_i = tar[valid_gt_idx, :4]  # (valid_num_box, 4) / [x, y, w, h]
                 tar_cls_i = F.one_hot(tar[valid_gt_idx, 4].long(), num_classes=self.num_class) * self.cls_smoothness # (valid_num_box, 80)
                 
-                # frontground_mask: (h*w,) 其中为True的元素个数设为Y; is_grid_in_gtbox_and_gtctr: (valid_num_box, N)
+                # frontground_mask: (num_anchors*h*w,) 其中为True的元素个数设为Y; is_grid_in_gtbox_and_gtctr: (valid_num_box, N)
                 frontground_mask, is_grid_in_gtbox_and_gtctr = self.select_grid(tar_box_i, grid, stride)
                 pred_box_i = pred[frontground_mask, :4]  # (Y, 4) / [x, y, w, h] / 提取那些满足限制条件的prediction
                 # 每个gt box与所有满足条件(被选为前景)的prediction计算iou
@@ -446,13 +448,16 @@ class YOLOXLoss:
         # (valid_num_box, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
         is_grid_in_gtbox_all = is_grid_in_gtbox.sum(0) > 0.0
 
-        # 如果grid的中心点坐标均没有在任何gt box内部，则对每个gt box而言，选取与距离最近的grid作为匹配的grid
+        # 如果grid的中心点坐标均没有在任何gt box内部，则对每个gt box而言，对每个tar选取距离最近的grid作为匹配的grid
         if is_grid_in_gtbox_all.sum() == 0:
             # (valid_num_box, 1, 2) & (1, h*w, 2) -> (valid_num_box, h*w, 2) -> (valid_num_box, h*w)
             ctr_distance = torch.norm(tar_box[:, :2].unsqueeze(1) - ctr_grid[:, :2].unsqueeze(0), dim=2)
             # (valid_num_box,)
             dist_argmin = torch.argmin(ctr_distance, dim=1)
-            is_grid_in_gtbox_all[dist_argmin] = True
+            valid_idx = torch.unique(dist_argmin)
+            choose_num = int(len(valid_idx) * 0.2) if len(valid_idx) * 0.2 > 2 else 1
+            random_idx = dist_argmin[torch.randperm(len(dist_argmin))]
+            is_grid_in_gtbox_all[random_idx[:choose_num]] = True
 
         # ======== 某个gird的中心坐标是否落到以某个gt box的中心点为圆心，center_radius为半径的圆形区域内 =========
         center_radius = 2.5

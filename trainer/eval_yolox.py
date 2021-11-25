@@ -189,23 +189,23 @@ class YOLOXEvaluater:
         input_img_h, input_img_w = inputs.size(2), inputs.size(3)
         stage_preds = self.yolo(inputs)
         batch_size = inputs.size(0)
-        # [(5, 85, h/8, w/8), (5, 85, h/16, w/16), (5, 85, h/32, w/32)]
-        for i, k in enumerate(stage_preds.keys()):
+        # [(5, num_anchors, 85, h/8, w/8), (5, num_anchors, 85, h/16, w/16), (5, num_anchors, 85, h/32, w/32)]
+        for k in stage_preds.keys():
             cur_preds = stage_preds[k]
-            fm_h, fm_w = cur_preds.size(2), cur_preds.size(3)
-            # cur_preds: (bn, h, w, 85) / [center_x, center_y, w, h, cofidence, c1, c2, c3, ...]
-            cur_preds = cur_preds.permute(0, 2, 3, 1).contiguous()
+            fm_h, fm_w = cur_preds.size(-2), cur_preds.size(-1)
+            # cur_preds: (bn, num_anchors, 85, h, w) -> (bn, num_anchors, h, w, 85) / [center_x, center_y, w, h, cofidence, c1, c2, c3, ...]
+            cur_preds = cur_preds.permute(0, 1, 3, 4, 2).contiguous()
             cur_preds[..., 4:] = cur_preds[..., 4:].sigmoid()
-            # grid_coords: (1, h, w, 2) / 可以优化grid_coords的创建方式
-            grid_coords = self.make_grid(fm_h, fm_w).to(self.device).type_as(inputs)
+            # grid_coords: (1, h, w, 2) -> (1, num_anchors, h, w, 2) / 可以优化grid_coords的创建方式
+            grid_coords = self.make_grid(fm_h, fm_w).unsqueeze(1).repeat(1, self.hyp['num_anchors'], 1, 1, 1).to(self.device).type_as(inputs)
 
-            # (bn, h, w, 2) & (1, h, w, 2) -> (bn, h, w, 2)
+            # (bn, num_anchors, h, w, 2) & (1, num_anchors, h, w, 2) -> (bn, num_anchors, h, w, 2)
             cur_preds[..., [0, 1]] = (cur_preds[..., [0, 1]] + grid_coords) * (input_img_h / fm_h)
-            # (bn, h, w, 2) -> (bn, h, w, 2)
+            # (bn, num_anchors, h, w, 2) -> (bn, num_anchors, h, w, 2)
             cur_preds[..., [2, 3]] = torch.exp(cur_preds[..., [2, 3]]) * (input_img_h / fm_h)
-            # [(bs, 20*20, 85), (bs, 40*40, 85), (bs, 80*80, 85)]
+            # [(bs, num_anchors*20*20, 85), (bs, num_anchors*40*40, 85), (bs, num_anchors*80*80, 85)]
             preds_out.append(cur_preds.reshape(batch_size, -1, self.num_class+5).contiguous())
-        # (bs, 20*20+40*40+80*80, 85)
+        # (bs, num_anchors*(20*20+40*40+80*80), 85)
         return torch.cat(preds_out, dim=1).contiguous()
 
     @staticmethod

@@ -54,6 +54,8 @@ class Config:
             self.config.update({"aspect_ratio": args.aspect_ratio})
         if hasattr(args, "iou_type"):
             self.config.update({"iou_type": args.iou_type})
+        if hasattr(args, "num_anchors"):
+            self.config.update({"num_anchors": args.num_anchors})
         
 
 
