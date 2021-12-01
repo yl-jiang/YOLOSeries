@@ -29,7 +29,7 @@ class TestDataset(Dataset):
     def normalization(img):
         # 输入图像的格式为(h,w,3)
         assert len(img.shape) == 3 and img.shape[-1] == 3
-        transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor(),])
+        transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
         return transforms(img)
 
     def __getitem__(self, item):

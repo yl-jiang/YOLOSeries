@@ -185,7 +185,7 @@ def gpu_iou(bbox1, bbox2):
     intersection_w = torch.clamp(intersection_xmax - intersection_xmin, min=0.0)  # (N, M)
     intersection_h = torch.clamp(intersection_ymax - intersection_ymin, min=0.0)  # (N, M)
     intersection_area = intersection_w * intersection_h  # (N, M)
-    iou_out = intersection_area / (bbox1_area[:, None] + bbox2_area - intersection_area)  # (N, M)
+    iou_out = intersection_area / (bbox1_area[:, None] + bbox2_area - intersection_area + 1e-16)  # (N, M)
 
     return iou_out  # (N, M)
 

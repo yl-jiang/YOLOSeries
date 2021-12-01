@@ -80,7 +80,7 @@ class Training:
         self.validate = Evaluate(self.ema_model.ema, self.anchors, self.hyp)
 
         # load pretrained model or initialize model's parameters
-        # self.load_model(True, 'cpu')
+        self.load_model(True, 'cpu')
 
         # logger
         self.logger = self._config_logger()
@@ -642,10 +642,10 @@ if __name__ == '__main__':
     # args = parser.parse_args()
 
     class Args:
-        cfg = "~/YOLO/config/train_yolov5.yaml"
-        img_dir = '~/Dataset/GlobalWheatDetection/image/'
-        lab_dir = '~/Dataset/GlobalWheatDetection/label'
-        name_path = '~/Dataset/GlobalWheatDetection/names.txt'
+        cfg = "./Programs/YOLO/config/train_yolov5.yaml"
+        lab_dir = './Dataset/COCO2017/train/label'
+        img_dir = './Dataset/COCO2017/train/image/'
+        name_path = './Dataset/COCO2017/train/names.txt'
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)

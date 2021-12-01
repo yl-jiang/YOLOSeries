@@ -73,7 +73,7 @@ class Training:
         self.validate = Evaluate(self.ema_model.ema, self.hyp)
 
         # load pretrained model or initialize model's parameters
-        # self.load_model(True, 'cpu')
+        self.load_model(True, 'cpu')
 
         # logger
         self.logger = self._config_logger()
@@ -199,13 +199,13 @@ class Training:
             elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6)):
                 m.inplace = True
 
-        cls_layer = [self.model.head.pred_small['cls'],
-                     self.model.head.pred_middle['cls'],
-                     self.model.head.pred_large['cls']]
+        cls_layer = [self.model.detect.pred_small['cls'],
+                     self.model.detect.pred_middle['cls'],
+                     self.model.detect.pred_large['cls']]
 
-        reg_layer = [self.model.head.pred_small['reg'],
-                     self.model.head.pred_middle['reg'],
-                     self.model.head.pred_large['reg']]
+        reg_layer = [self.model.detect.pred_small['reg'],
+                     self.model.detect.pred_middle['reg'],
+                     self.model.detect.pred_large['reg']]
         
         for layer in cls_layer:
             for m in layer:
@@ -641,9 +641,11 @@ if __name__ == '__main__':
 
     class Args:
         cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolox.yaml"
-        img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
-        lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
-        name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+        # lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
+        # img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
+        lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
+        img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
+        name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)
