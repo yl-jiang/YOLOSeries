@@ -48,9 +48,6 @@ class Validation:
         else:
             self.cwd = Path(self.hyp['current_work_path'])
 
-        self.mean = torch.tensor([0.485, 0.456, 0.406]).float()
-        self.std = torch.tensor([0.229, 0.224, 0.225]).float()
-
         if self.testdataset.num_class == 0:
             num_class = int(input("Please input class num of this dataset: "))
             self.testdataset.num_class = num_class
@@ -140,7 +137,7 @@ class Validation:
             cur_h, cur_w = inp[i].size(1), inp[i].size(2)
 
             img = inp[i].permute(1, 2, 0)
-            img = (img * self.std + self.mean) * 255.
+            img *= 255.
             img = img.numpy().astype(np.uint8)
             img = img[pad_top:(cur_h - pad_bot), pad_left:(cur_w - pad_right), :]
             img = cv2.resize(img, (org_w, org_h), interpolation=0)

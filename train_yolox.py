@@ -62,8 +62,6 @@ class Training:
             self.cwd = Path(self.hyp['current_work_path'])
         
         self.writer = SummaryWriter(log_dir=str(self.cwd / 'log'))
-        self.mean = torch.tensor([0.485, 0.456, 0.406]).float()
-        self.std = torch.tensor([0.229, 0.224, 0.225]).float()
         self.init_lr = self.hyp['init_lr']
         
         # model, optimizer, loss, lr_scheduler, ema
@@ -279,7 +277,7 @@ class Training:
                                 info = y['resize_info']
                                 outputs = self.validate(inp)
                                 if outputs:
-                                    imgs, preds = self.preds_postprocess(inp.cpu(), outputs, info)
+                                    imgs, preds = self.preds_postprocess(inp, outputs, info)
                                     for k in range(len(imgs)):
                                         save_path = str(self.cwd / 'result' / 'predictions' / f"{j + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
                                         maybe_mkdir(Path(save_path).parent)
@@ -378,9 +376,9 @@ class Training:
             org_h, org_w = info[i]['org_shape']
             cur_h, cur_w = inp[i].size(1), inp[i].size(2)
 
-            img = inp[i].permute(1, 2, 0)
-            img = (img * self.std + self.mean) * 255.
-            img = img.numpy().astype(np.uint8)
+            img = inp[i].permute(1, 2, 0).cpu().numpy()
+            img = np.ascontiguousarray(np.clip(img * 255.0, 0.0, 255.0))
+            img = img.astype(np.uint8)
             img = img[pad_top:(cur_h - pad_bot), pad_left:(cur_w - pad_right), :]
             img = cv2.resize(img, (org_w, org_h), interpolation=0)
 

@@ -59,6 +59,8 @@ def plt_save_img(img, bboxes, labels, scores, save_path):
     assert img.shape[-1] == 3, f"img's shape must be (h, w, 3), but got {img.shape}"
     assert len(bboxes) == len(labels)
     assert len(bboxes) == len(scores)
+
+    img = np.ascontiguousarray(img)
     fig, ax = plt.subplots(figsize=[16, 16])
     ax.imshow(img)
     font = {'family': 'serif',
@@ -102,6 +104,7 @@ def cv2_save_img_plot_pred_gt(img, pred_bboxes, pred_labels, pred_scores, gt_bbo
         Path(save_path).parent.mkdir(parents=True)
 
     img_gt, img_pred = img.copy(), img.copy()
+    img_gt = np.ascontiguousarray(img_gt)
     if len(pred_bboxes) > 0:
         for i, box in enumerate(pred_bboxes):
             # pt1:左上角坐标[xmin, ymin] ; pt2:右下角坐标[xmax, ymax]
@@ -175,6 +178,7 @@ def cv2_save_img(img, bboxes, labels, scores, save_path):
     if not Path(save_path).parent.exists():
         Path(save_path).parent.mkdir(parents=True)
 
+    img = np.ascontiguousarray(img)
     if len(bboxes) > 0:
         for i, box in enumerate(bboxes):
             # pt1:左上角坐标[xmin, ymin] ; pt2:右下角坐标[xmax, ymax]
@@ -222,6 +226,8 @@ def plt_plot_img(img, bboxes, labels, scores):
     assert img.shape[-1] == 3
     assert len(bboxes) == len(labels)
     assert len(bboxes) == len(scores)
+
+    img = np.ascontiguousarray(img)
     fig, ax = plt.subplots(figsize=[16, 10])
     ax.imshow(img)
     font = {'family': 'serif',
@@ -265,6 +271,8 @@ def plt_plot_all(img, pred_bboxes, pred_labels, pred_scores, gt_bboxes, gt_label
     assert img.shape[-1] == 3
     assert len(pred_bboxes) == len(pred_labels)
     assert len(pred_bboxes) == len(pred_scores)
+
+    img = np.ascontiguousarray(img)
     fig, ax = plt.subplots(figsize=[16, 10])
     ax.imshow(img)
     font = {'family': 'serif',

@@ -449,8 +449,6 @@ def YoloDataloader(hyp, is_training=True):
             }
         dataset = YoloDataset(hyp['img_dir'], hyp['lab_dir'], hyp['name_path'], hyp['input_img_size'], coco_dataset_kwargs, hyp['cache_num'])
         
-        
-        
         if hyp['aspect_ratio']:  # 是否采用按照数据集中图片长宽比从小到大的顺序sample数据
             print(f"Build Aspect Ratio BatchSampler!")
             _start = time()
@@ -461,7 +459,6 @@ def YoloDataloader(hyp, is_training=True):
             print(f"- Use time {time() - _start:.3f}s")
         else:
             sampler = None
-        
 
         # 使用自定义的batch_sampler时，不要给DataLoader中的batch_size,shuffle赋值，因为这些参数会在自定义的batch_sampler中已经定义了
         dataloader = DataLoader(dataset,
@@ -470,6 +467,7 @@ def YoloDataloader(hyp, is_training=True):
                                 num_workers=hyp['num_workers'],
                                 pin_memory=hyp['pin_memory'], 
                                 batch_size=hyp['batch_size'] if sampler is None else None)
+
     elif not is_training and hyp['lab_dir']:  # validation for compute mAP
         dataset = YoloDataset(hyp['img_dir'], hyp['lab_dir'], hyp['name_path'], hyp['input_img_size'], None)
         dataloader = DataLoader(dataset, batch_size=hyp['batch_size'], 
@@ -508,18 +506,16 @@ def test():
               'data_aug_mosaic_thr': 1.
     }
 
-    dataset = YoloDataset('/COCO/train_dataset/image/',
-                          "/COCO/train_dataset/label/",
-                          '/COCO/train_dataset/names.txt',
+    dataset = YoloDataset('~/Dataset/COCO2017/train/image/',
+                          "~/Dataset/COCO2017/train/label/",
+                          '~/JYL/Dataset/COCO2017/train/names.txt',
                           [448, 448], aug_hyp, 0)
-    mean = torch.tensor([0.485, 0.456, 0.406]).float()
-    std = torch.tensor([0.229, 0.224, 0.225]).float()
     collector = partial(fixed_imgsize_collector, dst_size=[448, 448])
     batch_size = 5
     print(f"Build Aspect Ratio BatchSampler!")
     _start = time()
 
-    ar_list = pickle.load(open("xxx/aspect_ratio.pkl", 'rb'))
+    ar_list = pickle.load(open("~/YOLO/dataset/pkl/coco_aspect_ratio.pkl", 'rb'))
     sampler = AspectRatioBatchSampler(dataset, batch_size, True, aspect_ratio_list=ar_list)
     print(f"- Use time {time() - _start:.3f}s")
     loader = DataLoader(dataset, collate_fn=collector, batch_sampler=sampler)
@@ -530,7 +526,7 @@ def test():
                 title = x['img_id'][i]
                 img = x['img'][i]
                 img = img.permute(1, 2, 0)
-                img = (img * std + mean) * 255.
+                img = np.clip(img * 255.0, 0.0, 255.0)
                 img_mdy = np.ascontiguousarray(img.numpy().astype('uint8'))
                 h, w, _ = img.shape
                 # 该笔数据中是否有object，ann[:, 4] == -1表示没有object

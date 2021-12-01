@@ -166,7 +166,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
     if isinstance(mosaic_shape, int):
         mosaic_shape = [mosaic_shape, mosaic_shape]
 
-    xc, yc = [int(random.uniform(x/4, x*3/4)) for x in (np.array(mosaic_shape))]
+    xc, yc = [int(random.uniform(2*x/5, 4*x/5)) for x in (np.array(mosaic_shape))]
     img_out = np.full(shape=mosaic_shape + [3], dtype=np.uint8, fill_value=fill_value)
     bboxes_out = []
     labels_out = []

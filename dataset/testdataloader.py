@@ -29,9 +29,7 @@ class TestDataset(Dataset):
     def normalization(img):
         # 输入图像的格式为(h,w,3)
         assert len(img.shape) == 3 and img.shape[-1] == 3
-        transforms = torchvision.transforms.Compose([
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
+        transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor(),])
         return transforms(img)
 
     def __getitem__(self, item):
@@ -65,14 +63,12 @@ def testdataloader(datadir, img_size=640, batch_size=1):
 
 def test(datadir, img_size, batch_size):
     dataloader = testdataloader(datadir, img_size, batch_size)
-    mean = torch.tensor([0.485, 0.456, 0.406]).float()
-    std = torch.tensor([0.229, 0.224, 0.225]).float()
     for x in dataloader:
         for i in range(batch_size):
             img = x['img'][i]
             info = x['info'][i]
             img = img.permute(1, 2, 0)
-            img = (img * std + mean) * 255.
+            img *= 255.
             img_mdy = img.numpy().astype('uint8')
             fig, axes = plt.subplots(1, 2, figsize=[16, 16])
             axes[0].imshow(img_mdy)

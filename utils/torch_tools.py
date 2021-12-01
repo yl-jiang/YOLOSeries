@@ -11,11 +11,10 @@ import numpy as np
 def normalization(img):
     # 输入图像的格式为(h,w,3)
     assert len(img.shape) == 3 and img.shape[-1] == 3
-    transforms = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
-    return transforms(img)
-
+    transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])  # img /255
+        # torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    # return transforms(img)
+    return torch.from_numpy(img / 255.0).permute(2, 0, 1).contiguous()
 
 class AspectRatioBatchSampler(Sampler):
     """
@@ -63,8 +62,6 @@ class AspectRatioBatchSampler(Sampler):
                   for i in range(0, len(order), self.batch_size)]
         # divide into groups, one group = one batch
         return groups
-
-
 
 def fixed_imgsize_collector(data_in, dst_size):
     """
