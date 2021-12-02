@@ -27,7 +27,7 @@ class ConvBnAct(nn.Module):
         super(ConvBnAct, self).__init__()
         self.conv = nn.Conv2d(in_channel, out_channel, kernel, stride, padding=autopad(kernel, padding), groups=groups, bias=bias)
         self.bn = nn.BatchNorm2d(out_channel)
-        self.act = nn.SiLU() if act else nn.Identity()
+        self.act = nn.SiLU(inplace=True) if act else nn.Identity()
 
     def forward(self, x):
         x = self.conv(x)

@@ -73,7 +73,7 @@ class Training:
         self.validate = Evaluate(self.ema_model.ema, self.hyp)
 
         # load pretrained model or initialize model's parameters
-        self.load_model(True, 'cpu')
+        # self.load_model(True, 'cpu')
 
         # logger
         self.logger = self._config_logger()
@@ -194,9 +194,9 @@ class Training:
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.BatchNorm2d):
-                m.eps = 1e-3
-                m.momentum = 0.03
-            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6)):
+                m.eps = 1e-6
+                m.momentum = 0.01
+            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU)):
                 m.inplace = True
 
         cls_layer = [self.model.detect.pred_small['cls'],
@@ -210,13 +210,13 @@ class Training:
         for layer in cls_layer:
             for m in layer:
                 if isinstance(m, nn.Conv2d):
-                    bias = m.bias.view(1, -1) 
+                    bias = m.bias.view(self.hyp['num_anchors'], -1) 
                     bias.data.fill_(-math.log((1-p) / p))
                     m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
 
         for m in reg_layer:
             if isinstance(m, nn.Conv2d):
-                bias = m.bias.view(1, -1) 
+                bias = m.bias.view(self.hyp['num_anchors'], -1) 
                 bias.data.fill_(-math.log((1-p) / p))
                 m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
 
@@ -249,7 +249,7 @@ class Training:
                             reg_loss = loss_dict['reg_loss']  # reg_loss
                             cof_loss = loss_dict['cof_loss']
                             cls_loss = loss_dict['cls_loss']
-                            l1_loss = loss_dict['l1_loss']
+                            l1_reg_loss = loss_dict['l1_reg_loss']
                             targets_num = loss_dict['num_gt']
 
                         # backward
@@ -265,9 +265,9 @@ class Training:
                                 self.ema_model.update(self.model)
 
                         # tensorboard
-                        tot_loss, reg_loss, cof_loss, cls_loss, l1_loss = self.update_loss_meter(tot_loss.item(), reg_loss.item(), cof_loss.item(), cls_loss.item(), l1_loss.item())
+                        tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss = self.update_loss_meter(tot_loss.item(), reg_loss.item(), cof_loss.item(), cls_loss.item(), l1_reg_loss.item())
                         is_best = tot_loss < tot_loss_before
-                        self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_loss)
+                        self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss)
                         tot_loss_before = tot_loss
 
                         # validation
@@ -290,7 +290,7 @@ class Training:
 
                         # verbose
                         if cur_steps % self.hyp['show_tbar_every'] == 0:
-                            self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, reg_loss, cof_loss, cls_loss, l1_loss, targets_num, inp_h, APFifty, meanAP, epoch_period)
+                            self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss, targets_num, inp_h, APFifty, meanAP, epoch_period)
 
                         # save model
                         if cur_steps % (self.hyp['save_ckpt_every']*len(self.dataloader)) == 0:
@@ -418,13 +418,13 @@ class Training:
             else:
                 self.hyp['device'] = 'cpu'
 
-    def summarywriter(self, steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_loss):
+    def summarywriter(self, steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss):
         lrs = [x['lr'] for x in self.optimizer.param_groups]
         self.writer.add_scalar(tag='train/tot_loss', scalar_value=tot_loss, global_step=steps)
         self.writer.add_scalar('train/reg_loss', reg_loss, steps)
         self.writer.add_scalar('train/cof_loss', cof_loss, steps)
         self.writer.add_scalar('train/cls_loss', cls_loss, steps)
-        self.writer.add_scalar('train/l1_loss', l1_loss, steps)
+        self.writer.add_scalar('train/l1_reg_loss', l1_reg_loss, steps)
         self.writer.add_scalar('train/lr', lrs[0], steps)
 
     def mutil_scale_training(self, imgs, targets):
@@ -643,6 +643,8 @@ if __name__ == '__main__':
         cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolox.yaml"
         # lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
         # img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
+        # name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+
         lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
         img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
         name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'

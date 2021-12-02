@@ -642,10 +642,10 @@ if __name__ == '__main__':
     # args = parser.parse_args()
 
     class Args:
-        cfg = "./Programs/YOLO/config/train_yolov5.yaml"
-        lab_dir = './Dataset/COCO2017/train/label'
-        img_dir = './Dataset/COCO2017/train/image/'
-        name_path = './Dataset/COCO2017/train/names.txt'
+        cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolov5.yaml"
+        lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
+        img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
+        name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)
