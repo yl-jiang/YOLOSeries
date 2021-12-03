@@ -6,8 +6,8 @@ loss_hyp:
   cls_loss_scale: 0.01  # 分类损失权重
   l1_loss_scale: 0.1  # L1 loss损失权重
   cof_loss_scale: 1.0  # 置信度损失权重
-  class_smooth_factor: 1.0 # 标签平滑
-  cls_pos_weight: 0.99  # 
+  class_smooth_factor: 0.98 # 标签平滑
+  cls_pos_weight: 1.0  # 
   cof_pos_weight: 1.0  # 
   use_l1: true  # compute L1 norm regression loss
 
@@ -29,13 +29,9 @@ train_hyp:
   total_epoch: 300
   num_anchors: 1  # 每个grid给出多少个预测框
   device: "gpu"  # 是否使用GPU进行训练 / ['gpu', 'cpu']中的一种
-  do_warmup: true  # 是否开启预热训练
   accumulate_loss_step: 32  # 累积梯度下降
-  warmup_epoch: 3
   do_ema: true  # 是否维持一个Everage Moving Model
-  warmup_bias_lr: 0.1  # warmup lr for bias
-  warmup_momentum: 0.9
-  weight_init_prior_prob: 0.01  # 用于网络中的bias参数初始化
+  weight_init_prior_prob: 0.05  # 用于网络中的bias参数初始化
   validation_every: 0.5  # 每隔多少个epoch validate一次
   show_tbar_every: 3  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
@@ -51,6 +47,12 @@ train_hyp:
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
   iou_type: 'ciou'  # 计算回归损失时使用的iou类型 / ['iou', 'giou', 'ciou']中的一种
+
+warmup_hyp:
+  do_warmup: true  # 是否开启预热训练
+  warmup_epoch: 3
+  warmup_bias_lr: 0.1  # warmup lr for bias
+  warmup_momentum: 0.9
 
 optim_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']中的一种

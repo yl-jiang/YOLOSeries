@@ -105,11 +105,11 @@ def xyxy2xywh(bboxes):
     :return:
     """
     new_bbox = torch.zeros_like(bboxes)
-    wh = bboxes[:, [2, 3]] - bboxes[:, [0, 1]]
+    wh = bboxes[..., [2, 3]] - bboxes[..., [0, 1]]
     # [center_x, center_y]
-    xy = (bboxes[:, [0, 1]] + bboxes[:, [2, 3]]) / 2
-    new_bbox[:, [0, 1]] = xy
-    new_bbox[:, [2, 3]] = wh
+    xy = (bboxes[..., [0, 1]] + bboxes[..., [2, 3]]) / 2
+    new_bbox[..., [0, 1]] = xy
+    new_bbox[..., [2, 3]] = wh
     # [x, y, w, h]
     return new_bbox
 
@@ -138,7 +138,7 @@ def xywh2xyxy(bboxes):
     [center_x, center_y, w, h] -> [xmin, ymin, xmax, ymax]
     :param bboxes: (N, 4)
     """
-    assert bboxes.ndim == 2, f"input bboxes's shape be same like (N, 4), but got {bboxes.shape}"
+    # assert bboxes.ndim == 2, f"input bboxes's shape be same like (N, 4), but got {bboxes.shape}"
     bbox_out = torch.zeros_like(bboxes)
     bbox_out[:, 0] = bboxes[:, 0] - bboxes[:, 2] / 2
     bbox_out[:, 1] = bboxes[:, 1] - bboxes[:, 3] / 2

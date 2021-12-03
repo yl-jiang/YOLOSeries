@@ -73,7 +73,7 @@ class Training:
         self.validate = Evaluate(self.ema_model.ema, self.hyp)
 
         # load pretrained model or initialize model's parameters
-        # self.load_model(True, 'cpu')
+        self.load_model(True, 'cpu')
 
         # logger
         self.logger = self._config_logger()
@@ -188,17 +188,6 @@ class Training:
         初始化模型参数，主要是对detection layers的bias参数进行特殊初始化，参考RetinaNet那篇论文，这种初始化方法可让网络较容易度过前期训练困难阶段
         （使用该初始化方法可能针对coco数据集有效，在对global wheat数据集的测试中，该方法根本train不起来）
         """
-        for m in self.model.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.BatchNorm2d):
-                m.eps = 1e-6
-                m.momentum = 0.01
-            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU)):
-                m.inplace = True
-
         cls_layer = [self.model.detect.pred_small['cls'],
                      self.model.detect.pred_middle['cls'],
                      self.model.detect.pred_large['cls']]
@@ -245,12 +234,13 @@ class Training:
                         with amp.autocast(enabled=self.use_cuda):
                             stage_preds = self.model(img)
                             loss_dict = self.loss_fcn(ann, stage_preds)
-                            tot_loss = loss_dict['tot_loss']
-                            reg_loss = loss_dict['reg_loss']  # reg_loss
-                            cof_loss = loss_dict['cof_loss']
-                            cls_loss = loss_dict['cls_loss']
-                            l1_reg_loss = loss_dict['l1_reg_loss']
-                            targets_num = loss_dict['num_gt']
+
+                        tot_loss = loss_dict['tot_loss']
+                        reg_loss = loss_dict['reg_loss']  # reg_loss
+                        cof_loss = loss_dict['cof_loss']
+                        cls_loss = loss_dict['cls_loss']
+                        l1_reg_loss = loss_dict['l1_reg_loss']
+                        targets_num = loss_dict['num_gt']
 
                         # backward
                         self.scaler.scale(tot_loss).backward()
@@ -641,6 +631,7 @@ if __name__ == '__main__':
 
     class Args:
         cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolox.yaml"
+
         # lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
         # img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
         # name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
@@ -648,6 +639,7 @@ if __name__ == '__main__':
         lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
         img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
         name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
+
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)

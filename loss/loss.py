@@ -261,10 +261,7 @@ class YOLOXLoss:
         """
         batch_size = tars.size(0)
         dtype = tars.type()
-        tars_xywh = torch.zeros_like(tars)
-        tars_xywh[..., 2:4] = tars[..., 2:4] - tars[..., :2]  # wh
-        tars_xywh[..., :2] = (tars[..., :2] + tars[..., 2:4]) / 2  # (ctr_x, ctr_y)
-        tars_xywh[..., 4:] = tars[..., 4:]
+        tars[..., :4] = xyxy2xywh(tars[..., :4])
 
         tot_num_fg, tot_num_gt = 0, 0
         tot_cls_loss, tot_reg_loss, tot_cof_loss, tot_l1_reg_loss = torch.zeros(1).to(self.device), torch.zeros(1).to(self.device), torch.zeros(1).to(self.device), torch.zeros(1).to(self.device)
@@ -284,7 +281,7 @@ class YOLOXLoss:
             # (1, 1, h, w, 2) -> (1, num_anchors*h*w, 2)
             grid = grid.repeat(1, self.num_anchors, 1, 1, 1).reshape(1, -1, 2)
             
-            stage_out_dict = self.calculate_each_stage(tars_xywh, pred, grid[0], stride)
+            stage_out_dict = self.calculate_loss_of_each_stage(tars, pred, grid[0], stride)
             tot_num_fg += stage_out_dict['num_fg']
             tot_num_gt += stage_out_dict['num_gt']
             tot_cls_loss += stage_out_dict['cls_loss'] 
@@ -297,7 +294,7 @@ class YOLOXLoss:
             tot_cls_loss = tot_cof_loss.new_tensor(0.0)
 
         tot_loss = self.reg_loss_scale * tot_reg_loss + self.cls_loss_scale * tot_cls_loss + self.cof_loss_scale * tot_cof_loss + self.l1_loss_scale * tot_l1_reg_loss
-        # tot_loss = tot_loss * 0.001
+        # tot_loss = tot_loss * batch_size
 
         loss_dict = {'tot_loss': tot_loss, 
                     'reg_loss': self.reg_loss_scale * tot_reg_loss, 
@@ -309,7 +306,7 @@ class YOLOXLoss:
 
         return loss_dict
 
-    def calculate_each_stage(self, tars, preds, grid, stride):
+    def calculate_loss_of_each_stage(self, tars, preds, grid, stride):
         """
         Args:
             preds: 某个stage的预测输出 (N, num_anchors*h*w, 85)：(N, num_anchors*28*28, 85)或(N, num_anchors*14*14, 85)或(N, num_anchors*7*7, 85) / [x, y, w, h, cof, cls1, cls2, ...]
@@ -395,10 +392,10 @@ class YOLOXLoss:
         tot_num_fg = max(tot_num_fg, 1)
 
         # regression loss
-        reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg, self.hyp['iou_type']).mean()  # regression
+        reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg, self.hyp['iou_type'])  # regression
 
         # cofidence loss
-        cof_loss = self.bce_cof(preds[..., 4].view(-1, 1), batch_tar_cof.type(preds.type())).mean()  # cofidence
+        cof_loss = self.bce_cof(preds[..., 4].view(-1, 1), batch_tar_cof.type(preds.type()))  # cofidence
 
         # classification loss
         assert preds[..., 5:].view(-1, self.num_class)[fg].size() == batch_tar_cls.size()
@@ -406,18 +403,18 @@ class YOLOXLoss:
             cls_factor = self.focal_loss_factor(preds[..., 5:].view(-1, self.num_class)[fg], batch_tar_cls)
         else:
             cls_factor = torch.ones_like(batch_tar_cls)
-        cls_loss = (self.bce_cls(preds[..., 5:].view(-1, self.num_class)[fg], batch_tar_cls) * cls_factor).mean()  # classification
+        cls_loss = (self.bce_cls(preds[..., 5:].view(-1, self.num_class)[fg], batch_tar_cls) * cls_factor)  # classification
         
         # l1 regression loss
         if self.use_l1:
-            l1_reg_loss = self.l1_loss(origin_pred_box.view(-1, 4)[fg], batch_tar_box_l1).mean()  # l1
+            l1_reg_loss = self.l1_loss(origin_pred_box.view(-1, 4)[fg], batch_tar_box_l1)  # l1
         else:
             l1_reg_loss = 0.0
 
-        out_dict = {'reg_loss': reg_loss, 
-                    'cls_loss': cls_loss, 
-                    'l1_reg_loss': l1_reg_loss, 
-                    'cof_loss': cof_loss, 
+        out_dict = {'reg_loss': reg_loss.mean(), 
+                    'cls_loss': cls_loss.mean(), 
+                    'l1_reg_loss': l1_reg_loss.mean(), 
+                    'cof_loss': cof_loss.mean(), 
                     'num_fg': tot_num_fg, 
                     'num_gt': tot_num_gt}
 

@@ -122,15 +122,15 @@ class Detect(nn.Module):
 
         pred_s = self.forward_each(self.pred_small, x_s)
         _, _, h_s, w_s = pred_s.size() 
-        pred_s = pred_s.reshape(batch_size, self.num_anchors, -1, h_s, w_s).contiguous()
+        pred_s = pred_s.reshape(batch_size, self.num_anchors, -1, h_s, w_s)
 
         pred_m = self.forward_each(self.pred_middle, x_m)
         _, _, h_m, w_m = pred_m.size() 
-        pred_m = pred_m.reshape(batch_size, self.num_anchors, -1, h_m, w_m).contiguous()
+        pred_m = pred_m.reshape(batch_size, self.num_anchors, -1, h_m, w_m)
 
         pred_l = self.forward_each(self.pred_large, x_l)
         _, _, h_l, w_l = pred_l.size() 
-        pred_l = pred_l.reshape(batch_size, self.num_anchors, -1, h_l, w_l).contiguous()
+        pred_l = pred_l.reshape(batch_size, self.num_anchors, -1, h_l, w_l)
 
         # pred_l: (batch_size, num_anchors, 85, H/32, W/32)
         # pred_m: (batch_size, num_anchors, 85, H/16, W/16)
