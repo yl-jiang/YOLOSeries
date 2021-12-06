@@ -430,7 +430,7 @@ class Training:
         self.writer.add_scalar('train/reg_loss', reg_loss, steps)
         self.writer.add_scalar('train/cof_loss', cof_loss, steps)
         self.writer.add_scalar('train/cls_loss', cls_loss, steps)
-        self.writer.add_scalar('train/lr', lrs[0], steps)
+        self.writer.add_scalar(f'train/{self.hyp["optimizer"]}_lr', lrs[0], steps)
 
     def mutil_scale_training(self, imgs, targets):
         """

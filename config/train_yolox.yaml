@@ -31,7 +31,7 @@ train_hyp:
   device: "gpu"  # 是否使用GPU进行训练 / ['gpu', 'cpu']中的一种
   accumulate_loss_step: 32  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
-  weight_init_prior_prob: 0.05  # 用于网络中的bias参数初始化
+  weight_init_prior_prob: 0.5  # 用于网络中的bias参数初始化
   validation_every: 0.5  # 每隔多少个epoch validate一次
   show_tbar_every: 3  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA

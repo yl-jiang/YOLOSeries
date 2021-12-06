@@ -632,13 +632,13 @@ if __name__ == '__main__':
     class Args:
         cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolox.yaml"
 
-        # lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
-        # img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
-        # name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+        lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
+        img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
+        name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
 
-        lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
-        img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
-        name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
+        # lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
+        # img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
+        # name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
 
     args = Args()
 
