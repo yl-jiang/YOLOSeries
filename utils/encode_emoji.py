@@ -1,6 +1,7 @@
 from collections import Counter
 import collections, emoji
 from emoji.core import emojize
+import pickle
 
 counter = Counter([])
 print(counter)
@@ -11,9 +12,9 @@ print(":".join([]))
 
 emoji_obj = {"person": emoji.emojize(":couple:", use_aliases=True)}
 
-emoji_coco_name = ['person', 'bicycle', 'automobile', 'motorcycle', 'airplane',
-                   'bus', 'train', 'delivery_truck', 'motor_boat', 'vertical_traffic_light',
-                   'fire_engine', 'stop_sign', 'P_button', 'bench',
+coco_emoji_coco_name = ['person', 'bicycle', 'automobile', 'motorcycle', 'airplane',
+                        'bus', 'train', 'delivery_truck', 'motor_boat', 'vertical_traffic_light',
+                        'fire_engine', 'stop_sign', 'P_button', 'bench',
                          'bird', 'cat', 'dog', 'horse', 'ram', 'cow', 'elephant',
                          'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag',
                          'necktie', 'briefcase', 'flying_disc', 'skis', 'snowboarder',
@@ -43,16 +44,28 @@ COCO_BBOX_LABEL_NAMES = ['person', 'bicycle', 'car', 'motorcycle', 'airplane',
                          'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock',
                          'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush']
 
+voc_emoji_name = ['airplane',  'bicycle', 'bird','motor_boat','baby_bottle', 'bus','car', 'cat' , 'chair', 'cow',
+                      'diningtable', 'dog', 'horse', 'motorbike', 'person',
+                      'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
+
+
+VOC_LABEL_NAMES = ('aeroplane', 'bicycle', 'bird', 'boat', 'bottle',
+                    'bus', 'car', 'cat', 'chair', 'cow',
+                    'diningtable', 'dog', 'horse', 'motorbike', 'person',
+                    'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor')
+
 
 d = {}
-for name, emoji_name in zip(COCO_BBOX_LABEL_NAMES, emoji_coco_name):
+for name, emoji_name in zip(COCO_BBOX_LABEL_NAMES, coco_emoji_coco_name):
     d[name] = f":{emoji_name}:"
+pickle.dump(d, open("/home/uih/JYL/Programs/YOLO/result/pkl/coco_emoji_names.pkl", 'wb'))
+
+d = {}
+for name, emoji_name in zip(VOC_LABEL_NAMES, voc_emoji_name):
+    d[name] = f":{emoji_name}:"
+pickle.dump(d, open("/home/uih/JYL/Programs/YOLO/result/pkl/voc_emoji_names.pkl", 'wb'))
 
 print(emoji.demojize("👔"))
-
-import pickle
-pickle.dump(d, open("../result/pkl/coco_emoji_names.pkl", 'wb'))
-
 
 s = "1 :oven: ; 2 :refrigerator: ; 5 :tangerine: ; 1 :potted_plant: ; 1 :chair: ; 1 :banana:"
 s2 = '1 :oven: ; 2 :refrigerator: ; 5 :tangerine: ; 1 :potted_plant: ; 1 :chair: ; 1 :banana:'

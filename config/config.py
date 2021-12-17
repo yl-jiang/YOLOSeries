@@ -14,10 +14,16 @@ class Config:
             self.config.update({'input_img_size': [args.input_img_size, args.input_img_size]})
         if hasattr(args, 'use_focal_loss'):
             self.config.update({'use_focal_loss': args.use_focal_loss})
-        if hasattr(args, 'img_dir'):
-            self.config.update({'img_dir': args.img_dir})
-        if hasattr(args, 'lab_dir'):
-            self.config.update({'lab_dir': args.lab_dir})
+        if hasattr(args, 'train_img_dir'):
+            self.config.update({'train_img_dir': args.train_img_dir})
+        if hasattr(args, 'train_lab_dir'):
+            self.config.update({'train_lab_dir': args.train_lab_dir})
+        if hasattr(args, 'val_img_dir'):
+            self.config.update({'val_img_dir': args.val_img_dir})
+        if hasattr(args, 'test_img_dir'):
+            self.config.update({'test_img_dir': args.test_img_dir})
+        if hasattr(args, 'val_lab_dir'):
+            self.config.update({'val_lab_dir': args.val_lab_dir})
         if hasattr(args, 'name_path'):
             self.config.update({'name_path': args.name_path})
         if hasattr(args, 'cache_num'):

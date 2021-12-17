@@ -1,7 +1,6 @@
 from pathlib import Path
 import sys
 
-from numpy.lib.npyio import save
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
 
@@ -33,6 +32,8 @@ from dataset import testdataloader, YoloDataloader
 import argparse
 import pickle
 from utils import mAP_v2, cv2_save_img_plot_pred_gt
+from collections import Counter
+import emoji
 
 
 class Training:
@@ -53,9 +54,10 @@ class Training:
         self.hyp['input_img_size'] = self.padding(self.hyp['input_img_size'], 32)
        
         # dataset, scaler, loss_meter
-        self.dataloader, self.dataset = self.load_dataset()
-        self.testdataloader, self.testdataset = testdataloader(self.hyp['val_data_dir'], self.hyp['input_img_size'])
-        self.hyp['num_class'] = self.dataset.num_class
+        self.traindataloader, self.traindataset = self.load_dataset(is_training=True)
+        self.valdataloader, self.valdataset = self.load_dataset(is_training=False)
+        self.testdataloader, self.testdataset = testdataloader(self.hyp['test_data_dir'], self.hyp['input_img_size'])
+        self.hyp['num_class'] = self.traindataset.num_class
         self.scaler = amp.GradScaler(enabled=self.use_cuda)  # mix precision training
         self.tot_loss_meter = AverageValueMeter()
         self.box_loss_meter = AverageValueMeter()
@@ -80,7 +82,7 @@ class Training:
         self.validate = Evaluate(self.ema_model.ema, self.anchors, self.hyp)
 
         # load pretrained model or initialize model's parameters
-        self.load_model(True, 'cpu')
+        self.load_model(False, 'cpu')
 
         # logger
         self.logger = self._config_logger()
@@ -96,11 +98,11 @@ class Training:
 
         # config warmup step
         if self.hyp['do_warmup']:
-            self.hyp['warmup_steps'] = max(self.hyp.get('warmup_epoch', 3) * len(self.dataloader), 1000)
+            self.hyp['warmup_steps'] = max(self.hyp.get('warmup_epoch', 3) * len(self.traindataloader), 1000)
         self.accumulate = self.hyp['accumulate_loss_step'] / self.hyp['batch_size']
 
-    def load_dataset(self):
-        dataloader, dataset = YoloDataloader(self.hyp)
+    def load_dataset(self, is_training):
+        dataloader, dataset = YoloDataloader(self.hyp, is_training)
         return dataloader, dataset
 
     @property
@@ -238,15 +240,15 @@ class Training:
     def step(self):
         self.optimizer.zero_grad()
         tot_loss_before = float('inf')
-        APFifty, meanAP, = 0, 0
+        map50, map, = 0, 0
         epoch_period = 0
         for epoch in range(self.hyp['total_epoch']):
             self.model.train()
             epoch_start = time_synchronize()
-            with tqdm(total=len(self.dataloader), ncols=180, file=sys.stdout) as tbar:
-                for i, x in enumerate(self.dataloader):
+            with tqdm(total=len(self.traindataloader), ncols=160, file=sys.stdout) as tbar:
+                for i, x in enumerate(self.traindataloader):
                     start_t = time_synchronize()
-                    cur_steps = len(self.dataloader) * epoch + i + 1
+                    cur_steps = len(self.traindataloader) * epoch + i + 1
                     ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
                     img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
                     img, ann = self.mutil_scale_training(img, ann)
@@ -278,8 +280,8 @@ class Training:
                     self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss)
                     tot_loss_before = tot_loss
 
-                    # validation
-                    if cur_steps % (self.hyp['validation_every']*len(self.dataloader))== 0:
+                    # testing
+                    if cur_steps % int(self.hyp.get('validation_every', 0.5)*len(self.traindataloader))== 0:
                         for j, y in enumerate(self.testdataloader):
                             inp = y['img'].to(self.hyp['device'])  # (1, 3, h, w)
                             info = y['resize_info']
@@ -292,19 +294,19 @@ class Training:
                                     cv2_save_img(imgs[k], preds[k][:, :4], preds[k][:, 5].astype(np.uint8), preds[k][:, 4], save_path)
                                 del imgs, preds, outputs
                     
-                    # mAP
-                    if self.hyp['calculate_map_every'] is not None and cur_steps % self.hyp['calculate_map_every'] == 0:
-                        self.calculate_mAP()
+                    # mAP / validation
+                    if self.hyp['calculate_map_every'] is not None and cur_steps % int(self.hyp.get('calculate_map_every', 0.5) * len(self.traindataloader))== 0:
+                        map, map50, mp, mr = self.calculate_mAP()
 
                     # verbose
-                    if cur_steps % self.hyp['show_tbar_every'] == 0:
-                        self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, reg_loss, cof_loss, cls_loss, targets_num, inp_h, APFifty, meanAP, epoch_period)
+                    if cur_steps % int(self.hyp.get('show_tbar_every', 5)) == 0:
+                        self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, reg_loss, cof_loss, cls_loss, targets_num, inp_h, map50, map, epoch_period)
 
                     # save model
-                    if cur_steps % (self.hyp['save_ckpt_every']*len(self.dataloader)) == 0:
+                    if cur_steps % int(self.hyp['save_ckpt_every'] * len(self.traindataloader)) == 0:
                         self.save(tot_loss, epoch+1, cur_steps, True)
 
-                    del img, ann
+                    del img, ann, tot_loss, reg_loss, cof_loss, cls_loss
                     tbar.update()
                 tbar.close()
 
@@ -462,15 +464,15 @@ class Training:
             if Path(model_path).exists():
                 try:
                     state_dict = torch.load(model_path, map_location=map_location)
-                    if "model" not in state_dict:
+                    if "model_state_dict" not in state_dict:
                         print(f"can't load pretrained model from {model_path}")
     
                     else:  # load pretrained model
-                        self.model.load_state_dict(state_dict["model"])
+                        self.model.load_state_dict(state_dict["model_state_dict"])
                         print(f"use pretrained model {model_path}")
 
-                    if load_optimizer and "optim" in state_dict:  # load optimizer
-                        self.optimizer.load_state_dict(state_dict['optim'])
+                    if load_optimizer and "optim_state_dict" in state_dict and state_dict.get("optim_type", None) == self.hyp['optimizer']:  # load optimizer
+                        self.optimizer.load_state_dict(state_dict['optim_state_dict'])
                         print(f"use pretrained optimizer {model_path}")
 
                     if "ema" in state_dict:  # load EMA model
@@ -503,8 +505,9 @@ class Training:
 
         optim_state = self.optimizer.state_dict() if save_optimizer else None
         state_dict = {
-            "model": self.model.state_dict(),
-            "optim": optim_state,
+            "model_state_dict": self.model.state_dict(),
+            "optim_state_dict": optim_state,
+            "optim_type": self.hyp['optimizer'], 
             "loss": loss,
             "epoch": epoch,
             "step": step, 
@@ -525,6 +528,51 @@ class Training:
         if not math.isnan(cls_loss):
             self.cls_loss_meter.add(cls_loss)
         return self.tot_loss_meter.value()[0], self.box_loss_meter.value()[0], self.cof_loss_meter.value()[0], self.cls_loss_meter.value()[0]
+    
+    def gt_bbox_postprocess(self, anns, infoes):
+        """
+        valdataloader出来的gt bboxes经过了letter resize，这里将其还原为原始的bboxes
+        :param: anns: dict
+        """
+        ppb = []  # post processed bboxes
+        ppc = []  # post processed classes
+        for i in range(anns.shape[0]):
+            scale, pad_top, pad_left = infoes[i]['scale'], infoes[i]['pad_top'], infoes[i]['pad_left']
+            valid_idx = anns[i][:, 4] >= 0
+            ann_valid = anns[i][valid_idx]
+            ann_valid[:, [0, 2]] -= pad_left
+            ann_valid[:, [1, 3]] -= pad_top
+            ann_valid[:, :4] /= scale
+            ppb.append(ann_valid[:, :4].cpu().numpy())
+            ppc.append(ann_valid[:, 4].cpu().numpy().astype('uint16'))
+        return ppb, ppc
+
+    def count_and_sort_object(self, pred_lab):
+        """
+        按照object的个数降序输出
+
+        :param pred_lab: [(X, ), (Y, ), (Z, ), ...]
+        """
+        msg = []
+        for lab in pred_lab:
+            counter = Counter(lab)
+            names, numbers = [], []
+            for nam, num in counter.items():
+                names.append(nam)
+                numbers.append(str(num))
+            sort_index = np.argsort([int(i) for i in numbers])[::-1]
+            ascending_numbers = [numbers[i] for i in sort_index]
+            ascending_names = [names[i] for i in sort_index]
+            if len(numbers) > 0:
+                if (self.cwd / "result" / 'pkl' / "voc_emoji_names.pkl").exists():
+                    emoji_names = pickle.load(open(str(self.cwd / "result" / 'pkl' / "voc_emoji_names.pkl"), 'rb'))
+                    msg_ls = [" ".join([number, emoji_names[name]]) for name, number in zip(ascending_names, ascending_numbers)]
+                else:
+                    msg_ls = [" ".join([number, name]) for name, number in zip(ascending_names, ascending_numbers)]
+            else:
+                msg_ls = ["No object has been found!"]
+            msg.append(emoji.emojize("; ".join(msg_ls)))
+        return msg
 
     def calculate_mAP(self):
         """
@@ -532,7 +580,7 @@ class Training:
         """
         start_t = time_synchronize()
         pred_bboxes, pred_classes, pred_confidences, pred_labels, gt_bboxes, gt_classes = [], [], [], [], [], []
-        for i, x in enumerate(self.dataloader):
+        for i, x in enumerate(self.valdataloader):
             imgs = x['img']  # (bn, 3, h, w)
             infoes = x['resize_info']
 
@@ -561,7 +609,7 @@ class Training:
                     pred_box = preds[j][valid_idx, :4]
                     pred_cof = preds[j][valid_idx, 4]
                     pred_cls = preds[j][valid_idx, 5]
-                    pred_lab = [self.testdataset.cls2lab[int(c)] for c in pred_cls]
+                    pred_lab = [self.valdataset.cls2lab[int(c)] for c in pred_cls]
 
                 batch_pred_box.append(pred_box)
                 batch_pred_cls.append(pred_cls)
@@ -573,19 +621,18 @@ class Training:
             pred_confidences.extend(batch_pred_cof)
             pred_labels.extend(batch_pred_lab)
             
-            obj_msg = self.count_object(batch_pred_lab)
-            
-            for k in range(len(imgs)):
-                count = i * len(imgs) + k + 1
-                print(f"[{count:>05}/{len(self.testdataset)}] ➡️ " + obj_msg[k] + f" ({(t/len(imgs)):.2f}s)")
-                if self.hyp['save_img']:
-                    save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
-                    if self.hyp['show_gt_bbox']:
-                        gt_lab = [self.testdataset.cls2lab[int(c)] for c in gt_cls[k]]
-                        cv2_save_img_plot_pred_gt(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], gt_bbox[k], gt_lab, save_path)
-                    else:
-                        cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
-            del imgs, preds
+            # obj_msg = self.count_object(batch_pred_lab)
+        #     for k in range(len(imgs)):
+        #         count = i * len(imgs) + k + 1
+        #         print(f"[{count:>05}/{len(self.valdataset)}] ➡️ " + obj_msg[k] + f" ({(t/len(imgs)):.2f}s)")
+        #         if self.hyp['save_img']:
+        #             save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
+        #             if self.hyp['show_gt_bbox']:
+        #                 gt_lab = [self.valdataset.cls2lab[int(c)] for c in gt_cls[k]]
+        #                 cv2_save_img_plot_pred_gt(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], gt_bbox[k], gt_lab, save_path)
+        #             else:
+        #                 cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
+        #     del imgs, preds
 
         total_use_time = time_synchronize() - start_t
 
@@ -608,11 +655,12 @@ class Training:
 
         mapv2 = mAP_v2(all_gts, all_preds, self.cwd / "result" / "curve")
         map, map50, mp, mr = mapv2.get_mean_metrics()
-        print(f"use time: {total_use_time:.2f}s")
-        print(f'mAP = {map * 100:.3f}')
-        print(f'mAP@0.5 = {map50 * 100:.1f}')
-        print(f'mp = {mp * 100:.1f}')
-        print(f'mr = {mr * 100:.1f}')
+        # print(f"use time: {total_use_time:.2f}s")
+        # print(f'mAP = {map * 100:.3f}')
+        # print(f'mAP@0.5 = {map50 * 100:.1f}')
+        # print(f'mp = {mp * 100:.1f}')
+        # print(f'mr = {mr * 100:.1f}')
+        return map, map50, mp, mr
 
 
 if __name__ == '__main__':
@@ -643,9 +691,15 @@ if __name__ == '__main__':
 
     class Args:
         cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolov5.yaml"
-        lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
-        img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
-        name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
+        # lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
+        # img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
+        # name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
+        train_lab_dir = '/home/uih/JYL/Dataset/VOC/train2012/label'
+        train_img_dir = '/home/uih/JYL/Dataset/VOC/train2012/image'
+        name_path = '/home/uih/JYL/Dataset/VOC/train2012/names.txt'
+        val_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
+        val_lab_dir = "/home/uih/JYL/Dataset/VOC/val2012/label"
+
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)

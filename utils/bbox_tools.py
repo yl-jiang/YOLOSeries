@@ -140,10 +140,10 @@ def xywh2xyxy(bboxes):
     """
     # assert bboxes.ndim == 2, f"input bboxes's shape be same like (N, 4), but got {bboxes.shape}"
     bbox_out = torch.zeros_like(bboxes)
-    bbox_out[:, 0] = bboxes[:, 0] - bboxes[:, 2] / 2
-    bbox_out[:, 1] = bboxes[:, 1] - bboxes[:, 3] / 2
-    bbox_out[:, 2] = bboxes[:, 0] + bboxes[:, 2] / 2
-    bbox_out[:, 3] = bboxes[:, 1] + bboxes[:, 3] / 2
+    bbox_out[..., 0] = bboxes[..., 0] - bboxes[..., 2] / 2
+    bbox_out[..., 1] = bboxes[..., 1] - bboxes[..., 3] / 2
+    bbox_out[..., 2] = bboxes[..., 0] + bboxes[..., 2] / 2
+    bbox_out[..., 3] = bboxes[..., 1] + bboxes[..., 3] / 2
     return bbox_out
 
 
@@ -167,15 +167,15 @@ def gpu_iou(bbox1, bbox2):
     :param bbox2: [[xmin, ymin, xmax, ymax], ...] / type: torch.Tensor / (M, 4)
     :return: iou / (N, M)
     """
-    assert isinstance(bbox1, torch.Tensor)
-    assert isinstance(bbox2, torch.Tensor)
-    assert (bbox1[:, [2, 3]] >= bbox1[:, [0, 1]]).bool().all()
-    assert (bbox2[:, [2, 3]] >= bbox2[:, [0, 1]]).bool().all()
-    assert bbox1.shape[-1] == bbox2.shape[-1] == 4
-    assert bbox1.device == bbox2.device
-
     bbox1_area = torch.prod(bbox1[:, [2, 3]] - bbox1[:, [0, 1]], dim=-1)  # (N,)
     bbox2_area = torch.prod(bbox2[:, [2, 3]] - bbox2[:, [0, 1]], dim=-1)  # (M,)
+
+    # bbox1_w = bbox1[:, 2] - bbox1[:, 0]
+    # bbox1_h = bbox1[:, 3] - bbox1[:, 1]
+    # bbox2_w = bbox2[:, 2] - bbox2[:, 0]
+    # bbox2_h = bbox2[:, 3] - bbox2[:, 1]
+    # bbox1_area = bbox1_w * bbox1_h
+    # bbox2_area = bbox2_w * bbox2_h
 
     intersection_ymax = torch.min(bbox1[:, None, 3], bbox2[:, 3])  # (N, M)
     intersection_xmax = torch.min(bbox1[:, None, 2], bbox2[:, 2])  # (N, M)
@@ -185,9 +185,9 @@ def gpu_iou(bbox1, bbox2):
     intersection_w = torch.clamp(intersection_xmax - intersection_xmin, min=0.0)  # (N, M)
     intersection_h = torch.clamp(intersection_ymax - intersection_ymin, min=0.0)  # (N, M)
     intersection_area = intersection_w * intersection_h  # (N, M)
-    iou_out = intersection_area / (bbox1_area[:, None] + bbox2_area - intersection_area + 1e-16)  # (N, M)
+    iou = intersection_area / (bbox1_area[:, None] + bbox2_area - intersection_area + 1e-16)  # (N, M)
 
-    return iou_out  # (N, M)
+    return iou  # (N, M)
 
 
 def gpu_Giou(bbox1, bbox2):

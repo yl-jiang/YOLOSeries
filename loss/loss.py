@@ -235,7 +235,7 @@ class YOLOXLoss:
         self.hyp = hyp
         self.num_anchors = hyp['num_anchors']
         self.num_stage = hyp.get('num_stage', 3)
-        self.grids = [torch.zeros(1) for _ in range(self.num_stage)]
+        self.grids = {}
         self.img_sz = hyp['input_img_size']
         self.num_class = hyp['num_class']
         self.use_l1 = hyp.get('use_l1', True)
@@ -265,14 +265,14 @@ class YOLOXLoss:
 
         tot_num_fg, tot_num_gt = 0, 0
         tot_cls_loss, tot_reg_loss, tot_cof_loss, tot_l1_reg_loss = torch.zeros(1).to(self.device), torch.zeros(1).to(self.device), torch.zeros(1).to(self.device), torch.zeros(1).to(self.device)
-        for i, k in enumerate(preds.keys()):  # each stage
+        for k in preds.keys():  # each stage
             h, w = preds[k].shape[-2:]
             stride = self.img_sz[0] / h  # 该stage下采样尺度 
-            grid = self.grids[i]
+            grid = self.grids.get(f"stride_{stride}", torch.zeros(1))
             pred = preds[k]
-            if self.grids[i].shape[2:4] != preds[k].shape[2:4]:
+            if grid.shape[2:4] != preds[k].shape[2:4]:
                 grid = self._make_grid(h, w, dtype)
-                self.grids[i] = grid
+                self.grids[f"stride_{stride}"] = grid
 
             # (N, num_anchors, 85, h, w) -> (N, num_anchors, h, w, 85)
             pred = pred.permute(0, 1, 3, 4, 2).contiguous()
@@ -293,14 +293,17 @@ class YOLOXLoss:
         if self.num_class == 1:
             tot_cls_loss = tot_cof_loss.new_tensor(0.0)
 
-        tot_loss = self.reg_loss_scale * tot_reg_loss + self.cls_loss_scale * tot_cls_loss + self.cof_loss_scale * tot_cof_loss + self.l1_loss_scale * tot_l1_reg_loss
-        # tot_loss = tot_loss * batch_size
+        tot_reg_loss *= self.reg_loss_scale
+        tot_cls_loss *= self.cls_loss_scale
+        tot_cof_loss *= self.cof_loss_scale
+        tot_l1_reg_loss *= self.l1_loss_scale
+        tot_loss = (tot_reg_loss + tot_cls_loss + tot_cof_loss + tot_l1_reg_loss) * batch_size
 
         loss_dict = {'tot_loss': tot_loss, 
-                    'reg_loss': self.reg_loss_scale * tot_reg_loss, 
-                    'cls_loss': self.cls_loss_scale * tot_cls_loss, 
-                    'cof_loss': self.cof_loss_scale * tot_cof_loss, 
-                    'l1_reg_loss': self.l1_loss_scale * tot_l1_reg_loss, 
+                    'reg_loss': tot_reg_loss, 
+                    'cls_loss': tot_cls_loss, 
+                    'cof_loss': tot_cof_loss, 
+                    'l1_reg_loss': tot_l1_reg_loss, 
                     'num_fg': tot_num_fg, 
                     'num_gt': tot_num_gt}
 
@@ -313,13 +316,15 @@ class YOLOXLoss:
             tars: tensor; (N, num_bbox, 6) / [x_ctr, y_ctr, w, h, class_id, img_id]
             stride: a scalar / 下采样尺度 / 取值：8 or 16 or 32
             grid: (num_anchors*h*w, 2)
+        Return:
+
         """
         batch_tar_cls, batch_tar_box, batch_tar_cof, fg, batch_tar_box_l1 = [], [], [], [], []
         tot_num_gt, tot_num_fg = 0, 0
         # (N, num_anchors*h*w, 4)
         origin_pred_box = preds[..., :4].clone()
         # restore predictions to input scale / (N, num_anchors*h*w, 85)
-        preds[..., :2] = (preds[..., :2] + grid) * stride
+        preds[..., :2] = (preds[..., :2] + grid[None, ...]) * stride
         preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride  # 这一步可能由于preds[..., 2:4]值过大，进而导致exp计算后溢出得到Nan值
 
         for i in range(tars.size(0)):  # each image

@@ -55,7 +55,7 @@ def random_perspective(img, tar_bboxes, tar_labels, degrees=10, translate=.1, sc
     :return:
     """
     assert isinstance(img, np.ndarray)
-    assert img.ndim == 3, "only process one image onece for now"
+    assert img.ndim == 3, "only process one image once for now"
     assert isinstance(tar_labels, np.ndarray), "tar_label must be ndarray"
     assert len(tar_labels) == len(tar_bboxes), \
         f"the length of bboxes and labels should be the same, but len(bboxes)={len(tar_bboxes)} and len(labels)={len(tar_labels)}"
@@ -95,7 +95,7 @@ def random_perspective(img, tar_bboxes, tar_labels, degrees=10, translate=.1, sc
     # Combined rotation matrix
     M = T @ S @ R @ P @ C  # order of operations (right to left) is IMPORTANT
     if (dst_size[0] != img.shape[0]) or (M != np.eye(3)).any():  # image changed
-        if isinstance(fill_value, int):
+        if isinstance(fill_value, (int, tuple)):
             fill_value = (fill_value, fill_value, fill_value)
         if perspective:  # 是否进行透视变换
             img = cv2.warpPerspective(img, M, dsize=(width, height), borderValue=fill_value)
@@ -209,7 +209,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
         valid_idx = iou >= 0.15
         bboxes_out.append(box[valid_idx])
         labels_out.extend(np.array(labels[i])[valid_idx])
-        # ========================================================================
+        # ===============================================================
 
         # in big image(do not remove any box)
         # box[:, [0, 2]] += xmin_o  # x

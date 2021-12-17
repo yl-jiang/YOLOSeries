@@ -396,12 +396,14 @@ class YoloDataset(Dataset, Generator):
 
         # traing or validation
         img, ann = self.load_img_and_ann(ix)
+        bboxes, labels = ann['bboxes'], ann['classes']
+        
         if self.is_training:
             if random.random() < self.data_aug_param['mosaic_thr']:
                 img, bboxes, labels = self.load_mosaic(ix)
-                if random.random() < self.data_aug_param['mixup']:
-                    img2, bboxes2, labels2 = self.load_mosaic(random.randint(0, len(self) - 1))
-                    img, bboxes, labels = mixup(img, bboxes, labels, img2, bboxes2, labels2)
+            if random.random() < self.data_aug_param['mixup']:
+                img2, bboxes2, labels2 = self.load_mosaic(random.randint(0, len(self) - 1))
+                img, bboxes, labels = mixup(img, bboxes, labels, img2, bboxes2, labels2)
 
             img = RandomHSV(img, self.data_aug_param['hsv'], self.data_aug_param['hgain'],
                             self.data_aug_param['sgain'], self.data_aug_param['vgain'])
@@ -414,7 +416,7 @@ class YoloDataset(Dataset, Generator):
             ann['bboxes'] = ann['bboxes'][valid_index]
             ann['classes'] = ann['classes'][valid_index]
 
-        # 如果返回没有bbox的训练数据，会造成计算loss时在匹配target和prediction时出现问题
+        # 如果返回没有bbox的训练数据，会造成计算loss时在匹配target和prediction时出现问题，这里采用的应对策略是再resample一个训练数据，直到满足条件为止
         while np.sum(ann['bboxes']) == 0: 
             i = random.randint(0, len(self)-1)
             img, ann = self.load_img_and_ann(i)
@@ -447,8 +449,9 @@ def YoloDataloader(hyp, is_training=True):
             'data_aug_fill_value': hyp['data_aug_fill_value'],
             "data_aug_mosaic_thr": hyp['data_aug_mosaic_thr']
             }
-        dataset = YoloDataset(hyp['img_dir'], hyp['lab_dir'], hyp['name_path'], hyp['input_img_size'], coco_dataset_kwargs, hyp['cache_num'])
-        
+        assert Path(hyp['train_img_dir']).exists() and Path(hyp['train_img_dir']).is_dir()
+        assert Path(hyp['train_lab_dir']).exists() and Path(hyp['train_lab_dir']).is_dir()
+        dataset = YoloDataset(hyp['train_img_dir'], hyp['train_lab_dir'], hyp['name_path'], hyp['input_img_size'], coco_dataset_kwargs, hyp['cache_num'])
         if hyp['aspect_ratio']:  # 是否采用按照数据集中图片长宽比从小到大的顺序sample数据
             print(f"Build Aspect Ratio BatchSampler!")
             _start = time()
@@ -468,15 +471,18 @@ def YoloDataloader(hyp, is_training=True):
                                 pin_memory=hyp['pin_memory'], 
                                 batch_size=hyp['batch_size'] if sampler is None else None)
 
-    elif not is_training and hyp['lab_dir']:  # validation for compute mAP
-        dataset = YoloDataset(hyp['img_dir'], hyp['lab_dir'], hyp['name_path'], hyp['input_img_size'], None)
+    elif not is_training and hyp['val_lab_dir'] is not None:  # validation for compute mAP
+        assert Path(hyp['val_img_dir']).exists() and Path(hyp['val_img_dir']).is_dir()
+        assert Path(hyp['val_lab_dir']).exists() and Path(hyp['val_lab_dir']).is_dir()
+        dataset = YoloDataset(hyp['val_img_dir'], hyp['val_lab_dir'], hyp['name_path'], hyp['input_img_size'], None)
         dataloader = DataLoader(dataset, batch_size=hyp['batch_size'], 
                                 shuffle=False, drop_last=False, 
                                 num_workers=hyp['num_workers'], 
                                 pin_memory=hyp['pin_memory'], 
                                 collate_fn=collector_fn)
     else:  # just detection
-        dataset = YoloDataset(hyp['img_dir'], None, hyp['name_path'], hyp['input_img_size'], None)
+        assert Path(hyp['test_img_dir']).exists() and Path(hyp['test_img_dir']).is_dir()
+        dataset = YoloDataset(hyp['test_img_dir'], None, hyp['name_path'], hyp['input_img_size'], None)
         dataloader = DataLoader(dataset, batch_size=hyp['batch_size'],
                                 shuffle=False, drop_last=False,
                                 num_workers=hyp['num_workers'],

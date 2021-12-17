@@ -68,7 +68,7 @@ def fixed_imgsize_collector(data_in, dst_size):
 
     :param data_in: tuple, data[0] is image, data[1] is annotation, data[2] is image's id
     :param dst_size:
-    :return:
+    :return: dictionary
     """
     # 输入图像的格式为(h,w,3)
     assert data_in[0][0].ndim == 3 and data_in[0][0].shape[-1] == 3, f"data's formate should be (h, w, 3), but got {data_in[0].shape}"

@@ -1,20 +1,22 @@
 loss_hyp:
-  use_focal_loss: false # 是否使用focal loss方法计算分类损失
+  use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
   reg_loss_scale: 0.05  # 回归损失（bbox损失）权重
-  cls_loss_scale: 0.01  # 分类损失权重
-  l1_loss_scale: 0.1  # L1 loss损失权重
+  l1_loss_scale: 0.01 # L1 loss损失权重
+  cls_loss_scale: 1.0  # 分类损失权重
   cof_loss_scale: 1.0  # 置信度损失权重
-  class_smooth_factor: 0.98 # 标签平滑
+  class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 
   cof_pos_weight: 1.0  # 
   use_l1: true  # compute L1 norm regression loss
 
 train_hyp:
-  img_dir: ~  # 存放训练图像的文件夹路径
-  val_data_dir: "./result/wheat_test_imgs"
-  lab_dir: ~  # 存放训练label的文件夹路径
+  train_img_dir: ~  # 存放训练图像的文件夹路径
+  train_lab_dir: ~  # 存放训练label的文件夹路径
+  test_data_dir: "./result/coco_test_imgs"  # for test
+  val_img_dir: ~  # validation image dir
+  val_lab_dir: ~  # validation label dir
   aspect_ratio_path: ~  # 训练数据集中每张图片的长宽比（用于根据图像长宽比的一定顺序输入网络进行训练）
   use_crowb: false  # 对COCO格式的数据集，是否使用密集/遮挡的label作为训练数据
   cache_num: 0  # 缓存数据的数量（加速训练）
@@ -29,18 +31,18 @@ train_hyp:
   total_epoch: 300
   num_anchors: 1  # 每个grid给出多少个预测框
   device: "gpu"  # 是否使用GPU进行训练 / ['gpu', 'cpu']中的一种
-  accumulate_loss_step: 32  # 累积梯度下降
+  accumulate_loss_step: 64  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
-  weight_init_prior_prob: 0.5  # 用于网络中的bias参数初始化
-  validation_every: 0.5  # 每隔多少个epoch validate一次
-  show_tbar_every: 3  # 每个多少个step显示实时训练状态信息
+  weight_init_prior_prob: 0.01  # 用于网络中的bias参数初始化
+  validation_every: 0.5  # 每隔多少个epoch testing一次
+  show_tbar_every: 10  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
   save_log_txt: false  # 是否保存log文件
   log_save_path: ~  # 指定保存log日志的路径（xxx/xxx.txt）
-  pretrained_model_path: ~  # 预训练模型路径(xxx/xxx.pth)
+  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/checkpoints/every_small_adam_voc.pth"  # 预训练模型路径(xxx/xxx.pth)
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_path: null  # 当前工作目录（可以不设置）
-  calculate_map_every: ~
+  calculate_map_every: 0.5
   calculate_map: false
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   model_type: 'small'  # 使用模型类型
@@ -50,7 +52,7 @@ train_hyp:
 
 warmup_hyp:
   do_warmup: true  # 是否开启预热训练
-  warmup_epoch: 3
+  warmup_epoch: 5
   warmup_bias_lr: 0.1  # warmup lr for bias
   warmup_momentum: 0.9
 
@@ -58,12 +60,12 @@ optim_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']中的一种
   init_lr: 0.01  # 0.01 for sgd / 0.001 for adam
   weight_decay: 0.0005
-  momentum: 0.99
+  momentum: 0.9
   lr_scheculer_bias: 0.1
 
 data_hyp:
   data_aug_scale: 0.5  # 缩放
-  data_aug_shear: 0.0  # 剪切
+  data_aug_shear: 0.2  # 剪切
   data_aug_translate: 0.1  # 平移
   data_aug_degree: 0.0  # 旋转
   data_aug_prespective: 0.0  # 透视
@@ -71,7 +73,7 @@ data_hyp:
   data_aug_hsv_hgain: 0.015  # hsv色彩空间变换
   data_aug_hsv_sgain: 0.7  # hsv色彩空间变换
   data_aug_hsv_vgain: 0.4  # hsv色彩空间变换
-  data_aug_mixup_thr: 0.0  # mixup
+  data_aug_mixup_thr: 1.0  # mixup
   data_aug_fliplr_thr: 0.5  # 水平翻转
   data_aug_flipud_thr: 0.0  # 上下翻转
   data_aug_fill_value: 128  # 图像填充值

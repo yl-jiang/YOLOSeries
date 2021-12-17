@@ -1,5 +1,5 @@
 loss_hyp:
-  use_focal_loss: false # 是否使用focal loss方法计算分类损失
+  use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
   reg_loss_scale: 0.05  # 回归损失（bbox损失）权重
@@ -11,9 +11,11 @@ loss_hyp:
   cof_pos_weight: 1.0  # 
 
 train_hyp:
-  img_dir: "xxx/image"
-  val_data_dir: "./result/wheat_test_imgs"
-  lab_dir: "xxx/label"
+  train_img_dir: ~  # 存放训练图像的文件夹路径
+  train_lab_dir: ~  # 存放训练label的文件夹路径
+  test_data_dir: "./result/coco_test_imgs"  # for test
+  val_img_dir: ~  # validation image dir
+  val_lab_dir: ~  # validation label dir
   aspect_ratio_path: ~
   use_crowb: false
   cache_num: 0
@@ -38,22 +40,22 @@ train_hyp:
   use_tta: true  # validation时是否使用TTA
   log_save_path: ~  # 是否保存log文件
   save_log_txt: true
-  pretrained_model_path: "xxx/xxx.pth"  # 预训练模型路径
+  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/jupyter/yolov5_plainsmall_for_voc.pth"  # 预训练模型路径
   model_save_dir: ~
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_path: null  # 当前工作目录（可以不设置）
-  calculate_map_every: ~
-  calculate_map: false
+  calculate_map_every: 0.2
+  calculate_map: true
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
-  model_type: 'small'  # 使用模型类型
+  model_type: 'plainsmall'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
 
 optim_hyp:
-  optimizer: sgd # 优化器类别/['sgd' or 'adam']
+  optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
   init_lr: 0.01
   weight_decay: 0.0005
-  momentum: 0.937
+  momentum: 0.9
   lr_scheculer_bias: 0.2
 
 
