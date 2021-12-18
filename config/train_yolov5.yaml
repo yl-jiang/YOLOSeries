@@ -40,14 +40,14 @@ train_hyp:
   use_tta: true  # validation时是否使用TTA
   log_save_path: ~  # 是否保存log文件
   save_log_txt: true
-  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/jupyter/yolov5_plainsmall_for_voc.pth"  # 预训练模型路径
+  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/jupyter/yolov5s_for_voc.pth"  # 预训练模型路径
   model_save_dir: ~
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_path: null  # 当前工作目录（可以不设置）
-  calculate_map_every: 0.2
+  calculate_map_every: 0.5
   calculate_map: true
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
-  model_type: 'plainsmall'  # 使用模型类型
+  model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
 

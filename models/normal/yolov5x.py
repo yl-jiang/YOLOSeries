@@ -1,7 +1,7 @@
 import sys
 import torch
 from torch import nn
-from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect, SEBottleneckCSP, C3BottleneckCSP
+from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect, SEBottleneckCSP, C3BottleneckCSP, FastSPP
 
 class Yolov5XLarge(nn.Module):
 
@@ -10,9 +10,9 @@ class Yolov5XLarge(nn.Module):
         self.num_class = num_class
 
         # ============================== backbone ==============================
-
         # focus layer
-        self.focus = Focus(3, 80, 3, 1, 1)
+        # self.focus = Focus(3, 80, 3, 1, 1)
+        self.focus = ConvBnAct(3, 80, 6, 2, 2)
 
         self.backbone_stage1_conv = ConvBnAct(80, 160, 3, 2, 1)  # /2
         self.backbone_stage1_bscp = C3BottleneckCSP(160, 160, shortcut=True, num_block=4)
@@ -21,8 +21,8 @@ class Yolov5XLarge(nn.Module):
         self.backbone_stage3_conv = ConvBnAct(320, 640, 3, 2, 1)  # /2
         self.backbone_stage3_bscp = C3BottleneckCSP(640, 640, shortcut=True, num_block=12)
         self.backbone_stage4_conv = ConvBnAct(640, 1280, 3, 2, 1)  # /2
-        self.backbone_stage4_spp = SPP(1280, 1280, kernels=[5, 9, 13])
-        self.backbone_stage4_bscp = C3BottleneckCSP(1280, 1280, shortcut=False, num_block=4)
+        self.backbone_stage4_bscp = C3BottleneckCSP(1280, 1280, shortcut=True, num_block=4)
+        self.backbone_stage4_spp = FastSPP(1280, 1280, kernel=5)
         # ============================== head ==============================
 
         # common layers
@@ -54,8 +54,8 @@ class Yolov5XLarge(nn.Module):
         stage1_x = self.backbone_stage2_bscp(self.backbone_stage2_conv(x))  # (bn, 128, 80, 80)
         stage2_x = self.backbone_stage3_bscp(self.backbone_stage3_conv(stage1_x))  # (bn, 256, 40, 40)
         x = self.backbone_stage4_conv(stage2_x)  # (bn, 512, 20, 20)
-        x = self.backbone_stage4_spp(x)  # (bn, 512, 20, 20)
         x = self.backbone_stage4_bscp(x)  # (bn, 512, 20, 20)
+        x = self.backbone_stage4_spp(x)  # (bn, 512, 20, 20)
         head1_x = self.head_stage1_conv(x)  # (bn, 256, 20, 20)
         x = self.head_upsample(head1_x)  # (bn, 256, 40, 40)
         x = self.head_concat([x, stage2_x])  # (bn, 512, 40, 40)

@@ -452,11 +452,11 @@ def YoloDataloader(hyp, is_training=True):
         assert Path(hyp['train_img_dir']).exists() and Path(hyp['train_img_dir']).is_dir()
         assert Path(hyp['train_lab_dir']).exists() and Path(hyp['train_lab_dir']).is_dir()
         dataset = YoloDataset(hyp['train_img_dir'], hyp['train_lab_dir'], hyp['name_path'], hyp['input_img_size'], coco_dataset_kwargs, hyp['cache_num'])
-        if hyp['aspect_ratio']:  # 是否采用按照数据集中图片长宽比从小到大的顺序sample数据
+        if hyp.get('aspect_ratio', None):  # 是否采用按照数据集中图片长宽比从小到大的顺序sample数据
             print(f"Build Aspect Ratio BatchSampler!")
             _start = time()
             ar = None
-            if hyp['aspect_ratio_path'] is not None and Path(hyp['aspect_ratio_path']).exists():
+            if hyp.get('aspect_ratio_path', None) is not None and Path(hyp['aspect_ratio_path']).exists():
                 ar = pickle.load(open(hyp['aspect_ratio_path'], 'rb'))
             sampler = AspectRatioBatchSampler(dataset, hyp['batch_size'], hyp['drop_last'], aspect_ratio_list=ar)
             print(f"- Use time {time() - _start:.3f}s")
@@ -471,7 +471,7 @@ def YoloDataloader(hyp, is_training=True):
                                 pin_memory=hyp['pin_memory'], 
                                 batch_size=hyp['batch_size'] if sampler is None else None)
 
-    elif not is_training and hyp['val_lab_dir'] is not None:  # validation for compute mAP
+    elif not is_training and hyp.get('val_lab_dir', None) is not None:  # validation for compute mAP
         assert Path(hyp['val_img_dir']).exists() and Path(hyp['val_img_dir']).is_dir()
         assert Path(hyp['val_lab_dir']).exists() and Path(hyp['val_lab_dir']).is_dir()
         dataset = YoloDataset(hyp['val_img_dir'], hyp['val_lab_dir'], hyp['name_path'], hyp['input_img_size'], None)

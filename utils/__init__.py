@@ -13,6 +13,7 @@ from .layer_tools import DepthWiseBasicBottleneck
 from .layer_tools import DepthWiseBottleneckCSP
 from .layer_tools import DepthWiseC3BottleneckCSP
 from .layer_tools import BasicBottleneck
+from .layer_tools import FastSPP
 
 
 from .image_tools import CV2Transform

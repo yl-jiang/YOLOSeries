@@ -173,9 +173,7 @@ class SqueezeExacitationBlock(nn.Module):
         x = self.sigmoid(x)  # (bn, c, 1, 1)
         return features * x  # (bn, c, h, w)
 
-
 class Focus(nn.Module):
-
     def __init__(self, in_channel, out_channel, kernel=1, stride=1, padding=0, groups=1, bias=False, act=True):
         super(Focus, self).__init__()
         self.concat = Concat()
@@ -189,7 +187,6 @@ class Focus(nn.Module):
         x = self.concat([x[:, :, ::2, ::2], x[:, :, 1::2, ::2], x[:, :, ::2, 1::2], x[:, :, 1::2, 1::2]])  # (bn, c*4, h/2,w/2)
         x = self.conv_bn_act(x)
         return x
-
 
 class SPP(nn.Module):
 
@@ -212,6 +209,26 @@ class SPP(nn.Module):
         x = self.concat(x)  # (bn, 2c, h, w)
         x = self.conv_bn_act_2(x)  # (bn, out_c, h, w)
         return x
+
+class FastSPP(nn.Module):
+    """
+    FastSPP与SPP的区别是，SPP是直接对输入x进行kernel分别为5，9，13的maxpooling，然后再将不同感受野的特征进行整合。
+    FastSPP是仿照卷积通过层级关系的堆叠从而间接达到提取不同感受野特征的目的。
+    """
+    def __init__(self, in_channel, out_channel, kernel=5):
+        super().__init__()
+        mid_channel = in_channel // 2
+        self.cba1 = ConvBnAct(in_channel, mid_channel, 1, 1, 0)
+        self.cba2 = ConvBnAct(mid_channel * 4, out_channel, 1, 1)
+        self.maxpool = nn.MaxPool2d(kernel_size=kernel, stride=1, padding=kernel//2)
+
+    def forward(self, x):
+        x = self.cba1(x)
+        x2 = self.maxpool(x)
+        x3 = self.maxpool(x2)
+        x4 = self.maxpool(x3)
+        x5 = self.cba2(torch.cat((x, x2, x3, x4), dim=1))
+        return x5
 
 
 class Upsample(nn.Module):

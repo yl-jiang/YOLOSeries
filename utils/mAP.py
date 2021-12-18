@@ -268,10 +268,13 @@ class mAP_v2:
                 continue
         f1_score = 2 * precision * recall / (precision + recall + 1e-16)
 
-        self.plot_curve(xs, precision, self.save_dir/"Precision.png", "Precision", "Precision-Confidence")
-        self.plot_curve(xs, recall, self.save_dir/"Recall.png", "Recall", 'Recall-Conficence')
-        self.plot_curve(xs, f1_score, self.save_dir/"F1Score.png", "F1", 'F1 Score-Confidence')
-        self.plot_pr_curve(xs, pr, ap, self.save_dir/"PRCurve.png")
+        try:
+            self.plot_curve(xs, precision, self.save_dir/"Precision.png", "Precision", "Precision-Confidence")
+            self.plot_curve(xs, recall, self.save_dir/"Recall.png", "Recall", 'Recall-Conficence')
+            self.plot_curve(xs, f1_score, self.save_dir/"F1Score.png", "F1", 'F1 Score-Confidence')
+            self.plot_pr_curve(xs, pr, ap, self.save_dir/"PRCurve.png")
+        except Exception as err:
+            print(err)
 
         best_i = f1_score.mean(axis=0).argmax(axis=0)
         metrics = {"precision": precision[:, best_i], 

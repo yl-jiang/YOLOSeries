@@ -607,19 +607,6 @@ class Training:
             pred_classes.extend(batch_pred_cls)
             pred_confidences.extend(batch_pred_cof)
             pred_labels.extend(batch_pred_lab)
-            
-            # obj_msg = self.count_and_sort_object(batch_pred_lab)
-            # for k in range(len(imgs)):
-            #     count = i * len(imgs) + k + 1
-            #     print(f"[{count:>05}/{len(self.valdataset)}] ➡️ " + obj_msg[k] + f" ({(t/len(imgs)):.2f}s)")
-            #     if self.hyp['save_img']:
-            #         save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
-            #         if self.hyp['show_gt_bbox']:
-            #             gt_lab = [self.valdataset.cls2lab[int(c)] for c in gt_cls[k]]
-            #             cv2_save_img_plot_pred_gt(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], gt_bbox[k], gt_lab, save_path)
-            #         else:
-            #             cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
-            # del imgs, preds
 
         total_use_time = time_synchronize() - start_t
 
@@ -642,14 +629,10 @@ class Training:
 
         mapv2 = mAP_v2(all_gts, all_preds, self.cwd / "result" / "curve")
         map, map50, mp, mr = mapv2.get_mean_metrics()
-        # print(f"use time: {total_use_time:.2f}s")
-        # print(f'mAP = {map * 100:.3f}')
-        # print(f'mAP@0.5 = {map50 * 100:.1f}')
-        # print(f'mp = {mp * 100:.1f}')
-        # print(f'mr = {mr * 100:.1f}')
+        del all_preds, all_gts, pred_bboxes, pred_classes, pred_confidences, pred_labels
         return map, map50, mp, mr
 
-
+                                     
 if __name__ == '__main__':
     config_ = Config()
     # parser = argparse.ArgumentParser()
