@@ -20,8 +20,10 @@ nms_hyp:
   wfb_skip_box_threshold: 0.001
 
 test_hyp:
-  img_dir: "xxx/image" 
-  lab_dir: "xxx/label"
+  pretrained_model_path: "/home/uih/JYL/Programs/yolov5s_for_coco.pth"
+  model_type: "small" 
+  val_img_dir: "xxx/image" 
+  val_lab_dir: "xxx/label"
   name_path: "xxx/names.txt"
   ema_model:  true 
   use_auxiliary_classifier: false
@@ -33,13 +35,11 @@ test_hyp:
   save_img:  false
   device: 'gpu' 
   use_tta:  true 
-  save_pred_bbox:  true
+  save_pred_bbox:  false
   current_work_path: ~ 
-  pretrained_model_path: "xxx/xlarge.pth"
-  show_gt_bbox:  true 
-  model_type: "xlarge" 
+  show_gt_bbox:  false 
   drop_last:  false 
   shuffle: false
   pin_memory: true
-  half:  true
+  half:  false
 

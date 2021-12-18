@@ -42,7 +42,7 @@ class Validation:
         # 确保输入图片的shape必须能够被32整除（对yolov5s而言），如果不满足条件则对设置的输入shape进行调整
         self.hyp['input_img_size'] = self.padding(self.hyp['input_img_size'], 32)
     
-        self.testdataset, self.testdataloader = self.load_dataset()
+        self.testdataset, self.testdataloader = self.load_dataset(False)
         if self.hyp['current_work_path'] is None:
             self.cwd = Path('./').absolute()
         else:
@@ -58,19 +58,22 @@ class Validation:
         self.model = self.select_model(anchor_num_per_stage, self.testdataset.num_class).to(self.hyp['device'])
         self.ema_model = ExponentialMovingAverageModel(self.model)
 
-        self.load('cpu')
-        summary_model(self.model, verbose=True, prefix="Before Fuse Conv and Bn\t")
-        self.fuse_conv_bn()
-        summary_model(self.model, verbose=True, prefix="After Fuse Conv and Bn\t")
-
-        if self.hyp['half'] and self.hyp['device'] == 'cuda':
-            self.model = self.model.half()
-            self.ema_model.ema = self.ema_model.ema.half()        
-
-        self.validate = Evaluate(self.ema_model.ema if self.hyp['ema_model'] else self.model,  self.anchors, self.hyp)
+        self.load_model('cpu')
+        if self.hyp['ema_model']:
+            del self.model
+            self.fuse_conv_bn(self.ema_model.ema)
+            if self.hyp['half'] and self.hyp['device'] == 'cuda':
+                self.ema_model.ema = self.ema_model.ema.half()    
+            self.validate = Evaluate(self.ema_model.ema,  self.anchors, self.hyp)
+        else:
+            del self.ema_model
+            self.fuse_conv_bn(self.model)
+            if self.hyp['half'] and self.hyp['device'] == 'cuda':
+                self.model = self.model.half()
+            self.validate = Evaluate(self.model,  self.anchors, self.hyp)
         
-    def load_dataset(self):
-        dataloader, dataset = YoloDataloader(self.hyp, False)
+    def load_dataset(self, is_training):
+        dataloader, dataset = YoloDataloader(self.hyp, is_training=is_training)
         return dataset, dataloader
 
     @property
@@ -91,22 +94,19 @@ class Validation:
             return Yolov5LargeDW
         elif self.hyp['model_type'].lower() == "xlargedw":
             return Yolov5XLargeDW
-        else:
+        elif self.hyp['model_type'].lower() == "small":
             return Yolov5Small
+        else:
+            raise ValueError(f'unknown model type "{self.hyp["model_type"]}"')
 
-    def fuse_conv_bn(self):
-        # model
-        for m in self.model.modules():
+    def fuse_conv_bn(self, model):
+        summary_model(model, verbose=True, prefix="Before Fuse Conv and Bn\t")
+        for m in model.modules():
             if isinstance(m, ConvBnAct) and hasattr(m, 'bn'):
                 m.conv = fuse_conv_bn(m.conv, m.bn)
                 delattr(m, 'bn')
                 m.forward = m.forward_fuse
-        # EMA
-        for m in self.ema_model.ema.modules():
-            if isinstance(m, ConvBnAct) and hasattr(m, 'bn'):
-                m.conv = fuse_conv_bn(m.conv, m.bn)
-                delattr(m, 'bn')
-                m.forward = m.forward_fuse
+        summary_model(model, verbose=True, prefix="After Fuse Conv and Bn\t")
         
     @staticmethod
     def padding(hw, factor=32):
@@ -164,7 +164,7 @@ class Validation:
             else:
                 self.hyp['device'] = 'cpu'
 
-    def load(self, map_location):
+    def load_model(self, map_location):
         """
         尝试load pretrained模型，如果失败则退出程序
         """
@@ -173,10 +173,10 @@ class Validation:
             if Path(model_path).exists():
                 try:
                     state_dict = torch.load(model_path, map_location=map_location)
-                    if "model" not in state_dict:
+                    if "model_state_dict" not in state_dict:
                         raise ValueError("not found model's state_dict in this file, load model failed!")
                     else:  # load training model
-                        self.model.load_state_dict(state_dict["model"])
+                        self.model.load_state_dict(state_dict["model_state_dict"])
                         print(f"successful load pretrained model {model_path}")
 
                     if "ema" in state_dict:  # load EMA model
@@ -357,18 +357,28 @@ class Validation:
 
 if __name__ == '__main__':
     config_ = Config()
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
-    parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
-    parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
-    parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
-    parser.add_argument('--model_type', required=True, dest='model_type', type=str)
-    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    parser.add_argument('--batch_size', default=8, dest='name_path', type=str)
-    args = parser.parse_args()
-    hyp = config_.get_config(args.cfg, args)
-    assert hyp['model_type'] in hyp['pretrained_model_path']
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
+    # parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
+    # parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
+    # parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
+    # parser.add_argument('--model_type', required=True, dest='model_type', type=str)
+    # parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    # parser.add_argument('--batch_size', default=8, dest='name_path', type=str)
+    # args = parser.parse_args()
+    
+    # ======================================================================
+    class Args:
+        cfg = "/home/uih/JYL/Programs/YOLO/config/detection_yolov5.yaml"
+        val_lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
+        val_img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
+        name_path = '/home/uih/JYL/Programs/YOLO/dataset/other/coco_names.txt'
+        # test_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
+        pretrained_model_path = "/home/uih/JYL/Programs/yolov5s_for_coco.pth"
+    args = Args()
+    # ======================================================================
 
+    hyp = config_.get_config(args.cfg, args)
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
     val = Validation(anchors, hyp)
     val.calculate_mAP()
