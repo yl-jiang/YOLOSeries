@@ -324,7 +324,7 @@ def RandomHSV(img, thresh, hgain=0.5, sgain=0.5, vgain=0.5):
     return img
 
 
-def cutout(img, bbox, cls, cutout_iou_thr, cutout_p=0.1, rm_target=True):
+def cutout(img, bbox, cls, cutout_iou_thr=0.3, skip_or_remove=True):
     """
     在图像中挖孔，并使用随机颜色填充。
 
@@ -332,50 +332,49 @@ def cutout(img, bbox, cls, cutout_iou_thr, cutout_p=0.1, rm_target=True):
     :param bbox: ndarray / (N, 4) / [xmin, ymin, xmax, ymax]
     :param cls: ndarray / (N,) / [1, 2, 3, ...]
     :param cutout_p: 使用cutout的频率
-    :param cutout_iou_thr: cutout部分图像与target的所有bbox计算iou
-    :param rm_target: 当cutout部分与target的某个bbox重合面积过大时，是否选择删除相应的bbox还是跳过这一次的cutout操作
+    :param cutout_iou_thr: cutout部分图像与target的所有bbox计算iou，iou值小于等于该阈值的mask视为有效的mask（剔除与target重合过多的mask）
+    :param skip_or_remove: 当cutout部分与target的某个bbox重合面积过大时，是否选择删除相应的bbox还是跳过这一次的cutout操作 / =True, 删除; =False, 跳过
     """
-    if random.random() < cutout_p:
-        scales = [0.5] * 1 + [0.25] * 2 + [0.125] * 4 + [0.0625] * 8 + [0.03125] * 16  # image size fraction
-        h, w, c = img.shape
+    scales = [0.5] * 1 + [0.25] * 2 + [0.125] * 4 + [0.0625] * 8 + [0.03125] * 16  # image size fraction
+    h, w, c = img.shape
 
-        for s in scales:
-            mask_h = np.random.randint(1, int(h * s))
-            mask_w = np.random.randint(1, int(w * s))
+    for s in scales:
+        mask_h = np.random.randint(1, int(h * s))
+        mask_w = np.random.randint(1, int(w * s))
 
-            mask_xc = np.random.randint(0, w)
-            mask_yc = np.random.randint(0, h)
-            mask_xmin = np.clip(mask_xc - mask_w // 2, 0, w)
-            mask_ymin = np.clip(mask_yc - mask_h // 2, 0, h)
-            mask_xmax = np.clip(mask_xc + mask_w // 2, 0, w)
-            mask_ymax = np.clip(mask_yc + mask_h // 2, 0, h)
+        mask_xc = np.random.randint(0, w)
+        mask_yc = np.random.randint(0, h)
+        mask_xmin = np.clip(mask_xc - mask_w // 2, 0, w)
+        mask_ymin = np.clip(mask_yc - mask_h // 2, 0, h)
+        mask_xmax = np.clip(mask_xc + mask_w // 2, 0, w)
+        mask_ymax = np.clip(mask_yc + mask_h // 2, 0, h)
 
-            mask_w = mask_xmax - mask_xmin
-            mask_h = mask_ymax - mask_ymin
-            mask_area = np.clip(mask_w * mask_h, 0., None)
+        mask_w = mask_xmax - mask_xmin
+        mask_h = mask_ymax - mask_ymin
+        mask_area = np.clip(mask_w * mask_h, 0., None)
 
-            bbox_area = np.clip(np.prod(bbox[:, 2:4] - bbox[:, 0:2], axis=1), 0., None)
+        bbox_area = np.clip(np.prod(bbox[:, 2:4] - bbox[:, 0:2], axis=1), 0., None)
 
-            ints_xmin = np.maximum(bbox[:, 0], mask_xmin)
-            ints_ymin = np.maximum(bbox[:, 1], mask_ymin)
-            ints_xmax = np.minimum(bbox[:, 2], mask_xmax)
-            ints_ymax = np.minimum(bbox[:, 3], mask_ymax)
+        ints_xmin = np.maximum(bbox[:, 0], mask_xmin)
+        ints_ymin = np.maximum(bbox[:, 1], mask_ymin)
+        ints_xmax = np.minimum(bbox[:, 2], mask_xmax)
+        ints_ymax = np.minimum(bbox[:, 3], mask_ymax)
 
-            ints_w = np.clip(ints_xmax - ints_xmin, 0., w)
-            ints_h = np.clip(ints_ymax - ints_ymin, 0., h)
-            ints_area = np.clip(ints_w * ints_h, 0., None)
-            iou = ints_area / (mask_area + bbox_area - ints_area + 1e-16)
-            valid_idx = iou <= cutout_iou_thr
+        ints_w = np.clip(ints_xmax - ints_xmin, 0., w)
+        ints_h = np.clip(ints_ymax - ints_ymin, 0., h)
+        ints_area = np.clip(ints_w * ints_h, 0., None)
+        iou = ints_area / (mask_area + bbox_area - ints_area + 1e-16)
+        valid_idx = iou <= cutout_iou_thr
 
-            if rm_target:  # 如果cutout部分图像与target的某个bbox重合面积过大，则删除相应的bbox
-                mask_color = [np.random.randint(69, 200) for _ in range(3)]
-                img[mask_ymin:mask_ymax, mask_xmin:mask_xmax] = mask_color
-                if (len(bbox) > 0):
-                    bbox = bbox[valid_idx]
-                    cls = np.array(cls)[valid_idx]
-            else:  # 如果cutout部分图像与target的某个bbox重合面积过大，则跳过这一次的cutout操作
-                if np.any(valid_idx):
-                    continue
+        if skip_or_remove:  # 如果cutout部分图像与target中的某个bbox重合面积过大，则删除相应的bbox
+            mask_color = [np.random.randint(69, 200) for _ in range(3)]
+            img[mask_ymin:mask_ymax, mask_xmin:mask_xmax] = mask_color
+            if (len(bbox) > 0):
+                bbox = bbox[valid_idx]
+                cls = np.array(cls)[valid_idx]
+        else:  # 如果cutout部分图像与target的某个bbox重合面积过大，则跳过这一次的cutout操作
+            if np.any(valid_idx):
+                continue
                 
     return img, bbox, cls
 

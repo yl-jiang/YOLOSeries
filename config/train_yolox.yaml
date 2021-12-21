@@ -42,8 +42,7 @@ train_hyp:
   pretrained_model_path: "/home/uih/JYL/Programs/YOLO/checkpoints/yolox_small_413layers_for_voc.pth"  # 预训练模型路径(xxx/xxx.pth)
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_path: null  # 当前工作目录（可以不设置）
-  calculate_map_every: 0.5
-  calculate_map: false
+  calculate_map_every: 2.0  # 每隔多少个epoch计算一次验证数据集的map
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
@@ -69,15 +68,16 @@ data_hyp:
   data_aug_translate: 0.1  # 平移
   data_aug_degree: 0.0  # 旋转
   data_aug_prespective: 0.0  # 透视
-  data_aug_hsv_thr: 1.0  # hsv色彩空间变换
+  data_aug_hsv_p: 1.0  # hsv色彩空间变换
   data_aug_hsv_hgain: 0.015  # hsv色彩空间变换
   data_aug_hsv_sgain: 0.7  # hsv色彩空间变换
   data_aug_hsv_vgain: 0.4  # hsv色彩空间变换
-  data_aug_mixup_thr: 1.0  # mixup
-  data_aug_fliplr_thr: 0.5  # 水平翻转
-  data_aug_flipud_thr: 0.0  # 上下翻转
+  data_aug_mixup_p: 1.0  # mixup
+  data_aug_fliplr_p: 0.5  # 水平翻转
+  data_aug_flipud_p: 0.0  # 上下翻转
   data_aug_fill_value: 128  # 图像填充值
-  data_aug_mosaic_thr: 1.0  # mosaic增强强度
+  data_aug_mosaic_p: 1.0  # mosaic增强强度
+  data_aug_cutout_p: 1.0
 
 nms_hyp:
   iou_threshold: 0.2

@@ -15,7 +15,7 @@ class MiddleYOLOXBackboneAndNeck(nn.Module):
         # ============================== backbone ==============================
         # focus layer
         # self.focus = Focus(in_channel, 64, 3, 1, 1)
-        self.focus = ConvBnAct(3, 64, 6, 2, 2)
+        self.focus = ConvBnAct(in_channel, 64, 6, 2, 2)
 
         self.backbone_stage1_conv = ConvBnAct(64, 128, 3, 2, 1)  # /2
         self.backbone_stage1_bscp = C3BottleneckCSP(128, 128, shortcut=True, num_block=3)

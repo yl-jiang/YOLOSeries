@@ -12,7 +12,7 @@ import numpy as np
 import random
 from utils import RandomHSV, RandomFlipLR, RandomFlipUD
 from utils import maybe_mkdir, clear_dir
-from utils import mosaic, random_perspective, valid_bbox, mixup
+from utils import mosaic, random_perspective, valid_bbox, mixup, cutout
 import torch
 import torch.backends.cudnn as cudnn
 from time import time
@@ -68,14 +68,15 @@ class YoloDataset(Dataset, Generator):
                 "degree": aug_hyp['data_aug_degree'],
                 "shear": aug_hyp['data_aug_shear'],
                 "presepctive": aug_hyp['data_aug_prespective'],
-                "mixup": aug_hyp['data_aug_mixup_thr'],
-                "hsv": aug_hyp['data_aug_hsv_thr'],
+                "mixup": aug_hyp['data_aug_mixup_p'],
+                "hsv": aug_hyp['data_aug_hsv_p'],
                 "hgain": aug_hyp['data_aug_hsv_hgain'],
                 "sgain": aug_hyp['data_aug_hsv_sgain'],
                 "vgain": aug_hyp['data_aug_hsv_vgain'],
-                "fliplr": aug_hyp['data_aug_fliplr_thr'],
-                "flipud": aug_hyp['data_aug_flipud_thr'],
-                "mosaic_thr": aug_hyp['data_aug_mosaic_thr']
+                "fliplr": aug_hyp['data_aug_fliplr_p'],
+                "flipud": aug_hyp['data_aug_flipud_p'],
+                "mosaic": aug_hyp['data_aug_mosaic_p'], 
+                "cutout": aug_hyp['data_aug_cutout_p'], 
                 }
             self.fill_value = aug_hyp['data_aug_fill_value']
 
@@ -399,11 +400,13 @@ class YoloDataset(Dataset, Generator):
         bboxes, labels = ann['bboxes'], ann['classes']
         
         if self.is_training:
-            if random.random() < self.data_aug_param['mosaic_thr']:
+            if random.random() < self.data_aug_param.get('mosaic', 0.0):
                 img, bboxes, labels = self.load_mosaic(ix)
-            if random.random() < self.data_aug_param['mixup']:
+            if random.random() < self.data_aug_param.get('mixup', 0.0):
                 img2, bboxes2, labels2 = self.load_mosaic(random.randint(0, len(self) - 1))
                 img, bboxes, labels = mixup(img, bboxes, labels, img2, bboxes2, labels2)
+            if random.random() < self.data_aug_param.get('cutout', 0.0):
+                img, bboxes, labels = cutout(img, bboxes, labels)
 
             img = RandomHSV(img, self.data_aug_param['hsv'], self.data_aug_param['hgain'],
                             self.data_aug_param['sgain'], self.data_aug_param['vgain'])
@@ -439,15 +442,16 @@ def YoloDataloader(hyp, is_training=True):
             'data_aug_translate': hyp['data_aug_translate'],
             'data_aug_degree': hyp['data_aug_degree'],
             'data_aug_prespective': hyp['data_aug_prespective'],
-            'data_aug_hsv_thr': hyp['data_aug_hsv_thr'],
+            'data_aug_hsv_p': hyp['data_aug_hsv_p'],
             "data_aug_hsv_hgain": hyp['data_aug_hsv_hgain'],
             "data_aug_hsv_sgain": hyp['data_aug_hsv_sgain'],
             "data_aug_hsv_vgain": hyp['data_aug_hsv_vgain'],
-            'data_aug_mixup_thr': hyp['data_aug_mixup_thr'],
-            'data_aug_fliplr_thr': hyp['data_aug_fliplr_thr'],
-            'data_aug_flipud_thr': hyp['data_aug_flipud_thr'],
+            'data_aug_mixup_p': hyp['data_aug_mixup_p'],
+            'data_aug_fliplr_p': hyp['data_aug_fliplr_p'],
+            'data_aug_flipud_p': hyp['data_aug_flipud_p'],
             'data_aug_fill_value': hyp['data_aug_fill_value'],
-            "data_aug_mosaic_thr": hyp['data_aug_mosaic_thr']
+            "data_aug_mosaic_p": hyp['data_aug_mosaic_p'],
+            "data_aug_cutout_p": hyp['data_aug_cutout_p']
             }
         assert Path(hyp['train_img_dir']).exists() and Path(hyp['train_img_dir']).is_dir()
         assert Path(hyp['train_lab_dir']).exists() and Path(hyp['train_lab_dir']).is_dir()
@@ -501,27 +505,28 @@ def test():
               'data_aug_translate': 0.,
               'data_aug_degree': 0,
               'data_aug_prespective': False,
-              'data_aug_hsv_thr': 1,
+              'data_aug_hsv_p': 1,
               "data_aug_hsv_hgain": 0.015,
               "data_aug_hsv_sgain": 0.7,
               "data_aug_hsv_vgain": 0.4,
-              'data_aug_mixup_thr': 0.0,
-              'data_aug_fliplr_thr': 0,
-              'data_aug_flipud_thr': 0,
+              'data_aug_mixup_p': 0.0,
+              'data_aug_fliplr_p': 0,
+              'data_aug_flipud_p': 0,
               'data_aug_fill_value': 128,
-              'data_aug_mosaic_thr': 1.
+              'data_aug_mosaic_p': 1., 
+              "data_aug_cutout_p": 1.0, 
     }
 
-    dataset = YoloDataset('~/Dataset/COCO2017/train/image/',
-                          "~/Dataset/COCO2017/train/label/",
-                          '~/JYL/Dataset/COCO2017/train/names.txt',
+    dataset = YoloDataset('/home/uih/JYL/Dataset/COCO2017/train/image/',
+                          "/home/uih/JYL/Dataset/COCO2017/train/label/",
+                          '/home/uih/JYL/Dataset/COCO2017/train/names.txt',
                           [448, 448], aug_hyp, 0)
     collector = partial(fixed_imgsize_collector, dst_size=[448, 448])
     batch_size = 5
     print(f"Build Aspect Ratio BatchSampler!")
     _start = time()
 
-    ar_list = pickle.load(open("~/YOLO/dataset/pkl/coco_aspect_ratio.pkl", 'rb'))
+    ar_list = pickle.load(open("/home/uih/JYL/Programs/YOLO/dataset/pkl/coco_aspect_ratio.pkl", 'rb'))
     sampler = AspectRatioBatchSampler(dataset, batch_size, True, aspect_ratio_list=ar_list)
     print(f"- Use time {time() - _start:.3f}s")
     loader = DataLoader(dataset, collate_fn=collector, batch_sampler=sampler)

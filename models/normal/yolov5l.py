@@ -5,14 +5,14 @@ from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect
 
 class Yolov5Large(nn.Module):
 
-    def __init__(self, anchor_num, num_class):
+    def __init__(self, anchor_num, num_class, in_channel=3):
         super(Yolov5Large, self).__init__()
         self.num_class = num_class
 
         # ============================== backbone ==============================
         # focus layer
         # self.focus = Focus(3, 64, 3, 1, 1)
-        self.focus = ConvBnAct(3, 64, 6, 2, 2)
+        self.focus = ConvBnAct(in_channel, 64, 6, 2, 2)
 
         self.backbone_stage1_conv = ConvBnAct(64, 128, 3, 2, 1)  # /2
         self.backbone_stage1_bscp = C3BottleneckCSP(128, 128, shortcut=True, num_block=3)
