@@ -24,8 +24,8 @@ class SmallYOLOXBackboneAndNeck(nn.Module):
         self.backbone_stage3_conv = ConvBnAct(128, 256, 3, 2, 1)  # /2
         self.backbone_stage3_bscp = C3BottleneckCSP(256, 256, shortcut=True, num_block=3)
         self.backbone_stage4_conv = ConvBnAct(256, 512, 3, 2, 1)  # /2
-        self.backbone_stage4_bscp = C3BottleneckCSP(512, 512, shortcut=False, num_block=1)
-        self.backbone_stage4_spp = FastSPP(512, 512, kernels=5)
+        self.backbone_stage4_bscp = C3BottleneckCSP(512, 512, shortcut=True, num_block=1)
+        self.backbone_stage4_spp = FastSPP(512, 512, kernel=5)
 
         # ============================== head ==============================
         # common layers
@@ -91,18 +91,36 @@ class Detect(nn.Module):
         self.pred_middle = self._make_layers(int(in_channels[1] * wid_mul), int(mid_channel * wid_mul))
         self.pred_large = self._make_layers(int(in_channels[2] * wid_mul), int(mid_channel * wid_mul))
 
+    # region
+    # def _make_layers(self, in_c, mid_c):
+    #     stem = ConvBnAct(in_c, mid_c, 1, 1, act=True)
+    #     cls = nn.Sequential(
+    #             ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True), 
+    #             ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True), 
+    #             nn.Conv2d(mid_c, int(self.num_anchors * self.num_classes), 1, 1)
+    #     )
+
+    #     conv = nn.Sequential(
+    #             ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True), 
+    #             ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True)
+    #     )
+
+    #     reg = nn.Conv2d(mid_c, self.num_anchors * 4, 1, 1)
+    #     cof = nn.Conv2d(mid_c, int(self.num_anchors * 1), 1, 1)
+    #     return nn.ModuleDict({'stem': stem, 'conv': conv, 'cls': cls, 'reg': reg, 'cof': cof})
+    # endregion
 
     def _make_layers(self, in_c, mid_c):
-        stem = ConvBnAct(in_c, mid_c, 1, 1, act=True)
+        stem = ConvBnAct(in_c, mid_c, 3, 1, 1, act=True)
         cls = nn.Sequential(
                 ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True), 
-                ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True), 
+                # ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True), 
                 nn.Conv2d(mid_c, int(self.num_anchors * self.num_classes), 1, 1)
         )
 
         conv = nn.Sequential(
                 ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True), 
-                ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True)
+                # ConvBnAct(mid_c, mid_c, 3, 1, 1, act=True)
         )
 
         reg = nn.Conv2d(mid_c, self.num_anchors * 4, 1, 1)

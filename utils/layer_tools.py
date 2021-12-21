@@ -101,9 +101,9 @@ class C3BottleneckCSP(nn.Module):
     def __init__(self, in_channel, out_channel, shortcut=True, num_block=1, groups=1, bias=False):
         super(C3BottleneckCSP, self).__init__()
         mid_channel = out_channel // 2
-        self.cba1 = ConvBnAct(in_channel, mid_channel, 1, 1)
-        self.cba2 = ConvBnAct(in_channel, mid_channel, 1, 1)
-        self.cba3 = ConvBnAct(mid_channel*2, out_channel, 1, 1)
+        self.cba1 = ConvBnAct(in_channel, mid_channel, 1, 1, groups=groups, bias=bias)
+        self.cba2 = ConvBnAct(in_channel, mid_channel, 1, 1, groups=groups, bias=bias)
+        self.cba3 = ConvBnAct(mid_channel*2, out_channel, 1, 1, groups=groups, bias=bias)
         self.blocks = nn.Sequential(*[BasicBottleneck(mid_channel, mid_channel, shortcut, expand_ratio=1.0) for _ in range(num_block)])
         self.concat = Concat()
 

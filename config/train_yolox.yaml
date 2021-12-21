@@ -39,7 +39,7 @@ train_hyp:
   use_tta: true  # validation时是否使用TTA
   save_log_txt: false  # 是否保存log文件
   log_save_path: ~  # 指定保存log日志的路径（xxx/xxx.txt）
-  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/checkpoints/every_small_adam_voc.pth"  # 预训练模型路径(xxx/xxx.pth)
+  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/checkpoints/yolox_small_413layers_for_voc.pth"  # 预训练模型路径(xxx/xxx.pth)
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_path: null  # 当前工作目录（可以不设置）
   calculate_map_every: 0.5

@@ -24,8 +24,8 @@ class MiddleYOLOXBackboneAndNeck(nn.Module):
         self.backbone_stage3_conv = ConvBnAct(256, 512, 3, 2, 1)  # /2
         self.backbone_stage3_bscp = C3BottleneckCSP(512, 512, shortcut=True, num_block=9)
         self.backbone_stage4_conv = ConvBnAct(512, 1024, 3, 2, 1)  # /2
-        self.backbone_stage4_bscp = C3BottleneckCSP(1024, 1024, shortcut=False, num_block=3)
-        self.backbone_stage4_spp = FastSPP(1024, 1024, kernels=[5, 9, 13])
+        self.backbone_stage4_bscp = C3BottleneckCSP(1024, 1024, shortcut=True, num_block=3)
+        self.backbone_stage4_spp = FastSPP(1024, 1024, kernel=5)
         # ============================== head ==============================
 
         # common layers

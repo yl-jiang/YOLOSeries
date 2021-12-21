@@ -277,7 +277,7 @@ class Training:
                     # tensorboard
                     tot_loss, reg_loss, cof_loss, cls_loss = self.update_loss_meter(tot_loss.item(), reg_loss, cof_loss, cls_loss)
                     is_best = tot_loss < tot_loss_before
-                    self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss)
+                    self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss, map)
                     tot_loss_before = tot_loss
 
                     # testing
@@ -426,12 +426,14 @@ class Training:
             else:
                 self.hyp['device'] = 'cpu'
 
-    def summarywriter(self, steps, tot_loss, reg_loss, cof_loss, cls_loss):
+    def summarywriter(self, steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss, map):
         lrs = [x['lr'] for x in self.optimizer.param_groups]
         self.writer.add_scalar(tag='train/tot_loss', scalar_value=tot_loss, global_step=steps)
         self.writer.add_scalar('train/reg_loss', reg_loss, steps)
         self.writer.add_scalar('train/cof_loss', cof_loss, steps)
         self.writer.add_scalar('train/cls_loss', cls_loss, steps)
+        self.writer.add_scalar('train/l1_reg_loss', l1_reg_loss, steps)
+        self.writer.add_scalar('train/map', map, steps//int(self.hyp['calculate_map_every'] * self.traindataloader))
         self.writer.add_scalar(f'train/{self.hyp["optimizer"]}_lr', lrs[0], steps)
 
     def mutil_scale_training(self, imgs, targets):
@@ -580,7 +582,7 @@ class Training:
         """
         start_t = time_synchronize()
         pred_bboxes, pred_classes, pred_confidences, pred_labels, gt_bboxes, gt_classes = [], [], [], [], [], []
-        for i, x in enumerate(self.valdataloader):
+        for x in self.valdataloader:
             imgs = x['img']  # (bn, 3, h, w)
             infoes = x['resize_info']
 
@@ -615,7 +617,7 @@ class Training:
                 batch_pred_cls.append(pred_cls)
                 batch_pred_cof.append(pred_cof)
                 batch_pred_lab.append(pred_lab)
-
+            del imgs, preds
             pred_bboxes.extend(batch_pred_box)
             pred_classes.extend(batch_pred_cls)
             pred_confidences.extend(batch_pred_cof)
@@ -669,11 +671,11 @@ if __name__ == '__main__':
     # parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
     # parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
     # parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
-
     # args = parser.parse_args()
 
     class Args:
         cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolov5.yaml"
+        pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolov5_small_for_voc.pth"
         # lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
         # img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
         # name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
@@ -682,7 +684,6 @@ if __name__ == '__main__':
         name_path = '/home/uih/JYL/Dataset/VOC/train2012/names.txt'
         val_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
         val_lab_dir = "/home/uih/JYL/Dataset/VOC/val2012/label"
-
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)
