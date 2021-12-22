@@ -77,6 +77,7 @@ class YoloDataset(Dataset, Generator):
                 "flipud": aug_hyp['data_aug_flipud_p'],
                 "mosaic": aug_hyp['data_aug_mosaic_p'], 
                 "cutout": aug_hyp['data_aug_cutout_p'], 
+                "cutout_iou_thr": aug_hyp['data_aug_cutout_iou_thr'], 
                 }
             self.fill_value = aug_hyp['data_aug_fill_value']
 
@@ -406,7 +407,7 @@ class YoloDataset(Dataset, Generator):
                 img2, bboxes2, labels2 = self.load_mosaic(random.randint(0, len(self) - 1))
                 img, bboxes, labels = mixup(img, bboxes, labels, img2, bboxes2, labels2)
             if random.random() < self.data_aug_param.get('cutout', 0.0):
-                img, bboxes, labels = cutout(img, bboxes, labels)
+                img, bboxes, labels = cutout(img, bboxes, labels, cutout_iou_thr=self.data_aug_param['cutout_iou_thr'])
 
             img = RandomHSV(img, self.data_aug_param['hsv'], self.data_aug_param['hgain'],
                             self.data_aug_param['sgain'], self.data_aug_param['vgain'])
