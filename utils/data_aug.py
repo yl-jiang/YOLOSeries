@@ -7,6 +7,7 @@ from utils import xywh2xyxy
 
 def valid_bbox(bboxes, box_type='xyxy', wh_thr=2, ar_thr=10, area_thr=16):
     """
+    根据bbox的width阈值，height阈值，width-height ratio阈值以及area阈值，过滤掉不满足限制条件的bbox。
 
     :param wh_thr:
     :param area_thr: area threshold
@@ -226,6 +227,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
 
 def mixup(img1, bbox1, label1, img2, bbox2, label2):
     """
+    使用不同的透明度混合两张图像（保持两张图像的target box）。
 
     :param bbox2:
     :param bbox1:
@@ -253,6 +255,7 @@ def mixup(img1, bbox1, label1, img2, bbox2, label2):
 
 def RandomFlipLR(img, bboxes, thresh):
     """
+    随机左右翻转image。
 
     :param img: ndarray
     :param bboxes: [xmin, ymin, xmax, ymax]
@@ -264,7 +267,7 @@ def RandomFlipLR(img, bboxes, thresh):
     # 水平翻转/y坐标不变，x坐标变化
     if random.random() < thresh:
         img_out = np.fliplr(img).copy()
-        h, w = img.shape[:2]
+        _, w = img.shape[:2]
         xmax = w - bboxes[:, 0]
         xmin = w - bboxes[:, 2]
         bboxes_out = bboxes.copy()
@@ -276,6 +279,7 @@ def RandomFlipLR(img, bboxes, thresh):
 
 def RandomFlipUD(img, bboxes, thresh):
     """
+    随机上下翻转image。
 
     :param img: ndarray
     :param bboxes: [xmin, ymin, xmax, ymax]
@@ -286,7 +290,7 @@ def RandomFlipUD(img, bboxes, thresh):
     # 竖直翻转/x坐标不变，y坐标变化
     if random.random() < thresh:
         img_out = np.flipud(img).copy()
-        h, w = img.shape[:2]
+        h, _ = img.shape[:2]
         ymax = h - bboxes[:, 1]
         ymin = h - bboxes[:, 3]
         bboxes_out = bboxes.copy()
@@ -298,6 +302,7 @@ def RandomFlipUD(img, bboxes, thresh):
 
 def RandomHSV(img, thresh, hgain=0.5, sgain=0.5, vgain=0.5):
     """
+    将输入的RGB模态的image转换为HSV模态，并随机从对比度，饱和度以及亮度三个维度进行变换。
 
     :param img: ndarray / RGB
     :param thresh:
@@ -324,19 +329,19 @@ def RandomHSV(img, thresh, hgain=0.5, sgain=0.5, vgain=0.5):
     return img
 
 
-def cutout(img, bbox, cls, cutout_iou_thr=0.3, skip_or_remove=True):
+def cutout(img, bbox, cls, cutout_iou_thr=0.3, skip_or_remove=False):
     """
     在图像中挖孔，并使用随机颜色填充。
 
     :param img: ndarray / (h, w, 3)
     :param bbox: ndarray / (N, 4) / [xmin, ymin, xmax, ymax]
     :param cls: ndarray / (N,) / [1, 2, 3, ...]
-    :param cutout_p: 使用cutout的频率
+    :param cutout_p: 使用cutout的概率
     :param cutout_iou_thr: cutout部分图像与target的所有bbox计算iou，iou值小于等于该阈值的mask视为有效的mask（剔除与target重合过多的mask）
-    :param skip_or_remove: 当cutout部分与target的某个bbox重合面积过大时，是否选择删除相应的bbox还是跳过这一次的cutout操作 / =True, 删除; =False, 跳过
+    :param skip_or_remove: 当cutout部分与target的某个bbox重合面积过大时，是否选择删除相应的target bbox还是跳过这一次的cutout操作 / =True, 删除; =False, 跳过
     """
     scales = [0.5] * 1 + [0.25] * 2 + [0.125] * 4 + [0.0625] * 8 + [0.03125] * 16  # image size fraction
-    h, w, c = img.shape
+    h, w, _ = img.shape
 
     for s in scales:
         mask_h = np.random.randint(1, int(h * s))
@@ -344,10 +349,10 @@ def cutout(img, bbox, cls, cutout_iou_thr=0.3, skip_or_remove=True):
 
         mask_xc = np.random.randint(0, w)
         mask_yc = np.random.randint(0, h)
-        mask_xmin = np.clip(mask_xc - mask_w // 2, 0, w)
-        mask_ymin = np.clip(mask_yc - mask_h // 2, 0, h)
-        mask_xmax = np.clip(mask_xc + mask_w // 2, 0, w)
-        mask_ymax = np.clip(mask_yc + mask_h // 2, 0, h)
+        mask_xmin = np.clip(mask_xc - mask_w // 2, 0, w)  # (1,)
+        mask_ymin = np.clip(mask_yc - mask_h // 2, 0, h)  # (1,)
+        mask_xmax = np.clip(mask_xc + mask_w // 2, 0, w)  # (1,)
+        mask_ymax = np.clip(mask_yc + mask_h // 2, 0, h)  # (1,)
 
         mask_w = mask_xmax - mask_xmin
         mask_h = mask_ymax - mask_ymin
@@ -355,24 +360,24 @@ def cutout(img, bbox, cls, cutout_iou_thr=0.3, skip_or_remove=True):
 
         bbox_area = np.clip(np.prod(bbox[:, 2:4] - bbox[:, 0:2], axis=1), 0., None)
 
-        ints_xmin = np.maximum(bbox[:, 0], mask_xmin)
-        ints_ymin = np.maximum(bbox[:, 1], mask_ymin)
-        ints_xmax = np.minimum(bbox[:, 2], mask_xmax)
-        ints_ymax = np.minimum(bbox[:, 3], mask_ymax)
+        ints_xmin = np.maximum(bbox[:, 0], mask_xmin)  # (N,)
+        ints_ymin = np.maximum(bbox[:, 1], mask_ymin)  # (N,)
+        ints_xmax = np.minimum(bbox[:, 2], mask_xmax)  # (N,)
+        ints_ymax = np.minimum(bbox[:, 3], mask_ymax)  # (N,)
 
         ints_w = np.clip(ints_xmax - ints_xmin, 0., w)
         ints_h = np.clip(ints_ymax - ints_ymin, 0., h)
         ints_area = np.clip(ints_w * ints_h, 0., None)
-        iou = ints_area / (mask_area + bbox_area - ints_area + 1e-16)
+        iou = ints_area / (mask_area + bbox_area - ints_area + 1e-16)  # (N,)
         valid_idx = iou <= cutout_iou_thr
 
-        if skip_or_remove:  # 如果cutout部分图像与target中的某个bbox重合面积过大，则删除相应的bbox
+        if skip_or_remove:  # 如果cutout部分图像与target中的某个bbox重合面积过大，则删除相应的target bbox(舍弃target)
             mask_color = [np.random.randint(69, 200) for _ in range(3)]
             img[mask_ymin:mask_ymax, mask_xmin:mask_xmax] = mask_color
             if (len(bbox) > 0):
                 bbox = bbox[valid_idx]
                 cls = np.array(cls)[valid_idx]
-        else:  # 如果cutout部分图像与target的某个bbox重合面积过大，则跳过这一次的cutout操作
+        else:  # 如果cutout部分图像与target的某个bbox重合面积过大，则跳过这一次的cutout操作(舍弃mask)
             if np.any(valid_idx):
                 continue
                 

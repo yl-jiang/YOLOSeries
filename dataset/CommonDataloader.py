@@ -451,7 +451,8 @@ def YoloDataloader(hyp, is_training=True):
             'data_aug_flipud_p': hyp['data_aug_flipud_p'],
             'data_aug_fill_value': hyp['data_aug_fill_value'],
             "data_aug_mosaic_p": hyp['data_aug_mosaic_p'],
-            "data_aug_cutout_p": hyp['data_aug_cutout_p']
+            "data_aug_cutout_p": hyp['data_aug_cutout_p'], 
+            "data_aug_cutout_iou_thr": hyp['data_aug_cutout_iou_thr'], 
             }
         assert Path(hyp['train_img_dir']).exists() and Path(hyp['train_img_dir']).is_dir()
         assert Path(hyp['train_lab_dir']).exists() and Path(hyp['train_lab_dir']).is_dir()
@@ -515,6 +516,7 @@ def test():
               'data_aug_fill_value': 128,
               'data_aug_mosaic_p': 1., 
               "data_aug_cutout_p": 1.0, 
+              "data_aug_cutout_iou_thr": 0.3, 
     }
 
     dataset = YoloDataset('/home/uih/JYL/Dataset/COCO2017/train/image/',
