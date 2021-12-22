@@ -23,6 +23,7 @@ from utils import cv2_save_img_plot_pred_gt, ConvBnAct, fuse_conv_bn, summary_mo
 import pickle
 import argparse
 from config import Config
+from loguru import logger
 
 
 class Validation:
@@ -208,6 +209,7 @@ class Validation:
             ppc.append(ann_valid[:, 4].cpu().numpy().astype('uint16'))
         return ppb, ppc
 
+    @logger.catch
     def predtict(self):
         """
         测试testdataloader中的所有图片并将结果保存到磁盘

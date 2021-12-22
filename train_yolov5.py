@@ -34,6 +34,7 @@ import pickle
 from utils import mAP_v2, cv2_save_img_plot_pred_gt
 from collections import Counter
 import emoji
+from loguru import logger
 
 
 class Training:
@@ -237,6 +238,7 @@ class Training:
                 m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
         del stage_outputs
 
+    @logger.catch
     def step(self):
         self.optimizer.zero_grad()
         tot_loss_before = float('inf')

@@ -24,6 +24,7 @@ from utils import cv2_save_img_plot_pred_gt, ConvBnAct, fuse_conv_bn, summary_mo
 import pickle
 from config import Config
 import argparse
+from loguru import logger
 
 class Detection:
 
@@ -272,6 +273,7 @@ class Detection:
             msg.append(emoji.emojize("; ".join(msg_ls)))
         return msg
 
+    @logger.catch
     def detect_all(self):
         """
         

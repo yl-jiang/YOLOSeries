@@ -7,8 +7,8 @@ loss_hyp:
   cls_loss_scale: 1.0  # 分类损失权重
   cof_loss_scale: 1.0  # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
-  cls_pos_weight: 1.0  # 
-  cof_pos_weight: 1.0  # 
+  cls_pos_weight: 1.0  # 计算分类损失时，对类别为1的loss乘以该权重
+  cof_pos_weight: 1.0  # 计算分类损失时，对类别为1的loss乘以该权重
   use_l1: true  # compute L1 norm regression loss
 
 train_hyp:
@@ -19,7 +19,7 @@ train_hyp:
   val_lab_dir: ~  # validation label dir
   aspect_ratio_path: ~  # 训练数据集中每张图片的长宽比（用于根据图像长宽比的一定顺序输入网络进行训练）
   use_crowb: false  # 对COCO格式的数据集，是否使用密集/遮挡的label作为训练数据
-  cache_num: 0  # 缓存数据的数量（加速训练）
+  cache_num: 0  # 将cache_num数量的训练数据存放到内存中（加速训练）
   input_img_size:  # 输入训练网络的图片大小
     - 640
     - 640
@@ -51,11 +51,11 @@ train_hyp:
 
 warmup_hyp:
   do_warmup: true  # 是否开启预热训练
-  warmup_epoch: 5
+  warmup_epoch: 3
   warmup_bias_lr: 0.1  # warmup lr for bias
   warmup_momentum: 0.9
 
-optim_hyp:
+optimizer_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']中的一种
   init_lr: 0.01  # 0.01 for sgd / 0.001 for adam
   weight_decay: 0.0005
@@ -76,7 +76,7 @@ data_hyp:
   data_aug_fliplr_p: 0.5  # 水平翻转
   data_aug_flipud_p: 0.0  # 上下翻转
   data_aug_fill_value: 128  # 图像填充值
-  data_aug_mosaic_p: 1.0  # mosaic增强强度
+  data_aug_mosaic_p: 1.0  # mosaic
   data_aug_cutout_p: 1.0
 
 nms_hyp:

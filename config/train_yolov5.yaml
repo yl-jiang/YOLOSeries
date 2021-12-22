@@ -29,12 +29,8 @@ train_hyp:
   num_workers: 0  # Pytorch DataLoader中的参数
   total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
-  do_warmup: true  # 是否开启预热训练
   accumulate_loss_step: 64  # 累积梯度下降
-  warmup_epoch: 3
   do_ema: true  # 是否维持一个Everage Moving Model
-  warmup_bias_lr: 0.1
-  warmup_momentum: 0.8
   validation_every: 0.5  # 每隔多少个epoch validate一次
   show_tbar_every: 5  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
@@ -51,13 +47,18 @@ train_hyp:
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
 
-optim_hyp:
+optimizer_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
   init_lr: 0.01
   weight_decay: 0.0005
   momentum: 0.9
   lr_scheculer_bias: 0.2
 
+warm_up:
+  do_warmup: true  # 是否开启预热训练
+  warmup_epoch: 3
+  warmup_bias_lr: 0.1
+  warmup_momentum: 0.8
 
 data_hyp:
   data_aug_scale: 0.5
@@ -96,8 +97,7 @@ nms_hyp:
   wfb_iou_threshold: 0.5
   wfb_skip_box_threshold: 0.001
 
-
-va_hyp:
+val_hyp:
   save_img: false
   show_gt_bbox: false
   save_pred_bbox: false

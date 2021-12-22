@@ -32,6 +32,7 @@ import pickle
 from utils import mAP_v2, cv2_save_img_plot_pred_gt
 from collections import Counter
 import emoji
+from loguru import logger
 
 
 class Training:
@@ -211,6 +212,7 @@ class Training:
                 bias.data.fill_(-math.log((1-p) / p))
                 m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
 
+    @logger.catch
     def step(self):
         with torch.autograd.set_detect_anomaly(True):  # debug backward bugs
             self.optimizer.zero_grad()
