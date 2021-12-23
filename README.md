@@ -2,11 +2,11 @@
 
 其实，从代码结构上看，YOLO系列的模型代码结构大部分是可以复用的，在学习了官方[YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)代码后，也将YOLOX集成到本项目中，使用方法与YOLOV5类似。
 ## 网络结构
-以Yolov5s为例，下面分别是该网络的整体结构图、backbone、Neck以及构成这些模块用到的小组件的结构图。
+以Yolov5s为例，下面分别是该网络的整体结构、backbone、Neck以及构成这些模块用到的小组件的结构。
 
 **注意：**
 
-以下结构图是当时我在较早时候学习yolov5代码时画的，方便对照代码一起查看（对应的模型参见：`YOLOSeries/models/normal/yolov5s_plain_bscp.py`），该结构图与当前最新版本的yolov5结构有些许差别，但到目前为止模型整体架构并没有特别大的变化，因此仍然具有参考意义。
+以下结构图是当时我在较早时候学习yolov5代码时画的，方便对照代码一起查看（对应的模型参见：`YOLOSeries/models/normal/yolov5s_plain_bscp.py`）。该结构图与当前最新版本的yolov5结构有些许差别，但到目前为止模型整体架构并没有特别大的变化，因此仍然具有参考意义。
 
 ### 总体结构
 ![blue-print](https://github.com/yl-jiang/Yolov5/blob/main/figures/yolov5.svg)
