@@ -4,7 +4,9 @@
 ## 网络结构
 以Yolov5s为例，下面分别是该网络的整体结构图、backbone、Neck以及构成这些模块用到的小组件的结构图。
 
-**注意：以下结构图是我在学习较早版本的yolov5代码时画的（对应的模型参见：YOLOSeries/models/normal/yolov5s_plain_bscp.py），与当前最新版本的yolov5结构有些许差别，但到目前为止整体架构并没有特别大的变化，因此仍然具有参考意义。**
+**注意：**
+
+以下结构图是我在学习较早版本的yolov5代码时画的（对应的模型参见：`YOLOSeries/models/normal/yolov5s_plain_bscp.py`），与当前最新版本的yolov5结构有些许差别，但到目前为止整体架构并没有特别大的变化，因此仍然具有参考意义。
 
 ### 总体结构
 ![blue-print](https://github.com/yl-jiang/Yolov5/blob/main/figures/yolov5.svg)
