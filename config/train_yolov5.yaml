@@ -50,7 +50,7 @@ train_hyp:
 optimizer_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
   init_lr: 0.01
-  weight_decay: 0.0005
+  weight_decay: 0.0001
   momentum: 0.9
   lr_scheculer_bias: 0.2
 

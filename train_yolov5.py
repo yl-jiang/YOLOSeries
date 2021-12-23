@@ -306,7 +306,7 @@ class Training:
 
                     # save model
                     if cur_steps % int(self.hyp['save_ckpt_every'] * len(self.traindataloader)) == 0:
-                        self.save(tot_loss, epoch+1, cur_steps, True)
+                        self.save_model(tot_loss, epoch+1, cur_steps, True)
 
                     del img, ann, tot_loss, reg_loss, cof_loss, cls_loss
                     tbar.update()
@@ -321,7 +321,7 @@ class Training:
             save_path = self.hyp['model_save_dir']
         else:
             save_path = str(self.cwd / 'checkpoints' / f'final.pth')
-        self.save(tot_loss, 'finally', 'finally', True, save_path)
+        self.save_model(tot_loss, 'finally', 'finally', True, save_path)
 
     def show_tbar(self, tbar, epoch, step, batchsz, start_t, is_best, tot_loss, box_loss, cof_loss, cls_loss, 
                   targets_num, img_shape, elevenPointAP, everyPointAP, epoch_period):
@@ -496,7 +496,7 @@ class Training:
         else:
             print('training from stratch!')
 
-    def save(self, loss, epoch, step, save_optimizer, save_path=None):
+    def save_model(self, loss, epoch, step, save_optimizer, save_path=None):
         if self.hyp.get('model_save_dir', None) and Path(self.hyp['model_save_dir']).exists():
             save_path = self.hyp['model_save_dir']
         else:

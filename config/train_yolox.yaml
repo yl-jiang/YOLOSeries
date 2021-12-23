@@ -58,7 +58,7 @@ warmup_hyp:
 optimizer_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']中的一种
   init_lr: 0.01  # 0.01 for sgd / 0.001 for adam
-  weight_decay: 0.0005
+  weight_decay: 0.0001
   momentum: 0.9
   lr_scheculer_bias: 0.1
 
