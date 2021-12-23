@@ -6,7 +6,7 @@
 
 **注意：**
 
-以下结构图是我在学习较早版本的yolov5代码时画的（对应的模型参见：`YOLOSeries/models/normal/yolov5s_plain_bscp.py`），与当前最新版本的yolov5结构有些许差别，但到目前为止整体架构并没有特别大的变化，因此仍然具有参考意义。
+以下结构图是当时我在较早时候学习yolov5代码时画的（对应的模型参见：`YOLOSeries/models/normal/yolov5s_plain_bscp.py`），与当前最新版本的yolov5结构有些许差别，但到目前为止整体架构并没有特别大的变化，因此仍然具有参考意义。
 
 ### 总体结构
 ![blue-print](https://github.com/yl-jiang/Yolov5/blob/main/figures/yolov5.svg)
