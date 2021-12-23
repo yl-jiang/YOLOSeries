@@ -144,7 +144,7 @@ class Detection:
             cur_h, cur_w = inp[i].size(1), inp[i].size(2)
 
             img = inp[i].permute(1, 2, 0)
-            img = (img * self.std + self.mean) * 255.
+            img *= 255.0
             img = img.numpy().astype(np.uint8)
             img = img[pad_top:(cur_h - pad_bot), pad_left:(cur_w - pad_right), :]
             img = cv2.resize(img, (org_w, org_h), interpolation=0)
@@ -229,7 +229,7 @@ class Detection:
             imgs.to(self.hyp['device'])
             if self.hyp['half'] and self.hyp['device'] == 'cuda':
                 imgs = imgs.half()
-            outputs = self.validate()
+            outputs = self.validate(imgs)
             imgs, preds = self.preds_postprocess(imgs.cpu(), outputs, infoes)
             pred_cls = [preds[j][:, 5] for j in range(len(imgs))]
 
@@ -263,9 +263,9 @@ class Detection:
             ascending_numbers = [numbers[i] for i in sort_index]
             ascending_names = [names[i] for i in sort_index]
             if len(numbers) > 0:
-                if (self.cwd / "result" / 'pkl' / "emoji_names.pkl").exists():
-                    coco_emoji = pickle.load(open(str(self.cwd / "result" / 'pkl' / "emoji_names.pkl"), 'rb'))
-                    msg_ls = [" ".join([number, coco_emoji[name]]) for name, number in zip(ascending_names, ascending_numbers)]
+                if (self.cwd / "result" / 'pkl' / "coco_emoji_names.pkl").exists():
+                    emoji_names = pickle.load(open(str(self.cwd / "result" / 'pkl' / "coco_emoji_names.pkl"), 'rb'))
+                    msg_ls = [" ".join([number, emoji_names[name]]) for name, number in zip(ascending_names, ascending_numbers)]
                 else:
                     msg_ls = [" ".join([number, name]) for name, number in zip(ascending_names, ascending_numbers)]
             else:
@@ -353,7 +353,7 @@ if __name__ == '__main__':
         # name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
         name_path = '/home/uih/JYL/Programs/YOLO/dataset/other/coco_names.txt'
         test_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
-        pretrained_model_path = "/home/uih/JYL/Programs/YOLO/jupyter/yolov5s_for_coco.pth"
+        pretrained_model_path = "/home/uih/JYL/Programs/yolov5s_for_coco.pth"
     args = Args()
     # ======================================================================
 

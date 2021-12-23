@@ -109,6 +109,21 @@ $ python val_yolov5.py --cfg "./config/validation.yaml" --img_dir "your-image-di
 [00003/5000] ➡️ 43 🧑; 32 :bench:; 24 🪁; 10 🚗; 3 ⚾; 2 🚦; 2 🥏; 1 ☂; 1 🚚 (0.70s)
 ```
 ---
+
+## 模型初始化参数
+
+| Model | baidu | pwd |
+| ----------- | ----------- | -------- |
+| yolov5 small for voc | https://pan.baidu.com/s/1OhixKNzD9Rzav61M-bX3qg | bdnn |
+| yolov5 small for coco | https://pan.baidu.com/s/1qz2J_KSCETIVtAJkqMnLlQ | ao2w |
+| yolox small for coco | https://pan.baidu.com/s/1T-9cfLCPpGYlH5c6XNlHSw | dtay |
+| yolox small for voc | https://pan.baidu.com/s/1RaYWnoWO0LXzC-wje_Wvvg | xv1h |
+
+yoloxs, yoloxm, yoloxl, yoloxx使用的backbone分别与yolov5s, yolov5m, yolov5l, yolov5x一致，有关yolox的预训练模型只在backbone部分载入了yolov5官方的预训练参数，剩余部分layer参数使用随机初始化。
+
+又由于yolov5官方只提供了基于coco数据集的预训练模型，因此本项目中yolov5关于voc数据集的预训练模型在detect部分的layer参数也是使用随机初始化。所有这些预训练模型仅可作为finetune使用，请知悉。
+
+---
 ## Reference
 1. [YOLOV5-Pytorch](https://github.com/ultralytics/yolov5)
 2. [YOLOX-Pytorch](https://github.com/Megvii-BaseDetection/YOLOX)
