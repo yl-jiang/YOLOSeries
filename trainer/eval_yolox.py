@@ -7,6 +7,7 @@ from utils import xywh2xyxy
 from collections import defaultdict
 from utils import weighted_fusion_bbox
 import pickle
+from loguru import logger
 
 
 class YOLOXEvaluater:
@@ -21,8 +22,8 @@ class YOLOXEvaluater:
         self.ds_scales = [8, 16, 32]  # 这个下采样尺度只适用于yoloxs, yoloxm, yoloxl, yoloxx
         self.inp_h, self.inp_w = hyp['input_img_size']
         self.use_tta = hyp['use_tta']
-        self.grid_coords = [self.make_grid(self.inp_h//s, self.inp_w//s).float().to(self.device) for s in self.ds_scales]
-
+        self.grid_coords = [self.make_grid(self.inp_h//s, self.inp_w//s).float() for s in self.ds_scales]
+ 
     @torch.no_grad()
     def __call__(self, inputs):
         """
@@ -179,6 +180,7 @@ class YOLOXEvaluater:
         # (bs, M+N+P, 85)
         return torch.cat(aug_preds, dim=1).contiguous(), aug_preds
 
+    @logger.catch
     @torch.no_grad()
     def do_inference(self, inputs):
         """
@@ -197,7 +199,7 @@ class YOLOXEvaluater:
             cur_preds = cur_preds.permute(0, 1, 3, 4, 2).contiguous()
             cur_preds[..., 4:] = cur_preds[..., 4:].sigmoid()
             # grid_coords: (1, h, w, 2) -> (1, num_anchors, h, w, 2) / 可以优化grid_coords的创建方式
-            grid_coords = self.make_grid(fm_h, fm_w).unsqueeze(1).repeat(1, self.hyp['num_anchors'], 1, 1, 1).to(self.device).type_as(inputs)
+            grid_coords = self.make_grid(fm_h, fm_w).unsqueeze(1).repeat(1, self.hyp['num_anchors'], 1, 1, 1).contiguous().type_as(inputs)
 
             # (bn, num_anchors, h, w, 2) & (1, num_anchors, h, w, 2) -> (bn, num_anchors, h, w, 2)
             cur_preds[..., [0, 1]] = (cur_preds[..., [0, 1]] + grid_coords) * (input_img_h / fm_h)
@@ -226,9 +228,8 @@ class YOLOXEvaluater:
             pad = [0, out_w - new_w, 0, out_h - new_h]  # [left, right, up, down]
             return F.pad(img, pad, value=0.447)
 
-    @staticmethod
-    def make_grid(row_num, col_num):
-        y, x = torch.meshgrid([torch.arange(row_num), torch.arange(col_num)])
+    def make_grid(self, row_num, col_num):
+        y, x = torch.meshgrid([torch.arange(row_num, device=self.device), torch.arange(col_num, device=self.device)])
         # mesh_grid: (col_num, row_num, 2) -> (row_num, col_num, 2)
         mesh_grid = torch.stack((x, y), dim=2).reshape(row_num, col_num, 2)
         # (1, col_num, row_num, 2)

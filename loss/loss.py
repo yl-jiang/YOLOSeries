@@ -60,7 +60,7 @@ class YOLOV5Loss:
         targets = torch.cat([targets, anchor_ids], dim=-1).contiguous()
         assert torch.sum(targets[0][..., -1]) == 0., f"please check the data format of anchor_ids"
 
-        cls_loss, reg_loss, cof_loss = torch.zeros(1).to(self.device), torch.zeros(1).to(self.device), torch.zeros(1).to(self.device)
+        cls_loss, iou_loss, cof_loss = torch.zeros(1, device=self.device), torch.zeros(1, device=self.device), torch.zeros(1, device=self.device)
         balances = [4., 1., 0.4] if len(stage_preds) == 3 else [4., 1., 0.4, 0.1]
         tot_tar_num = 0
         s = 3 / len(stage_preds)
@@ -86,7 +86,7 @@ class YOLOV5Loss:
             # 只有正样本才参与分类损失的计算
             if cur_preds[:, 5:].size(1) > 1:  # if only one class then we don't compute class loss
                 # t_cls: (N, 80)
-                t_cls = torch.zeros_like(cur_preds[:, 5:]).to(self.device)
+                t_cls = torch.zeros_like(cur_preds[:, 5:])
                 t_cls[torch.arange(tar_cls.size(0)), tar_cls] = self.hyp['class_smooth_factor']
 
                 if self.hyp['use_focal_loss']:
@@ -98,7 +98,7 @@ class YOLOV5Loss:
 
             # Confidence and Regression
             # 只有正样本才参与回归损失的计算
-            t_cof = torch.zeros_like(preds[..., 4]).to(self.device)
+            t_cof = torch.zeros_like(preds[..., 4])
             if cur_tar_num > 0:
                 # sigmoid(-5) ≈ 0; sigmoid(0) = 0.5; sigmoid(5) ≈ 1
                 # sigmoid(-5) * 2 - 0.5 = -0.5; sigmoid(0) * 2 - 0.5 = 0.5; sigmoid(5) * 2 - 0.5 = 0.5
@@ -111,7 +111,7 @@ class YOLOV5Loss:
                 pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
                 # iou: (N,)
                 iou = gpu_CIoU(pred_box, tar_box)
-                reg_loss += (1.0 - iou).mean()
+                iou_loss += (1.0 - iou).mean()
                 # t_cof: (bn, 3, h, w) / 所有grid均参与confidence loss的计算
                 t_cof[img_idx, anc_idx, gy, gx] = iou.detach().clamp(0).type_as(t_cof)
 
@@ -127,11 +127,11 @@ class YOLOV5Loss:
             cof_loss += cof_loss_tmp
 
         self.balances = [x/self.balances[1] for x in self.balances]
-        reg_loss *= self.hyp['reg_loss_scale'] * s
+        iou_loss *= self.hyp['iou_loss_scale'] * s
         cof_loss *= self.hyp['cof_loss_scale'] * s * (1. if len(stage_preds) == 3 else 1.4)
         cls_loss *= self.hyp['cls_loss_scale'] * s
-        tot_loss = (reg_loss + cof_loss + cls_loss) * batch_size
-        return tot_loss, reg_loss.detach().item(), cof_loss.detach().item(), cls_loss.detach().item(), tot_tar_num
+        tot_loss = (iou_loss + cof_loss + cls_loss) * batch_size
+        return tot_loss, iou_loss.detach().item(), cof_loss.detach().item(), cls_loss.detach().item(), tot_tar_num
 
     def match(self, targets, anchor_stage, fm_shape):
         """
@@ -239,7 +239,7 @@ class YOLOXLoss:
         self.img_sz = hyp['input_img_size']
         self.num_class = hyp['num_class']
         self.use_l1 = hyp.get('use_l1', True)
-        self.reg_loss_scale = hyp.get('reg_loss_scale', 0.5)
+        self.iou_loss_scale = hyp.get('iou_loss_scale', 0.5)
         self.cls_loss_scale = hyp.get('cls_loss_scale', 1.0)
         self.l1_loss_scale = hyp.get('l1_loss_scale', 1.0)
         self.cof_loss_scale = hyp.get('cof_loss_scale', 1.0)
@@ -264,7 +264,7 @@ class YOLOXLoss:
         tars[..., :4] = xyxy2xywh(tars[..., :4])
 
         tot_num_fg, tot_num_gt = 0, 0
-        tot_cls_loss, tot_reg_loss, tot_cof_loss, tot_l1_reg_loss = torch.zeros(1).to(self.device), torch.zeros(1).to(self.device), torch.zeros(1).to(self.device), torch.zeros(1).to(self.device)
+        tot_cls_loss, tot_iou_loss, tot_cof_loss, tot_l1_reg_loss = torch.zeros(1, device=self.device), torch.zeros(1, device=self.device), torch.zeros(1, device=self.device), torch.zeros(1, device=self.device)
         for k in preds.keys():  # each stage
             h, w = preds[k].shape[-2:]
             stride = self.img_sz[0] / h  # 该stage下采样尺度 
@@ -279,13 +279,13 @@ class YOLOXLoss:
             # (N, num_anchors, h, w, 85) -> (N, num_anchors*h*w, 85)
             pred = pred.reshape(batch_size, self.num_anchors * h * w, -1)
             # (1, 1, h, w, 2) -> (1, num_anchors*h*w, 2)
-            grid = grid.repeat(1, self.num_anchors, 1, 1, 1).reshape(1, -1, 2)
+            grid = grid.repeat(1, self.num_anchors, 1, 1, 1).contiguous().reshape(1, -1, 2)
             
             stage_out_dict = self.calculate_loss_of_each_stage(tars, pred, grid[0], stride)
             tot_num_fg += stage_out_dict['num_fg']
             tot_num_gt += stage_out_dict['num_gt']
             tot_cls_loss += stage_out_dict['cls_loss'] 
-            tot_reg_loss += stage_out_dict['reg_loss'] 
+            tot_iou_loss += stage_out_dict['iou_loss'] 
             tot_cof_loss += stage_out_dict['cof_loss'] 
             tot_l1_reg_loss += stage_out_dict['l1_reg_loss']
             del stage_out_dict
@@ -293,17 +293,17 @@ class YOLOXLoss:
         if self.num_class == 1:
             tot_cls_loss = tot_cof_loss.new_tensor(0.0)
 
-        tot_reg_loss *= self.reg_loss_scale
+        tot_iou_loss *= self.iou_loss_scale
         tot_cls_loss *= self.cls_loss_scale
         tot_cof_loss *= self.cof_loss_scale
         tot_l1_reg_loss *= self.l1_loss_scale
-        tot_loss = (tot_reg_loss + tot_cls_loss + tot_cof_loss + tot_l1_reg_loss) * batch_size
+        tot_loss = (tot_iou_loss + tot_cls_loss + tot_cof_loss + tot_l1_reg_loss) * batch_size
 
         loss_dict = {'tot_loss': tot_loss, 
-                    'reg_loss': tot_reg_loss, 
+                    'iou_loss': tot_iou_loss, 
+                    'l1_reg_loss': tot_l1_reg_loss, 
                     'cls_loss': tot_cls_loss, 
                     'cof_loss': tot_cof_loss, 
-                    'l1_reg_loss': tot_l1_reg_loss, 
                     'num_fg': tot_num_fg, 
                     'num_gt': tot_num_gt}
 
@@ -397,7 +397,7 @@ class YOLOXLoss:
         tot_num_fg = max(tot_num_fg, 1)
 
         # regression loss
-        iou_reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg, self.hyp['iou_type'])  # regression
+        iou_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg, self.hyp['iou_type'])  # regression
 
         # cofidence loss
         cof_loss = self.bce_cof(preds[..., 4].view(-1, 1), batch_tar_cof.type(preds.type()))  # cofidence
@@ -416,9 +416,9 @@ class YOLOXLoss:
         else:
             l1_reg_loss = 0.0
 
-        out_dict = {'iou_reg_loss': iou_reg_loss.mean(), 
-                    'cls_loss': cls_loss.mean(), 
+        out_dict = {'iou_loss': iou_loss.mean(), 
                     'l1_reg_loss': l1_reg_loss.mean(), 
+                    'cls_loss': cls_loss.mean(), 
                     'cof_loss': cof_loss.mean(), 
                     'num_fg': tot_num_fg, 
                     'num_gt': tot_num_gt}
@@ -553,7 +553,7 @@ class YOLOXLoss:
         return frontground_mask, num_fg, matched_iou, matched_gt_idx
 
     def _make_grid(self, h, w, dtype):
-        ys, xs = torch.meshgrid(torch.arange(h), torch.arange(w))
+        ys, xs = torch.meshgrid(torch.arange(h, device=self.device), torch.arange(w, device=self.device))
         # 排列成(x, y)的形式，是因为模型输出的预测结果的排列是[x, y, w, h, cof, cls1, cls2, ...]
         grid = torch.stack((xs, ys), dim=2).view(1, 1, h, w, 2).contiguous().type(dtype)
         return grid

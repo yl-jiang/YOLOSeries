@@ -23,6 +23,7 @@ import os
 from functools import partial
 from utils import fixed_imgsize_collector, AspectRatioBatchSampler
 import warnings
+from loguru import logger
 NUM_THREADS = min(8, os.cpu_count())
 
 def init_random_seed(seed=7):
@@ -384,6 +385,7 @@ class YoloDataset(Dataset, Generator):
                                 thickness=1)
         cv2.imwrite(str(save_path), img[:, :, ::-1])
 
+    @logger.catch
     def __getitem__(self, ix):
         """
 
@@ -458,7 +460,7 @@ def YoloDataloader(hyp, is_training=True):
         assert Path(hyp['train_img_dir']).exists() and Path(hyp['train_img_dir']).is_dir()
         assert Path(hyp['train_lab_dir']).exists() and Path(hyp['train_lab_dir']).is_dir()
         dataset = YoloDataset(hyp['train_img_dir'], hyp['train_lab_dir'], hyp['name_path'], hyp['input_img_size'], coco_dataset_kwargs, hyp['cache_num'])
-        if hyp.get('aspect_ratio', None):  # 是否采用按照数据集中图片长宽比从小到大的顺序sample数据
+        if hyp.get('aspect_ratio', False):  # 是否采用按照数据集中图片长宽比从小到大的顺序sample数据
             print(f"Build Aspect Ratio BatchSampler!")
             _start = time()
             ar = None

@@ -23,7 +23,7 @@ class Evaluate:
         self.ds_scales = [8, 16, 32]  # 这个下采样尺度只适用于yolov5s, yolov5m, yolov5l, yolov5x
         self.inp_h, self.inp_w = hyp['input_img_size']
         self.use_tta = hyp['use_tta']
-        self.grid_coords = [self.make_grid(self.inp_h//s, self.inp_w//s).float().to(self.device) for s in self.ds_scales]
+        self.grid_coords = [self.make_grid(self.inp_h//s, self.inp_w//s).float() for s in self.ds_scales]
 
     @torch.no_grad()
     def __call__(self, inputs):
@@ -200,7 +200,7 @@ class Evaluate:
             if input_img_h == self.inp_h and input_img_w == self.inp_w:
                 grid_coords = self.grid_coords[i].type_as(inputs)
             else:
-                grid_coords = self.make_grid(fm_h, fm_w).to(self.device).type_as(inputs)
+                grid_coords = self.make_grid(fm_h, fm_w).type_as(inputs)
 
             # (bn, 3, h, w, 2) & (1, 1, h, w, 2) -> (bn, 3, h, w, 2)
             cur_preds[..., [0, 1]] = (cur_preds[..., [0, 1]] * 2 - 0.5 + grid_coords) * self.ds_scales[i]
@@ -229,9 +229,8 @@ class Evaluate:
             pad = [0, out_w - new_w, 0, out_h - new_h]  # [left, right, up, down]
             return F.pad(img, pad, value=0.447)
 
-    @staticmethod
-    def make_grid(row_num, col_num):
-        y, x = torch.meshgrid([torch.arange(row_num), torch.arange(col_num)])
+    def make_grid(self, row_num, col_num):
+        y, x = torch.meshgrid([torch.arange(row_num, device=self.device), torch.arange(col_num, device=self.device)])
         # mesh_grid: (col_num, row_num, 2) -> (row_num, col_num, 2)
         mesh_grid = torch.stack((x, y), dim=2).reshape(row_num, col_num, 2)
         # (1, 1, col_num, row_num, 2)

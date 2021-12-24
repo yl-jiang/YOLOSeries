@@ -57,7 +57,7 @@ class Training:
         # dataset, scaler, loss_meter
         self.traindataloader, self.traindataset = self.load_dataset(is_training=True)
         self.valdataloader, self.valdataset = self.load_dataset(is_training=False)
-        self.testdataloader, self.testdataset = testdataloader(self.hyp['test_data_dir'], self.hyp['input_img_size'])
+        self.testdataloader, self.testdataset = testdataloader(self.hyp['test_img_dir'], self.hyp['input_img_size'])
         self.hyp['num_class'] = self.traindataset.num_class
         self.scaler = amp.GradScaler(enabled=self.use_cuda)  # mix precision training
         self.tot_loss_meter = AverageValueMeter()
@@ -219,7 +219,7 @@ class Training:
                         self.model.detect.detect_large]
 
         input_img_shape = 128
-        stage_outputs = self.model(torch.zeros(1, 3, input_img_shape, input_img_shape).float().to(self.hyp['device']))
+        stage_outputs = self.model(torch.zeros(1, 3, input_img_shape, input_img_shape, device=self.hyp['device']).float())
         strides = torch.tensor([input_img_shape / x.size(2) for x in stage_outputs])
         class_frequency = None  # 各类别占整个数据集的比例
         for m, stride in zip(detect_layer, strides):
@@ -262,7 +262,7 @@ class Training:
                     # forward
                     with amp.autocast(enabled=self.use_cuda):
                         stage_preds = self.model(img)
-                        tot_loss, reg_loss, cof_loss, cls_loss, targets_num = self.loss_fcn(stage_preds, ann)
+                        tot_loss, iou_loss, cof_loss, cls_loss, targets_num = self.loss_fcn(stage_preds, ann)
 
                     # backward
                     self.scaler.scale(tot_loss).backward()
@@ -277,9 +277,9 @@ class Training:
                             self.ema_model.update(self.model)
 
                     # tensorboard
-                    tot_loss, reg_loss, cof_loss, cls_loss = self.update_loss_meter(tot_loss.item(), reg_loss, cof_loss, cls_loss)
+                    tot_loss, iou_loss, cof_loss, cls_loss = self.update_loss_meter(tot_loss.item(), iou_loss, cof_loss, cls_loss)
                     is_best = tot_loss < tot_loss_before
-                    self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss, map)
+                    self.summarywriter(cur_steps, tot_loss, iou_loss, cof_loss, cls_loss, map)
                     tot_loss_before = tot_loss
 
                     # testing
@@ -302,13 +302,13 @@ class Training:
 
                     # verbose
                     if cur_steps % int(self.hyp.get('show_tbar_every', 5)) == 0:
-                        self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, reg_loss, cof_loss, cls_loss, targets_num, inp_h, map50, map, epoch_period)
+                        self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, iou_loss, cof_loss, cls_loss, targets_num, inp_h, map50, map, epoch_period)
 
                     # save model
                     if cur_steps % int(self.hyp['save_ckpt_every'] * len(self.traindataloader)) == 0:
                         self.save_model(tot_loss, epoch+1, cur_steps, True)
 
-                    del img, ann, tot_loss, reg_loss, cof_loss, cls_loss
+                    del img, ann, tot_loss, iou_loss, cof_loss, cls_loss
                     tbar.update()
                 tbar.close()
 
@@ -323,7 +323,7 @@ class Training:
             save_path = str(self.cwd / 'checkpoints' / f'final.pth')
         self.save_model(tot_loss, 'finally', 'finally', True, save_path)
 
-    def show_tbar(self, tbar, epoch, step, batchsz, start_t, is_best, tot_loss, box_loss, cof_loss, cls_loss, 
+    def show_tbar(self, tbar, epoch, step, batchsz, start_t, is_best, tot_loss, iou_loss, cof_loss, cls_loss, 
                   targets_num, img_shape, elevenPointAP, everyPointAP, epoch_period):
         # tbar
         lrs = [x['lr'] for x in self.optimizer.param_groups]
@@ -332,7 +332,7 @@ class Training:
             tbar_msg = "#  {:^10d}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10d}{:^10d}{:^10.6f}{:^10.1f}{:^10.1f}{:^10s}"
         else:
             tbar_msg = "#  {:^10d}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10d}{:^10d}{:^10.6f}{:^10.1f}{:^10.1f}{:^10.1f}"
-        values = (epoch, tot_loss, box_loss, cof_loss, cls_loss, targets_num, img_shape, lrs[0], elevenPointAP*100, everyPointAP*100, epoch_period)
+        values = (epoch, tot_loss, iou_loss, cof_loss, cls_loss, targets_num, img_shape, lrs[0], elevenPointAP*100, everyPointAP*100, epoch_period)
         tbar.set_description_str(tbar_msg.format(*values))
 
         # maybe save info to log.txt
@@ -344,7 +344,7 @@ class Training:
             cached_memory = 0.
         if self.logger is not None:
             log_msg = f"{allocated_memory:^15.2f}{cached_memory:^15.2f}{(epoch+1):^15d}{step:^15d}{batchsz:^15d}{str(img_shape):^15s}"
-            log_msg += f"{tot_loss:^15.5f}{box_loss:^15.5f}{cof_loss:^15.5f}{cls_loss:^15.5f}"
+            log_msg += f"{tot_loss:^15.5f}{iou_loss:^15.5f}{cof_loss:^15.5f}{cls_loss:^15.5f}"
             period_t = time_synchronize() - start_t
             self.logger.info(log_msg + f"{period_t:^15.1e}" + f"{targets_num:^15d}" + f"{'yes' if is_best else 'no':^15s}")
 
@@ -428,14 +428,13 @@ class Training:
             else:
                 self.hyp['device'] = 'cpu'
 
-    def summarywriter(self, steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss, map):
+    def summarywriter(self, steps, tot_loss, iou_loss, cof_loss, cls_loss, map):
         lrs = [x['lr'] for x in self.optimizer.param_groups]
         self.writer.add_scalar(tag='train/tot_loss', scalar_value=tot_loss, global_step=steps)
-        self.writer.add_scalar('train/reg_loss', reg_loss, steps)
+        self.writer.add_scalar('train/iou_loss', iou_loss, steps)
         self.writer.add_scalar('train/cof_loss', cof_loss, steps)
         self.writer.add_scalar('train/cls_loss', cls_loss, steps)
-        self.writer.add_scalar('train/l1_reg_loss', l1_reg_loss, steps)
-        self.writer.add_scalar('train/map', map, steps//int(self.hyp['calculate_map_every'] * self.traindataloader))
+        self.writer.add_scalar('train/map', map, steps//int(self.hyp['calculate_map_every'] * len(self.traindataloader)))
         self.writer.add_scalar(f'train/{self.hyp["optimizer"]}_lr', lrs[0], steps)
 
     def mutil_scale_training(self, imgs, targets):

@@ -18,3 +18,5 @@ torchnet>=0.0.4
 torchvision>=0.9.1
 tqdm>=4.60.0
 visdom>=0.1.8.9
+loguru>=0.5.3
+lxml>=4.6.4

@@ -373,7 +373,8 @@ def process_batch(detections, labels, iouv):
     Returns:
         correct (Array[N, 10]), for 10 IoU levels
     """
-    correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
+    device = iouv.device
+    correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=device)
     iou = box_iou(labels[:, 1:], detections[:, :4])
     x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
     if x[0].shape[0]:
@@ -383,7 +384,7 @@ def process_batch(detections, labels, iouv):
             matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
             # matches = matches[matches[:, 2].argsort()[::-1]]
             matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-        matches = torch.Tensor(matches).to(iouv.device)
+        matches = torch.Tensor(matches, device=device)
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct
 

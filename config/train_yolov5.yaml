@@ -2,7 +2,7 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  reg_loss_scale: 0.05  # 回归损失（bbox损失）权重
+  iou_loss_scale: 0.05  # 回归损失（bbox损失）权重
   cls_loss_scale: 0.5  # 分类损失权重
   cof_loss_scale: 1.0  # 置信度损失权重
   anchor_match_thr: 4.0  # 该参数用于过滤预测框与标签框之间匹配的阈值
@@ -11,13 +11,14 @@ loss_hyp:
   cof_pos_weight: 1.0  # 
 
 train_hyp:
+  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/jupyter/yolov5s_for_voc.pth"  # 预训练模型路径
   train_img_dir: ~  # 存放训练图像的文件夹路径
   train_lab_dir: ~  # 存放训练label的文件夹路径
-  test_data_dir: "./result/coco_test_imgs"  # for test
+  test_img_dir: "./result/coco_test_imgs"  # for test
   val_img_dir: ~  # validation image dir
   val_lab_dir: ~  # validation label dir
-  aspect_ratio_path: ~
-  use_crowb: false
+  aspect_ratio: false  
+  aspect_ratio_path: ~  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 0
   input_img_size:  # 输入训练网络的图片大小
     - 640
@@ -34,9 +35,8 @@ train_hyp:
   validation_every: 0.5  # 每隔多少个epoch validate一次
   show_tbar_every: 5  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
-  log_save_path: ~  # 是否保存log文件
-  save_log_txt: true
-  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/jupyter/yolov5s_for_voc.pth"  # 预训练模型路径
+  log_save_path: ~  
+  save_log_txt: true  # 是否保存log文件
   model_save_dir: ~
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_path: null  # 当前工作目录（可以不设置）
@@ -45,7 +45,6 @@ train_hyp:
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
-  aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
 
 optimizer_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
@@ -85,7 +84,7 @@ nms_hyp:
   max_predictions_per_img: 300
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096
-  iou_type: iou
+  iou_type: 'iou'
   infer_img_save_path: ~
   mutil_label: false  # 一个object是否可以有多个标签
   agnostic: true  # 是否在同类别的bbox之间进行NMS
@@ -102,5 +101,5 @@ val_hyp:
   save_img: false
   show_gt_bbox: false
   save_pred_bbox: false
-  half: false
+  half: false  # 是否使用半精度（float16）进行预测
 

@@ -121,7 +121,7 @@ class GPUAnchor:
 
     def _base_anchor_generator(self, size):
         anchor_num = self.scales.nelement() * self.ratios.nelement()
-        base_anchors = torch.zeros(anchor_num, 4).to(self.device)
+        base_anchors = torch.zeros(anchor_num, 4, device=self.device)
 
         # shape: (9, 2)
         base_anchors[:, 2:] = size * self.scales.repeat(2, len(self.ratios)).transpose(0, 1)
@@ -140,8 +140,8 @@ class GPUAnchor:
         shift anchors.
         :return:
         """
-        shift_x = (torch.arange(0, shape[1]) + 0.5).to(self.device) * stride
-        shift_y = (torch.arange(0, shape[0]) + 0.5).to(self.device) * stride
+        shift_x = (torch.arange(0, shape[1], device=self.device) + 0.5) * stride
+        shift_y = (torch.arange(0, shape[0], device=self.device) + 0.5) * stride
         shift_x, shift_y = torch.meshgrid(shift_x, shift_y)
 
         # shape: (K, 4)
@@ -163,7 +163,7 @@ class GPUAnchor:
         :param pyramid_level: int
         :return:
         """
-        img_shape = torch.tensor(img_shape).to(self.device)
+        img_shape = torch.tensor(img_shape, device=self.device)
         fm_shape = (img_shape - 1) // (2 ** pyramid_level) + 1
         return fm_shape
 

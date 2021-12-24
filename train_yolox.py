@@ -49,7 +49,7 @@ class Training:
         # dataset, scaler, loss_meter
         self.traindataloader, self.traindataset = self.load_dataset(is_training=True)
         self.valdataloader, self.valdataset = self.load_dataset(is_training=False)
-        self.testdataloader, self.testdataset = testdataloader(self.hyp['test_data_dir'], self.hyp['input_img_size'])
+        self.testdataloader, self.testdataset = testdataloader(self.hyp['test_img_dir'], self.hyp['input_img_size'])
         self.hyp['num_class'] = self.traindataset.num_class
         self.scaler = amp.GradScaler(enabled=self.use_cuda)  # mix precision training
         self.tot_loss_meter = AverageValueMeter()
@@ -240,7 +240,7 @@ class Training:
                             loss_dict = self.loss_fcn(ann, stage_preds)
 
                         tot_loss = loss_dict['tot_loss']
-                        iou_reg_loss = loss_dict['iou_reg_loss'] 
+                        iou_loss = loss_dict['iou_loss'] 
                         cof_loss = loss_dict['cof_loss']
                         cls_loss = loss_dict['cls_loss']
                         l1_reg_loss = loss_dict['l1_reg_loss']
@@ -259,9 +259,9 @@ class Training:
                                 self.ema_model.update(self.model)
 
                         # tensorboard
-                        tot_loss, iou_reg_loss, cof_loss, cls_loss, l1_reg_loss = self.update_loss_meter(tot_loss.item(), iou_reg_loss.item(), cof_loss.item(), cls_loss.item(), l1_reg_loss.item())
+                        tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss = self.update_loss_meter(tot_loss.item(), iou_loss.item(), cof_loss.item(), cls_loss.item(), l1_reg_loss.item())
                         is_best = tot_loss < tot_loss_before
-                        self.summarywriter(cur_steps, tot_loss, iou_reg_loss, cof_loss, cls_loss, l1_reg_loss, map)
+                        self.summarywriter(cur_steps, tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss, map)
                         tot_loss_before = tot_loss
 
                         # testing
@@ -284,13 +284,13 @@ class Training:
 
                         # verbose
                         if cur_steps % int(self.hyp.get('show_tbar_every', 3)) == 0:
-                            self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss, targets_num, inp_h, map50, map, epoch_period)
+                            self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss, targets_num, inp_h, map50, map, epoch_period)
 
                         # save model
                         if cur_steps % int(self.hyp['save_ckpt_every']*len(self.traindataloader)) == 0:
                             self.save_model(tot_loss, epoch+1, cur_steps, True)
 
-                        del img, ann, tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss
+                        del img, ann, tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss
                         tbar.update()
                     tbar.close()
 
@@ -305,7 +305,7 @@ class Training:
                 save_path = str(self.cwd / 'checkpoints' / f'final.pth')
             self.save_model(tot_loss, 'finally', 'finally', True, save_path)
 
-    def show_tbar(self, tbar, epoch, step, batchsz, start_t, is_best, tot_loss, box_loss, cof_loss, cls_loss, l1_loss, 
+    def show_tbar(self, tbar, epoch, step, batchsz, start_t, is_best, tot_loss, iou_loss, cof_loss, cls_loss, l1_loss, 
                   targets_num, img_shape, elevenPointAP, everyPointAP, epoch_period):
         # tbar
         lrs = [x['lr'] for x in self.optimizer.param_groups]
@@ -314,7 +314,7 @@ class Training:
             tbar_msg = "#  {:^10d}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10d}{:^10d}{:^10.6f}{:^10.1f}{:^10.1f}{:^10s}"
         else:
             tbar_msg = "#  {:^10d}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10.3f}{:^10d}{:^10d}{:^10.6f}{:^10.1f}{:^10.1f}{:^10.1f}"
-        values = (epoch, tot_loss, box_loss, cof_loss, cls_loss, l1_loss, targets_num, img_shape, lrs[0], elevenPointAP*100, everyPointAP*100, epoch_period)
+        values = (epoch, tot_loss, iou_loss, cof_loss, cls_loss, l1_loss, targets_num, img_shape, lrs[0], elevenPointAP*100, everyPointAP*100, epoch_period)
         tbar.set_description_str(tbar_msg.format(*values))
 
         # maybe save info to log.txt
@@ -326,7 +326,7 @@ class Training:
             cached_memory = 0.
         if self.logger is not None:
             log_msg = f"{allocated_memory:^15.2f}{cached_memory:^15.2f}{(epoch+1):^15d}{step:^15d}{batchsz:^15d}{str(img_shape):^15s}"
-            log_msg += f"{tot_loss:^15.5f}{box_loss:^15.5f}{cof_loss:^15.5f}{cls_loss:^15.5f}{l1_loss:^15.5f}"
+            log_msg += f"{tot_loss:^15.5f}{iou_loss:^15.5f}{cof_loss:^15.5f}{cls_loss:^15.5f}{l1_loss:^15.5f}"
             period_t = time_synchronize() - start_t
             self.logger.info(log_msg + f"{period_t:^15.1e}" + f"{targets_num:^15d}" + f"{'yes' if is_best else 'no':^15s}")
 
@@ -412,10 +412,10 @@ class Training:
             else:
                 self.hyp['device'] = 'cpu'
 
-    def summarywriter(self, steps, tot_loss, iou_reg_loss, cof_loss, cls_loss, l1_reg_loss, map):
+    def summarywriter(self, steps, tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss, map):
         lrs = [x['lr'] for x in self.optimizer.param_groups]
         self.writer.add_scalar(tag='train/tot_loss', scalar_value=tot_loss, global_step=steps)
-        self.writer.add_scalar('train/iou_reg_loss', iou_reg_loss, steps)
+        self.writer.add_scalar('train/iou_loss', iou_loss, steps)
         self.writer.add_scalar('train/cof_loss', cof_loss, steps)
         self.writer.add_scalar('train/cls_loss', cls_loss, steps)
         self.writer.add_scalar('train/l1_reg_loss', l1_reg_loss, steps)
@@ -506,11 +506,11 @@ class Training:
         torch.save(state_dict, save_path, _use_new_zipfile_serialization=False)
         del state_dict, optim_state, hyp
 
-    def update_loss_meter(self, tot_loss, box_loss, cof_loss, cls_loss, l1_loss):
+    def update_loss_meter(self, tot_loss, iou_loss, cof_loss, cls_loss, l1_loss):
         if not math.isnan(tot_loss):
             self.tot_loss_meter.add(tot_loss)
-        if not math.isnan(box_loss):
-            self.box_loss_meter.add(box_loss)
+        if not math.isnan(iou_loss):
+            self.box_loss_meter.add(iou_loss)
         if not math.isnan(cof_loss):
             self.cof_loss_meter.add(cof_loss)
         if not math.isnan(cls_loss):
@@ -575,7 +575,7 @@ class Training:
             infoes = x['resize_info']
 
             # gt_bbox: [(M, 4), (N, 4), (P, 4), ...]; gt_cls: [(M,), (N, ), (P, ), ...]
-            # coco val2017 dataset中存在有些图片没有对应的gt bboxes的情况
+            # 对gt bbox进行一下后处理，是因为coco val2017 dataset中存在有些图片没有对应的gt bboxes的情况
             gt_bbox, gt_cls = self.gt_bbox_postprocess(x['ann'], infoes)
             gt_bboxes.extend(gt_bbox)
             gt_classes.extend(gt_cls)
@@ -605,11 +605,11 @@ class Training:
                 batch_pred_cls.append(pred_cls)
                 batch_pred_cof.append(pred_cof)
                 batch_pred_lab.append(pred_lab)
-            del imgs, preds
             pred_bboxes.extend(batch_pred_box)
             pred_classes.extend(batch_pred_cls)
             pred_confidences.extend(batch_pred_cof)
             pred_labels.extend(batch_pred_lab)
+            del imgs, preds
 
         total_use_time = time_synchronize() - start_t
 
@@ -664,8 +664,8 @@ if __name__ == '__main__':
     # args = parser.parse_args()
 
     class Args:
-        cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolox.yaml"
-        pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolox_small_413layers_for_voc.pth"
+        cfg = "/home/uih/JYL/Programs/YOLO/config/finetune_yolox.yaml"
+        pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolox_small_for_voc.pth"
         train_lab_dir = '/home/uih/JYL/Dataset/VOC/train2012/label'
         train_img_dir = '/home/uih/JYL/Dataset/VOC/train2012/image'
         name_path = '/home/uih/JYL/Dataset/VOC/train2012/names.txt'
