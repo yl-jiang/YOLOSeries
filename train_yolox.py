@@ -240,7 +240,7 @@ class Training:
                             loss_dict = self.loss_fcn(ann, stage_preds)
 
                         tot_loss = loss_dict['tot_loss']
-                        reg_loss = loss_dict['reg_loss'] 
+                        iou_reg_loss = loss_dict['iou_reg_loss'] 
                         cof_loss = loss_dict['cof_loss']
                         cls_loss = loss_dict['cls_loss']
                         l1_reg_loss = loss_dict['l1_reg_loss']
@@ -259,9 +259,9 @@ class Training:
                                 self.ema_model.update(self.model)
 
                         # tensorboard
-                        tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss = self.update_loss_meter(tot_loss.item(), reg_loss.item(), cof_loss.item(), cls_loss.item(), l1_reg_loss.item())
+                        tot_loss, iou_reg_loss, cof_loss, cls_loss, l1_reg_loss = self.update_loss_meter(tot_loss.item(), iou_reg_loss.item(), cof_loss.item(), cls_loss.item(), l1_reg_loss.item())
                         is_best = tot_loss < tot_loss_before
-                        self.summarywriter(cur_steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss, map)
+                        self.summarywriter(cur_steps, tot_loss, iou_reg_loss, cof_loss, cls_loss, l1_reg_loss, map)
                         tot_loss_before = tot_loss
 
                         # testing
@@ -412,10 +412,10 @@ class Training:
             else:
                 self.hyp['device'] = 'cpu'
 
-    def summarywriter(self, steps, tot_loss, reg_loss, cof_loss, cls_loss, l1_reg_loss, map):
+    def summarywriter(self, steps, tot_loss, iou_reg_loss, cof_loss, cls_loss, l1_reg_loss, map):
         lrs = [x['lr'] for x in self.optimizer.param_groups]
         self.writer.add_scalar(tag='train/tot_loss', scalar_value=tot_loss, global_step=steps)
-        self.writer.add_scalar('train/reg_loss', reg_loss, steps)
+        self.writer.add_scalar('train/iou_reg_loss', iou_reg_loss, steps)
         self.writer.add_scalar('train/cof_loss', cof_loss, steps)
         self.writer.add_scalar('train/cls_loss', cls_loss, steps)
         self.writer.add_scalar('train/l1_reg_loss', l1_reg_loss, steps)

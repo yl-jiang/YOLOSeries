@@ -397,7 +397,7 @@ class YOLOXLoss:
         tot_num_fg = max(tot_num_fg, 1)
 
         # regression loss
-        reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg, self.hyp['iou_type'])  # regression
+        iou_reg_loss = self.iou_loss(preds[..., :4], batch_tar_box, fg, self.hyp['iou_type'])  # regression
 
         # cofidence loss
         cof_loss = self.bce_cof(preds[..., 4].view(-1, 1), batch_tar_cof.type(preds.type()))  # cofidence
@@ -416,7 +416,7 @@ class YOLOXLoss:
         else:
             l1_reg_loss = 0.0
 
-        out_dict = {'reg_loss': reg_loss.mean(), 
+        out_dict = {'iou_reg_loss': iou_reg_loss.mean(), 
                     'cls_loss': cls_loss.mean(), 
                     'l1_reg_loss': l1_reg_loss.mean(), 
                     'cof_loss': cof_loss.mean(), 
