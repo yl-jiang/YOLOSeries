@@ -3,13 +3,13 @@ loss_hyp:
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
   iou_loss_scale: 0.05  # 回归损失（bbox损失）权重
+  use_l1: true  # compute L1 norm regression loss
   l1_loss_scale: 0.01 # L1 loss损失权重
-  cls_loss_scale: 1.0  # 分类损失权重
+  cls_loss_scale: 0.5  # 分类损失权重
   cof_loss_scale: 1.0  # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 计算分类损失时，对类别为1的loss乘以该权重
   cof_pos_weight: 1.0  # 计算分类损失时，对类别为1的loss乘以该权重
-  use_l1: true  # compute L1 norm regression loss
 
 train_hyp:
   pretrained_model_path: "/home/uih/JYL/Programs/YOLO/checkpoints/yolox_small_413layers_for_voc.pth"  # 预训练模型路径(xxx/xxx.pth)
@@ -52,7 +52,7 @@ warmup_hyp:
   do_warmup: true  # 是否开启预热训练
   warmup_epoch: 3
   warmup_bias_lr: 0.1  # warmup lr for bias
-  warmup_momentum: 0.9
+  warmup_momentum: 0.8
 
 optimizer_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']中的一种

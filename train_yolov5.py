@@ -35,6 +35,7 @@ from utils import mAP_v2, cv2_save_img_plot_pred_gt
 from collections import Counter
 import emoji
 from loguru import logger
+import numbers
 
 
 class Training:
@@ -129,6 +130,10 @@ class Training:
 
     @staticmethod
     def padding(hw, factor=32):
+        if isinstance(hw, numbers.Real):
+            hw = [hw, hw]
+        else:
+            assert len(hw) == 2, f"input image size's format should like (h, w)"
         h, w = hw
         h_mod = h % factor
         w_mod = w % factor
@@ -140,7 +145,7 @@ class Training:
 
     def _config_logger(self):
         clear_dir(str(self.cwd / 'log'))  # 再写入log文件前先清空log文件夹
-        model_summary = summary_model(self.model, self.hyp['input_img_size'], verbose=False)
+        model_summary = summary_model(self.model, self.hyp['input_img_size'], verbose=True)
         logger = logging.getLogger("SimpleYolov5")
         logger.setLevel(logging.INFO)
         if self.hyp['save_log_txt']:
