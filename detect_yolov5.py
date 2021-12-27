@@ -45,10 +45,10 @@ class Detection:
         self.hyp['input_img_size'] = self.padding(self.hyp['input_img_size'], 32)
     
         self.testdataset, self.testdataloader = self.load_dataset(False)
-        if self.hyp['current_work_path'] is None:
+        if self.hyp['current_work_dir'] is None:
             self.cwd = Path('./').absolute()
         else:
-            self.cwd = Path(self.hyp['current_work_path'])
+            self.cwd = Path(self.hyp['current_work_dir'])
 
         self.mean = torch.tensor([0.485, 0.456, 0.406]).float()
         self.std = torch.tensor([0.229, 0.224, 0.225]).float()

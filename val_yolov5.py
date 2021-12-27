@@ -44,10 +44,10 @@ class Validation:
         self.hyp['input_img_size'] = self.padding(self.hyp['input_img_size'], 32)
     
         self.testdataset, self.testdataloader = self.load_dataset(False)
-        if self.hyp['current_work_path'] is None:
+        if self.hyp['current_work_dir'] is None:
             self.cwd = Path('./').absolute()
         else:
-            self.cwd = Path(self.hyp['current_work_path'])
+            self.cwd = Path(self.hyp['current_work_dir'])
 
         if self.testdataset.num_class == 0:
             num_class = int(input("Please input class num of this dataset: "))

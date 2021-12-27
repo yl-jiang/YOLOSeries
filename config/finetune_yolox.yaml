@@ -41,7 +41,7 @@ train_hyp:
   save_log_txt: false  # 是否保存log文件
   log_save_path: ~  # 指定保存log日志的路径（xxx/xxx.txt）
   mutil_scale_training: false  # 是否使用多尺度训练
-  current_work_path: null  # 当前工作目录（可以不设置）
+  current_work_dir: null  # 当前工作目录（可以不设置）
   calculate_map_every: 2.0  # 每隔多少个epoch计算一次验证数据集的map
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   model_type: 'small'  # 使用模型类型

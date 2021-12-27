@@ -34,7 +34,7 @@ test_hyp:
   device: 'gpu' 
   use_tta:  true 
   save_pred_bbox:  false
-  current_work_path: ~ 
+  current_work_dir: ~ 
   show_gt_bbox:  true 
   drop_last:  false 
   shuffle: false

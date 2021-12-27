@@ -6,6 +6,7 @@ from utils import letter_resize_bbox, letter_resize_img, maybe_mkdir, clear_dir
 from tqdm import trange
 import pickle
 import numpy as np
+from pathlib import Path
 
 
 def torch_normalization(img):
@@ -26,13 +27,14 @@ class AspectRatioBatchSampler(Sampler):
     copy from: https://github.com/yhenon/pytorch-retinanet
     """
 
-    def __init__(self, data_source, batch_size, drop_last, aspect_ratio_list=None):
+    def __init__(self, data_source, batch_size, drop_last, aspect_ratio_list=None, cwd=None):
         super(AspectRatioBatchSampler, self).__init__(data_source)
         assert hasattr(data_source, "aspect_ratio"), f"data_source should has method of aspect_ratio"
         self.data_source = data_source
         self.batch_size = batch_size
         self.drop_last = drop_last
         self.ar = aspect_ratio_list
+        self.cwd = cwd
         self.groups = self.group_images()
 
     def __iter__(self): 
@@ -70,7 +72,7 @@ class AspectRatioBatchSampler(Sampler):
         if self.ar is None:
             order = list(range(len(self.data_source)))
             order.sort(key=lambda x: self.data_source.aspect_ratio(x))
-            pickle.dump(order, open("./dataset/pkl/wheat_aspect_ratio.pkl", 'wb'))
+            pickle.dump(order, open(str(Path(self.cwd) / "dataset" / 'pkl' / 'aspect_ratio.pkl', 'wb')))
         else:
             sort_i = np.argsort(self.ar)
             order = np.array(order)[sort_i]

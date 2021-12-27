@@ -466,7 +466,7 @@ def YoloDataloader(hyp, is_training=True):
             ar = None
             if hyp.get('aspect_ratio_path', None) is not None and Path(hyp['aspect_ratio_path']).exists():
                 ar = pickle.load(open(hyp['aspect_ratio_path'], 'rb'))
-            sampler = AspectRatioBatchSampler(dataset, hyp['batch_size'], hyp['drop_last'], aspect_ratio_list=ar)
+            sampler = AspectRatioBatchSampler(dataset, hyp['batch_size'], hyp['drop_last'], aspect_ratio_list=ar, cwd=hyp['current_work_dir'])
             print(f"- Use time {time() - _start:.3f}s")
         else:
             sampler = None

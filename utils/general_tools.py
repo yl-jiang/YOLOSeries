@@ -59,7 +59,7 @@ def summary_model(model, input_img_size=[640, 640], verbose=False, prefix=""):
             flops = ""
         
         if verbose:
-            msg = f"{prefix} {number_layers} layers; {number_params} parameters; {number_gradients} gradients; {flops} GFLOPs"
+            msg = f"Model Summary: {prefix} {number_layers} layers; {number_params} parameters; {number_gradients} gradients; {flops} GFLOPs"
             print(msg)
         return {'number_params': number_params, "number_gradients": number_gradients, "flops": flops, "number_layers": number_layers}
 

@@ -67,10 +67,10 @@ class Training:
         self.cls_loss_meter = AverageValueMeter()
 
         # current work path
-        if self.hyp['current_work_path'] is None:
+        if self.hyp['current_work_dir'] is None:
             self.cwd = Path('./').absolute()
         else:
-            self.cwd = Path(self.hyp['current_work_path'])
+            self.cwd = Path(self.hyp['current_work_dir'])
         
         self.writer = SummaryWriter(log_dir=str(self.cwd / 'log'))
         self.init_lr = self.hyp['init_lr']
@@ -153,7 +153,7 @@ class Training:
                 txt_log_path = self.hyp['log_save_path']
             else:
                 txt_log_path = str(self.cwd / 'log' / 'log.txt')
-                maybe_mkdir(Path(txt_log_path).parent)
+            maybe_mkdir(Path(txt_log_path).parent)
         else:
             return None
         handler = logging.FileHandler(txt_log_path)
