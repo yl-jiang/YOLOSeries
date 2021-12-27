@@ -646,6 +646,7 @@ class Training:
         if self.hyp['save_pred_bbox']:
             save_path = self.cwd / "result" / "pkl" / f"pred_bbox_{self.hyp['input_img_size'][0]}_{self.hyp['model_type']}.pkl"
             pickle.dump(all_preds, open(str(save_path), 'wb'))
+        if self.hyp['save_gt_bbox']:
             pickle.dump(all_gts, open(self.cwd / "result" / "pkl" / "gt_bbox.pkl", "wb"))
 
         mapv2 = mAP_v2(all_gts, all_preds, self.cwd / "result" / "curve")

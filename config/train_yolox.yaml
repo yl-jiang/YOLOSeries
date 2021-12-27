@@ -12,7 +12,7 @@ loss_hyp:
   cof_pos_weight: 1.0  # 计算分类损失时，对类别为1的loss乘以该权重
 
 train_hyp:
-  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/checkpoints/yolox_small_413layers_for_voc.pth"  # 预训练模型路径(xxx/xxx.pth)
+  pretrained_model_path: ""  # 预训练模型路径(xxx/xxx.pth)
   train_img_dir: ~  # 存放训练图像的文件夹路径
   train_lab_dir: ~  # 存放训练label的文件夹路径
   test_img_dir: "./result/coco_test_imgs"  # for test
@@ -35,7 +35,7 @@ train_hyp:
   accumulate_loss_step: 64  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
   weight_init_prior_prob: 0.01  # 用于网络中的bias参数初始化
-  validation_every: 0.5  # 每隔多少个epoch testing一次
+  validation_every: 2  # 每隔多少个epoch testing一次
   show_tbar_every: 10  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
   save_log_txt: false  # 是否保存log文件
@@ -43,7 +43,7 @@ train_hyp:
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_dir: null  # 当前工作目录（可以不设置）
   calculate_map_every: 2.0  # 每隔多少个epoch计算一次验证数据集的map
-  save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
+  save_ckpt_every: 5  # 每隔多少个epoch保存一次模型
   model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   iou_type: 'ciou'  # 计算回归损失时使用的iou类型 / ['iou', 'giou', 'ciou']中的一种
@@ -100,7 +100,6 @@ nms_hyp:
   wfb_skip_box_threshold: 0.001
 
 val_hyp:
-  save_img: false  # 是否保存预测结果图像
   show_gt_bbox: false  # 是否将gt box画在预测结果图像上
   save_pred_bbox: false  
   half: false  # 是否使用半精度（float16）进行预测
