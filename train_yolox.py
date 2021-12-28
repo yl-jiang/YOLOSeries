@@ -251,7 +251,7 @@ class Training:
                         cof_loss = loss_dict['cof_loss']
                         cls_loss = loss_dict['cls_loss']
                         l1_reg_loss = loss_dict['l1_reg_loss']
-                        targets_num = loss_dict['num_gt']
+                        tar_nums = loss_dict['tar_nums']
 
                         # backward
                         self.scaler.scale(tot_loss).backward()
@@ -291,7 +291,7 @@ class Training:
 
                         # verbose
                         if cur_steps % int(self.hyp.get('show_tbar_every', 3)) == 0:
-                            self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss, targets_num, inp_h, map50, map, epoch_period)
+                            self.show_tbar(tbar, epoch+1, i, batchsz, start_t, is_best, tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss, tar_nums, inp_h, map50, map, epoch_period)
 
                         # save model
                         if cur_steps % int(self.hyp['save_ckpt_every']*len(self.traindataloader)) == 0:

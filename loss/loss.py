@@ -131,7 +131,15 @@ class YOLOV5Loss:
         cof_loss *= self.hyp['cof_loss_scale'] * s * (1. if len(stage_preds) == 3 else 1.4)
         cls_loss *= self.hyp['cls_loss_scale'] * s
         tot_loss = (iou_loss + cof_loss + cls_loss) * batch_size
-        return tot_loss, iou_loss.detach().item(), cof_loss.detach().item(), cls_loss.detach().item(), tot_tar_num
+
+        loss_dict = {
+            'tot_loss': tot_loss, 
+            'iou_loss': iou_loss.detach().item(), 
+            'cof_loss': cof_loss.detach().item(), 
+            'cls_loss': cls_loss.detach().item(), 
+            'tar_nums': tot_tar_num,  
+        }
+        return loss_dict
 
     def match(self, targets, anchor_stage, fm_shape):
         """
@@ -304,8 +312,8 @@ class YOLOXLoss:
                     'l1_reg_loss': tot_l1_reg_loss, 
                     'cls_loss': tot_cls_loss, 
                     'cof_loss': tot_cof_loss, 
-                    'num_fg': tot_num_fg, 
-                    'num_gt': tot_num_gt}
+                    'fg_nums': tot_num_fg, 
+                    'tar_nums': tot_num_gt}
 
         return loss_dict
 
