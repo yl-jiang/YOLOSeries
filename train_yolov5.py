@@ -348,7 +348,7 @@ class Training:
             allocated_memory = 0.
             cached_memory = 0.
         if self.logger is not None:
-            log_msg = f"{allocated_memory:^15.2f}{cached_memory:^15.2f}{(epoch+1):^15d}{step:^15d}{batchsz:^15d}{str(img_shape):^15s}"
+            log_msg = f"{allocated_memory:^15.2f}{cached_memory:^15.2f}{(epoch):^15d}{step:^15d}{batchsz:^15d}{str(img_shape):^15s}"
             log_msg += f"{tot_loss:^15.5f}{iou_loss:^15.5f}{cof_loss:^15.5f}{cls_loss:^15.5f}"
             period_t = time_synchronize() - start_t
             self.logger.info(log_msg + f"{period_t:^15.1e}" + f"{targets_num:^15d}" + f"{'yes' if is_best else 'no':^15s}")
