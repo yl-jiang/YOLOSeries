@@ -62,6 +62,8 @@ class Config:
             self.config.update({"iou_type": args.iou_type})
         if hasattr(args, "num_anchors"):
             self.config.update({"num_anchors": args.num_anchors})
+        if hasattr(args, "enable_tensorboard"):
+            self.config.update({"enable_tensorboard": args.enable_tensorboard})
         
 
 

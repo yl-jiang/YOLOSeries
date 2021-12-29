@@ -46,6 +46,13 @@ class Training:
         self.select_device()
         self.use_cuda = self.hyp['device'] == 'cuda'
 
+        # current work path
+        if self.hyp['current_work_dir'] is None:
+            self.cwd = Path('./').absolute()
+            self.hyp['current_work_dir'] = str(self.cwd)
+        else:
+            self.cwd = Path(self.hyp['current_work_dir'])
+
         # 确保输入图片的shape必须能够被32整除（对yolov5s而言），如果不满足条件则对设置的输入shape进行调整
         self.hyp['input_img_size'] = self.padding(self.hyp['input_img_size'], 32)
        
@@ -60,12 +67,6 @@ class Training:
         self.cof_loss_meter = AverageValueMeter()
         self.cls_loss_meter = AverageValueMeter()
         self.l1_loss_meter = AverageValueMeter()
-
-        # current work dir
-        if self.hyp['current_work_dir'] is None:
-            self.cwd = Path('./').absolute()
-        else:
-            self.cwd = Path(self.hyp['current_work_dir'])
         
         self.writer = SummaryWriter(log_dir=str(self.cwd / 'log'))
         self.init_lr = self.hyp['init_lr']
@@ -229,7 +230,7 @@ class Training:
             for epoch in range(self.hyp['total_epoch']):
                 self.model.train()
                 epoch_start = time_synchronize()
-                with tqdm(total=len(self.traindataloader), ncols=180, file=sys.stdout) as tbar:
+                with tqdm(total=len(self.traindataloader), file=sys.stdout) as tbar:
                     for i, x in enumerate(self.traindataloader):
                         start_t = time_synchronize()
                         cur_steps = len(self.traindataloader) * epoch + i + 1
@@ -268,7 +269,8 @@ class Training:
                         # tensorboard
                         tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss = self.update_loss_meter(tot_loss.item(), iou_loss.item(), cof_loss.item(), cls_loss.item(), l1_reg_loss.item())
                         is_best = tot_loss < tot_loss_before
-                        self.summarywriter(cur_steps, tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss, map)
+                        if self.hyp['enable_tensorboard']:
+                            self.summarywriter(cur_steps, tot_loss, iou_loss, cof_loss, cls_loss, l1_reg_loss, map)
                         tot_loss_before = tot_loss
 
                         # testing

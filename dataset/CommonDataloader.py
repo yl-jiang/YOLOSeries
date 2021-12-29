@@ -463,21 +463,24 @@ def YoloDataloader(hyp, is_training=True):
         if hyp.get('aspect_ratio', False):  # 是否采用按照数据集中图片长宽比从小到大的顺序sample数据
             print(f"Build Aspect Ratio BatchSampler!")
             _start = time()
-            ar = None
-            if hyp.get('aspect_ratio_path', None) is not None and Path(hyp['aspect_ratio_path']).exists():
-                ar = pickle.load(open(hyp['aspect_ratio_path'], 'rb'))
-            sampler = AspectRatioBatchSampler(dataset, hyp['batch_size'], hyp['drop_last'], aspect_ratio_list=ar, cwd=hyp['current_work_dir'])
+            batch_sampler = AspectRatioBatchSampler(dataset, hyp)
             print(f"- Use time {time() - _start:.3f}s")
+            # 使用自定义的batch_sampler时，不要给DataLoader中的batch_size,shuffle赋值，因为这些参数会在自定义的batch_sampler中已经定义了
+            dataloader = DataLoader(dataset,
+                                    batch_sampler=batch_sampler,
+                                    collate_fn=collector_fn,
+                                    num_workers=hyp['num_workers'],
+                                    pin_memory=hyp['pin_memory'], 
+                                    )
         else:
-            sampler = None
-
-        # 使用自定义的batch_sampler时，不要给DataLoader中的batch_size,shuffle赋值，因为这些参数会在自定义的batch_sampler中已经定义了
-        dataloader = DataLoader(dataset,
-                                batch_sampler=sampler,
-                                collate_fn=collector_fn,
-                                num_workers=hyp['num_workers'],
-                                pin_memory=hyp['pin_memory'], 
-                                batch_size=hyp['batch_size'] if sampler is None else None)
+            # 使用自定义的batch_sampler时，不要给DataLoader中的batch_size,shuffle赋值，因为这些参数会在自定义的batch_sampler中已经定义了
+            dataloader = DataLoader(dataset,
+                                    collate_fn=collector_fn,
+                                    num_workers=hyp['num_workers'],
+                                    pin_memory=hyp['pin_memory'], 
+                                    batch_size=hyp['batch_size']
+                                    )
+        
 
     elif not is_training and hyp.get('val_lab_dir', None) is not None:  # validation for compute mAP
         assert Path(hyp['val_img_dir']).exists() and Path(hyp['val_img_dir']).is_dir()

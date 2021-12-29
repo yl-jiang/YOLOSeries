@@ -8,11 +8,11 @@ loss_hyp:
   cls_loss_scale: 1.0  # 分类损失权重
   cof_loss_scale: 1.0  # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
-  cls_pos_weight: 0.631  # 计算分类损失时，对类别为1的loss乘以该权重
-  cof_pos_weight: 0.911  # 计算分类损失时，对类别为1的loss乘以该权重
+  cls_pos_weight: 0.6  # 计算分类损失时，对类别为1的loss乘以该权重
+  cof_pos_weight: 0.9  # 计算分类损失时，对类别为1的loss乘以该权重
 
 train_hyp:
-  pretrained_model_path: "/home/uih/JYL/Programs/YOLO/checkpoints/yolox_small_for_voc.pth"  # 预训练模型路径(xxx/xxx.pth)
+  pretrained_model_path: ""  # 预训练模型路径(xxx/xxx.pth)
   train_img_dir: ~  # 存放训练图像的文件夹路径
   train_lab_dir: ~  # 存放训练label的文件夹路径
   test_img_dir: "./result/coco_test_imgs"  # for test
@@ -24,7 +24,7 @@ train_hyp:
   input_img_size:  # 输入训练网络的图片大小
     - 640
     - 640
-  batch_size: 4
+  batch_size: 32
   drop_last: true  # Pytorch DataLoader参数
   pin_memory: false  # Pytorch DataLoader参数
   shuffle: true  # Pytorch DataLoader参数
@@ -35,14 +35,14 @@ train_hyp:
   accumulate_loss_step: 64  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
   weight_init_prior_prob: 0.01  # 用于网络中的bias参数初始化
-  validation_every: 0.5  # 每隔多少个epoch testing一次
-  show_tbar_every: 10  # 每个多少个step显示实时训练状态信息
+  validation_every: 1  # 每隔多少个epoch testing一次
+  show_tbar_every: 5  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
-  save_log_txt: false  # 是否保存log文件
+  save_log_txt: true  # 是否保存log文件
   log_save_path: ~  # 指定保存log日志的路径（xxx/xxx.txt）
-  mutil_scale_training: false  # 是否使用多尺度训练
+  mutil_scale_training: true  # 是否使用多尺度训练
   current_work_dir: null  # 当前工作目录（可以不设置）
-  calculate_map_every: 2.0  # 每隔多少个epoch计算一次验证数据集的map
+  calculate_map_every: 2  # 每隔多少个epoch计算一次验证数据集的map
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
@@ -51,22 +51,22 @@ train_hyp:
 warmup_hyp:
   do_warmup: true  # 是否开启预热训练
   warmup_epoch: 3
-  warmup_bias_lr: 0.1  # warmup lr for bias
-  warmup_momentum: 0.9
+  warmup_bias_lr: 0.005  # warmup lr for bias
+  warmup_momentum: 0.5
 
 optimizer_hyp:
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']中的一种
-  init_lr: 0.01  # 0.01 for sgd / 0.001 for adam
+  init_lr: 0.001  # 0.01 for sgd / 0.001 for adam
   weight_decay: 0.0001
   momentum: 0.9
   lr_scheculer_bias: 0.1
 
 data_hyp:
-  data_aug_scale: 0.5  # 缩放
-  data_aug_shear: 0.2  # 剪切
-  data_aug_translate: 0.1  # 平移
-  data_aug_degree: 0.0  # 旋转
-  data_aug_prespective: 0.0  # 透视
+  data_aug_scale: 0.8  # 缩放
+  data_aug_shear: 0.3  # 剪切
+  data_aug_translate: 0.3  # 平移
+  data_aug_degree: 0.25  # 旋转
+  data_aug_prespective: 0.0001  # 透视
   data_aug_hsv_p: 1.0  # hsv色彩空间变换
   data_aug_hsv_hgain: 0.015  # hsv色彩空间变换
   data_aug_hsv_sgain: 0.7  # hsv色彩空间变换
@@ -75,8 +75,8 @@ data_hyp:
   data_aug_fliplr_p: 0.5  # 水平翻转
   data_aug_flipud_p: 0.0  # 上下翻转
   data_aug_fill_value: 128  # 图像填充值
-  data_aug_mosaic_p: 1.0  # mosaic
-  data_aug_cutout_p: 1.0  # cutout
+  data_aug_mosaic_p: 0.8 # mosaic
+  data_aug_cutout_p: 0.8  # cutout
   data_aug_cutout_iou_thr: 0.3  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）
 
 nms_hyp:

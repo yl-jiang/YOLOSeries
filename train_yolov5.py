@@ -47,6 +47,13 @@ class Training:
         self.use_cuda = self.hyp['device'] == 'cuda'
         self.anchors = anchors
 
+        # current work path
+        if self.hyp['current_work_dir'] is None:
+            self.cwd = Path('./').absolute()
+            self.hyp['current_work_dir'] = str(self.cwd)
+        else:
+            self.cwd = Path(self.hyp['current_work_dir'])
+
         if isinstance(anchors, (list, tuple)):
             self.anchors = torch.tensor(anchors)  # (3, 3, 2)
         self.anchors = self.anchors.to(self.hyp['device'])
@@ -65,12 +72,6 @@ class Training:
         self.box_loss_meter = AverageValueMeter()
         self.cof_loss_meter = AverageValueMeter()
         self.cls_loss_meter = AverageValueMeter()
-
-        # current work path
-        if self.hyp['current_work_dir'] is None:
-            self.cwd = Path('./').absolute()
-        else:
-            self.cwd = Path(self.hyp['current_work_dir'])
         
         self.writer = SummaryWriter(log_dir=str(self.cwd / 'log'))
         self.init_lr = self.hyp['init_lr']
@@ -252,7 +253,7 @@ class Training:
         for epoch in range(self.hyp['total_epoch']):
             self.model.train()
             epoch_start = time_synchronize()
-            with tqdm(total=len(self.traindataloader), ncols=160, file=sys.stdout) as tbar:
+            with tqdm(total=len(self.traindataloader), file=sys.stdout) as tbar:
                 for i, x in enumerate(self.traindataloader):
                     start_t = time_synchronize()
                     cur_steps = len(self.traindataloader) * epoch + i + 1
@@ -290,7 +291,8 @@ class Training:
                     # tensorboard
                     tot_loss, iou_loss, cof_loss, cls_loss = self.update_loss_meter(tot_loss.item(), iou_loss, cof_loss, cls_loss)
                     is_best = tot_loss < tot_loss_before
-                    self.summarywriter(cur_steps, tot_loss, iou_loss, cof_loss, cls_loss, map)
+                    if self.hyp['enable_tensorboard']:
+                        self.summarywriter(cur_steps, tot_loss, iou_loss, cof_loss, cls_loss, map)
                     tot_loss_before = tot_loss
 
                     # testing

@@ -3,7 +3,7 @@ import random
 import torch
 import torchvision
 from utils import letter_resize_bbox, letter_resize_img, maybe_mkdir, clear_dir
-from tqdm import trange
+from tqdm import tqdm
 import pickle
 import numpy as np
 from pathlib import Path
@@ -27,14 +27,19 @@ class AspectRatioBatchSampler(Sampler):
     copy from: https://github.com/yhenon/pytorch-retinanet
     """
 
-    def __init__(self, data_source, batch_size, drop_last, aspect_ratio_list=None, cwd=None):
+    def __init__(self, data_source, hyp):
         super(AspectRatioBatchSampler, self).__init__(data_source)
         assert hasattr(data_source, "aspect_ratio"), f"data_source should has method of aspect_ratio"
         self.data_source = data_source
-        self.batch_size = batch_size
-        self.drop_last = drop_last
-        self.ar = aspect_ratio_list
-        self.cwd = cwd
+        self.batch_size = hyp['batch_size']
+        self.drop_last = hyp['drop_last']
+
+        if hyp.get('aspect_ratio_path', None) is not None and Path(hyp['aspect_ratio_path']).exists():
+                self.ar = pickle.load(open(hyp['aspect_ratio_path'], 'rb'))
+        else:
+            self.ar = None
+
+        self.cwd = hyp['current_work_dir']
         self.groups = self.group_images()
 
     def __iter__(self): 
@@ -70,9 +75,16 @@ class AspectRatioBatchSampler(Sampler):
         # determine the order of the images
         order = list(range(len(self.data_source))) 
         if self.ar is None:
-            order = list(range(len(self.data_source)))
-            order.sort(key=lambda x: self.data_source.aspect_ratio(x))
-            pickle.dump(order, open(str(Path(self.cwd) / "dataset" / 'pkl' / 'aspect_ratio.pkl', 'wb')))
+            idx = list(range(len(self.data_source)))
+            tbar = tqdm(idx, total=len(idx))
+            tbar.set_description("Sorting dataset by aspect ratio")
+            ar = []
+            for i in tbar:
+                ar.append(self.data_source.aspect_ratio(i))
+                tbar.update()
+            tbar.close()
+            order = np.asarray(ar).argsort()
+            pickle.dump(order, open(str(Path(self.cwd) / "dataset" / 'pkl' / 'aspect_ratio.pkl'), 'wb'))
         else:
             sort_i = np.argsort(self.ar)
             order = np.array(order)[sort_i]
