@@ -17,7 +17,7 @@ train_hyp:
   test_img_dir: "./result/coco_test_imgs"  # for test
   val_img_dir: ~  # validation image dir
   val_lab_dir: ~  # validation label dir
-  aspect_ratio: false
+  aspect_ratio: true
   aspect_ratio_path: ~  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 0
   input_img_size:  # 输入训练网络的图片大小
