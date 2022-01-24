@@ -9,3 +9,5 @@ from .yolox_darknet53 import YoloXDarkNet53
 from .yolox_s import YoloXSmall
 from .yolox_m import YoloXMiddle
 from .yolox_l import YoloXLarge
+
+from .retinanet import RetinaNet

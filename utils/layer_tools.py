@@ -3,6 +3,18 @@ import torch.nn as nn
 import math
 
 
+def freeze_bn(m):
+    """
+    https://discuss.pytorch.org/t/how-to-freeze-bn-layers-while-training-the-rest-of-network-mean-and-var-wont-freeze/89736/12
+    """
+    if isinstance(m, nn.BatchNorm2d):
+        if hasattr(m, 'weight'):
+            m.weight.requires_grad_(False)
+        if hasattr(m, 'bias'):
+            m.bias.requires_grad_(False)
+        m.eval()  # for freeze bn layer's parameters 'running_mean' and 'running_var
+
+
 class Concat(nn.Module):
 
     def __init__(self, dimension=1):
@@ -368,3 +380,266 @@ class DepthWiseC3BottleneckCSP(nn.Module):
         y2 = self.cba2(x)
         y = self.cba3(self.concat((y1, y2)))
         return y
+
+
+# ======================================== layers for RetinaNet ==========================================
+
+class BasicBlock(nn.Module):
+
+    expansion = 1
+
+    def __init__(self, in_channels, out_channels, stride, downsample=None):
+        super(BasicBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=(3, 3), stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(num_features=out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(3, 3), stride=(1, 1), padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(num_features=out_channels)
+        self.downsample = downsample
+
+    def forward(self, x):
+        identify = x
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        if self.downsample is not None:
+            out = self.downsample(out)
+        out += identify
+        return self.relu(out)
+
+
+class Bottleneck(nn.Module):
+
+    expansion = 4
+
+    def __init__(self, in_channels, out_channels, stride, downsample=None):
+        super(Bottleneck, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=(1, 1), stride=(1, 1), padding=0, bias=False)
+        self.bn1 = nn.BatchNorm2d(num_features=out_channels)
+        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(3, 3), stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(num_features=out_channels)
+        self.conv3 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels*self.expansion, kernel_size=(1, 1), stride=(1, 1), padding=0, bias=False)
+        self.bn3 = nn.BatchNorm2d(num_features=out_channels*self.expansion)
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+
+    def forward(self, x):
+        identify = x
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        if self.downsample is not None:
+            identify = self.downsample(x)
+        out += identify
+        return self.relu(out)
+
+
+class ResNet(nn.Module):
+
+    def __init__(self, inplane, layers, block, num_class):
+        super(ResNet, self).__init__()
+        assert isinstance(layers, list) and len(layers) == 4
+        self.inplane_upd = inplane
+        self.layers = layers
+        self.num_class = num_class
+
+        # head layers
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=inplane, kernel_size=(7, 7), stride=(2, ), padding=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(num_features=inplane)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        # residual blocks
+        self.layer1 = self._make_layer(block, inplane*1, self.layers[0], 1)
+        self.layer2 = self._make_layer(block, inplane*2, self.layers[1], 2)
+        self.layer3 = self._make_layer(block, inplane*4, self.layers[2], 2)
+        self.layer4 = self._make_layer(block, inplane*8, self.layers[3], 2)
+
+        # classifier
+        if num_class is not None:
+            self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+            self.fc = nn.Linear(in_features=self.inplane_upd, out_features=num_class)
+
+        # initialization
+        # self._initialize(self)
+        # self._initialize_last_bn(self)
+
+    def _initialize(self, modules):
+        """
+        ordinary model initialization.
+        :param modules:
+        :return:
+        """
+        for m in modules.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1.)
+                nn.init.constant_(m.bias, 0.)
+
+    def _initialize_last_bn(self, modules):
+        """
+        Zero-initialize the last BN in each residual branch,
+        so that the residual branch starts with zeros, and each residual block behaves like an identity.
+        This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
+
+        :param modules:
+        :return:
+        """
+        for m in modules.modules():
+            if isinstance(m, Bottleneck):
+                nn.init.constant_(m.bn3.weight, 0.)
+            elif isinstance(m, BasicBlock):
+                nn.init.constant_(m.bn2.weight, 0.)
+
+    def _make_layer(self, block, planes, block_num, stride):
+        # stride = 1的Bottleneck会扩充channel，stride = 2的Bottleneck会downsample image且会扩充channel
+        if stride != 1 or self.inplane_upd != planes * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(in_channels=self.inplane_upd, out_channels=planes*block.expansion, kernel_size=(1, 1), stride=stride, padding=0, bias=False),
+                nn.BatchNorm2d(num_features=planes*block.expansion))
+        else:
+            downsample = None
+
+        layers = [block(self.inplane_upd, planes, stride, downsample)]
+        self.inplane_upd = planes * block.expansion
+        for _ in range(1, block_num):
+            layers.append(block(self.inplane_upd, planes, stride=1))
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.maxpool(x)
+
+        x1 = self.layer1(x)
+        x2 = self.layer2(x1)
+        x3 = self.layer3(x2)
+        x4 = self.layer4(x3)
+
+        if self.num_class is not None:
+            x = self.avgpool(x4)
+            x = torch.flatten(x)
+            return self.fc(x)
+        else:
+            return x2, x3, x4
+
+
+def resnet50(inplane=64, layers=None, block=None, num_class=None):
+    if layers is None:
+        layers = [3, 4, 6, 3]
+    if block is None:
+        block = Bottleneck
+    model = ResNet(inplane, layers, block, num_class)
+    return model
+
+
+class RetinaNetRegression(nn.Module):
+
+    def __init__(self, in_channels, inner_channels, num_anchor):
+        super(RetinaNetRegression, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, inner_channels, 3, 1, 1)
+        self.conv2 = nn.Conv2d(inner_channels, inner_channels, 3, 1, 1)
+        self.conv3 = nn.Conv2d(inner_channels, inner_channels, 3, 1, 1)
+        self.conv4 = nn.Conv2d(inner_channels, inner_channels, 3, 1, 1)
+        self.output = nn.Conv2d(inner_channels, num_anchor * 4, 3, 1, 1)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        out = self.relu(self.conv1(x))
+        out = self.relu(self.conv2(out))
+        out = self.relu(self.conv3(out))
+        out = self.relu(self.conv4(out))
+        out = self.output(out)
+        # print(f'reg: {out.shape}')
+        # (b, 4x9, h, w)
+        b, c, h, w = out.size()
+        out = out.permute(0, 2, 3, 1)
+        # (b, hxwx9, 4)
+        out = torch.reshape(out, shape=(b, -1, 4))
+        return out
+
+
+class RetinaNetClassification(nn.Module):
+
+    def __init__(self, in_channels, inner_channels, num_anchor, num_class):
+        super(RetinaNetClassification, self).__init__()
+
+        self.num_anchor = num_anchor
+        self.num_class = num_class
+
+        self.conv1 = nn.Conv2d(in_channels, inner_channels, 3, 1, 1)
+        self.conv2 = nn.Conv2d(inner_channels, inner_channels, 3, 1, 1)
+        self.conv3 = nn.Conv2d(inner_channels, inner_channels, 3, 1, 1)
+        self.conv4 = nn.Conv2d(inner_channels, inner_channels, 3, 1, 1)
+        self.output = nn.Conv2d(inner_channels, num_anchor * num_class, 3, 1, 1)
+
+        self.relu = nn.ReLU(inplace=True)
+        # self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        out = self.relu(self.conv1(x))
+        out = self.relu(self.conv2(out))
+        out = self.relu(self.conv3(out))
+        out = self.relu(self.conv4(out))
+        out = self.output(out)
+        # out = self.sigmoid(self.output(out))
+        # print(f'cls: {out.shape}')
+        # (b, 80x9, h, w)
+        b, c, h, w = out.size()
+        # (b, h, w, 720)
+        out = out.permute(0, 2, 3, 1)
+        # (b, hxwx9, 80)
+        out = torch.reshape(out, shape=(b, -1, self.num_class))
+        return out
+
+
+class RetinaNetPyramidFeatures(nn.Module):
+
+    def __init__(self, c3_size, c4_size, c5_size, feature_size):
+        super(RetinaNetPyramidFeatures, self).__init__()
+
+        self.p5_1 = nn.Conv2d(in_channels=c5_size, out_channels=feature_size, kernel_size=1, stride=1, padding=0)
+        self.p5_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.p5_2 = nn.Conv2d(in_channels=feature_size, out_channels=feature_size, kernel_size=3, stride=1, padding=1)
+
+        self.p4_1 = nn.Conv2d(c4_size, feature_size, 1, 1, 0)
+        self.p4_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.p4_2 = nn.Conv2d(feature_size, feature_size, 3, 1, 1)
+
+        self.p3_1 = nn.Conv2d(c3_size, feature_size, 1, 1, 0)
+        self.p3_2 = nn.Conv2d(feature_size, feature_size, 3, 1, 1)
+
+        self.p6 = nn.Conv2d(c5_size, feature_size, 3, 2, 1)
+
+        self.relu = nn.ReLU(inplace=False)
+        self.p7 = nn.Conv2d(feature_size, feature_size, 3, 2, 1)
+
+    def forward(self, x):
+        assert len(x) == 3
+
+        c3, c4, c5 = x
+        # print(f'c3 shape: {c3.shape} c4 shape: {c4.shape} c5 shape: {c5.shape}')
+        p5 = self.p5_1(c5)
+        # print(f' p5 shape: {p5.shape}')
+        p5_upsample = self.p5_upsample(p5)
+        # print(f' p5_upsample shape: {p5_upsample.shape}')
+        p5 = self.p5_2(p5)
+
+        p4 = self.p4_1(c4)
+        # print(f'P4 shape: {p4.shape} ')
+        p4 += p5_upsample
+        p4_upsample = self.p4_upsample(p4)
+        # print(f' p4_upsample shape: {p4_upsample.shape}')
+        p4 = self.p4_2(p4)
+
+        p3 = self.p3_1(c3)
+        # print(f'P3 shape: {p3.shape} p4_upsample shape: {p4_upsample.shape}')
+        p3 += p4_upsample
+        p3 = self.p3_2(p3)
+
+        p6 = self.p6(c5)
+
+        p7 = self.relu(p6)
+        p7 = self.p7(p7)
+
+        return p3, p4, p5, p6, p7

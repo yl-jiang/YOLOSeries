@@ -388,9 +388,12 @@ class YoloDataset(Dataset, Generator):
     @logger.catch
     def __getitem__(self, ix):
         """
-
-        :param ix:
-        :return: [xmin, ymin, xmax, ymax]
+        Args:
+            ix: index
+        Returns:
+            img: 
+            ann: {'bboxes': [[xmin, ymin, xmax, ymax], [...]], classes: [cls1, cls2, ...]}
+            img_name: string
         """
         # only detection image
         if self.lab_dir is None: 
@@ -405,9 +408,9 @@ class YoloDataset(Dataset, Generator):
         if self.is_training:
             if random.random() < self.data_aug_param.get('mosaic', 0.0):
                 img, bboxes, labels = self.load_mosaic(ix)
-            if random.random() < self.data_aug_param.get('mixup', 0.0):
-                img2, bboxes2, labels2 = self.load_mosaic(random.randint(0, len(self) - 1))
-                img, bboxes, labels = mixup(img, bboxes, labels, img2, bboxes2, labels2)
+                if random.random() < self.data_aug_param.get('mixup', 0.0):
+                    img2, bboxes2, labels2 = self.load_mosaic(random.randint(0, len(self) - 1))
+                    img, bboxes, labels = mixup(img, bboxes, labels, img2, bboxes2, labels2)
             if random.random() < self.data_aug_param.get('cutout', 0.0):
                 img, bboxes, labels = cutout(img, bboxes, labels, cutout_iou_thr=self.data_aug_param['cutout_iou_thr'])
 

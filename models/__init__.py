@@ -14,3 +14,5 @@ from .normal import YoloXMiddle
 from .normal import YoloXLarge
 from .normal import YoloXDarkNet21
 from .normal import YoloXDarkNet53
+
+from .normal import RetinaNet

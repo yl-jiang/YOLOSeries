@@ -1,0 +1,113 @@
+loss_hyp:
+  use_focal_loss: false
+  tar_box_scale_factor: 
+    - 0.1
+    - 0.1
+    - 0.2
+    - 0.2
+  negative_iou_thr: 0.4
+  positive_iou_thr: 0.5
+  iou_loss_scale: 0.5
+  l1_loss_scale: 0.001
+  cls_loss_scale: 1.0
+  alpha : 0.25
+  gamma : 2.0
+    
+train_hyp:
+  pretrained_model_path : ~
+  freeze_bn: false
+  train_img_dir: ~  # 存放训练图像的文件夹路径
+  train_lab_dir: ~  # 存放训练label的文件夹路径
+  test_img_dir: ""  # for test
+  val_img_dir: ~  # validation image dir
+  val_lab_dir: ~  # validation label dir
+  aspect_ratio: false  
+  aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
+  cache_num: 0
+  input_img_size: 
+    - 640
+    - 640
+  batch_size: 4
+  drop_last: true
+  pin_memory: true
+  shuffle: true
+  num_workers: 4
+  total_epoch: 300
+  device: 'gpu'
+  accumulate_loss_step: 64
+  do_ema: false
+  validation_every: 0.5
+  show_tbar_every: 2
+  use_tta : false
+  save_log_txt : true
+  log_save_path: ~  
+  model_save_dir: ~
+  save_ckpt_every: 5  # 每隔多少个epoch保存一次模型
+  mutil_scale_training : false
+  current_work_dir : null
+  calculate_map: true
+  calculate_map_every : 300
+  num_anchor : 9
+  resnet_layers : 
+    - 3
+    - 4
+    - 6
+    - 3
+  iou_type: 'giou'
+  use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
+  enable_tensorboard: true
+
+warmup_hyp:
+  do_warmup: true
+  warmup_epoch: 3
+  warmup_bias_lr: 0.01
+  warmup_momentum: 0.8
+
+optimizer_hyp:
+  optimizer : 'sgd'
+  init_lr : 0.01
+  weight_decay : 0.0001
+  momentum : 0.9
+  lr_scheculer_bias: 0.2
+
+data_hyp:
+  data_aug_scale: 0.5
+  data_aug_shear: 0.0
+  data_aug_translate: 0.1
+  data_aug_degree: 0.0
+  data_aug_prespective: 0.0
+  data_aug_hsv_p: 1.0
+  data_aug_hsv_hgain: 0.015
+  data_aug_hsv_sgain: 0.7
+  data_aug_hsv_vgain: 0.4
+  data_aug_mixup_p: 0.0
+  data_aug_fliplr_p: 0.5
+  data_aug_flipud_p: 0.0
+  data_aug_fill_value: 128
+  data_aug_mosaic_p: 1.0
+  data_aug_cutout_p: 1.0
+  data_aug_cutout_iou_thr: 0.3  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）
+
+nms_hyp:
+  iou_threshold: 0.2
+  cls_threshold: 0.5
+  max_predictions_per_img : 300
+  min_prediction_box_wh : 2
+  max_prediction_box_wh : 4096
+  nms_type : 'iou'
+  infer_img_save_path: ~
+  mutil_label: false
+  agnostic : true
+  postprocess_bbox : false
+  wfb : false  # use NMS or Weighted Fusion Bbox
+  wfb_weights: 
+  - 1
+  - 1
+  - 1
+  wfb_iou_threshold: 0.5
+  wfb_skip_box_threshold : 0.001
+
+val_hyp:
+  save_gt_bbox: false  # 计算map后，是否保存gt
+  save_pred_bbox: false  # 计算map后，是否将预测结果保存
+  half: false  # 是否使用半精度（float16）进行预测

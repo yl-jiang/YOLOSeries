@@ -31,7 +31,7 @@ from torch import nn
 from dataset import testdataloader, YoloDataloader
 import argparse
 import pickle
-from utils import mAP_v2, cv2_save_img_plot_pred_gt
+from utils import mAP_v2, cv2_save_img_plot_pred_gt, catch_warnnings
 from collections import Counter
 import emoji
 from loguru import logger
@@ -77,7 +77,7 @@ class Training:
         self.optim_scheduler = lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=self._lr_lambda)
         self.loss_fcn = YOLOXLoss(self.hyp)
         self.ema_model = ExponentialMovingAverageModel(self.model)
-        self.validate = Evaluate(self.ema_model.ema, self.hyp)
+        self.validate = Evaluate(self.ema_model.ema if self.hyp['do_ema'] else self.model, self.hyp)
 
         # load pretrained model or initialize model's parameters
         self.load_model(False, 'cpu')
@@ -221,6 +221,7 @@ class Training:
                 m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
 
     @logger.catch
+    @catch_warnnings
     def step(self):
         with torch.autograd.set_detect_anomaly(True):  # debug backward bugs
             self.optimizer.zero_grad()
@@ -674,20 +675,17 @@ if __name__ == '__main__':
 
     class Args:
         cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolox.yaml"
-        pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolox_small_for_voc.pth"
-        train_lab_dir = '/home/uih/JYL/Dataset/VOC/train2012/label'
-        train_img_dir = '/home/uih/JYL/Dataset/VOC/train2012/image'
-        name_path = '/home/uih/JYL/Dataset/VOC/train2012/names.txt'
-        val_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
-        val_lab_dir = "/home/uih/JYL/Dataset/VOC/val2012/label"
-
-        # lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
-        # img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
-        # name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
-
-        # lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
-        # img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image/'
-        # name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+        pretrained_model_path = ""
+        # train_lab_dir = '/home/uih/JYL/Dataset/VOC/train2012/label'
+        # train_img_dir = '/home/uih/JYL/Dataset/VOC/train2012/image'
+        # name_path = '/home/uih/JYL/Dataset/VOC/train2012/names.txt'
+        # val_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
+        # val_lab_dir = "/home/uih/JYL/Dataset/VOC/val2012/label"
+        train_lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
+        train_img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image'
+        name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+        val_img_dir = "/home/uih/JYL/Dataset/GlobalWheatDetection/image"
+        val_lab_dir = "/home/uih/JYL/Dataset/GlobalWheatDetection/label"
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)

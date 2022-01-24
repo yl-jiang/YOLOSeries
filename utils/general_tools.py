@@ -7,6 +7,13 @@ import warnings
 import numba
 
 
+def catch_warnnings(fn):
+    def wrapper(instance):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fn(instance)
+    return wrapper
+
 @numba.njit
 def numba_clip(x, amin, amax):
     y = x.flatten()

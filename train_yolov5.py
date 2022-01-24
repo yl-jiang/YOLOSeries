@@ -31,7 +31,7 @@ from torch import nn
 from dataset import testdataloader, YoloDataloader
 import argparse
 import pickle
-from utils import mAP_v2, cv2_save_img_plot_pred_gt
+from utils import mAP_v2, cv2_save_img_plot_pred_gt, catch_warnnings
 from collections import Counter
 import emoji
 from loguru import logger
@@ -82,7 +82,7 @@ class Training:
         self.optim_scheduler = lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=self._lr_lambda)
         self.loss_fcn = YOLOV5Loss(self.anchors, self.hyp)
         self.ema_model = ExponentialMovingAverageModel(self.model)
-        self.validate = Evaluate(self.ema_model.ema, self.anchors, self.hyp)
+        self.validate = Evaluate(self.ema_model.ema if self.hyp['do_ema'] else self.model, self.anchors, self.hyp)
 
         # load pretrained model or initialize model's parameters
         self.load_model(False, 'cpu')
@@ -245,6 +245,7 @@ class Training:
         del stage_outputs
 
     @logger.catch
+    @catch_warnnings
     def step(self):
         self.optimizer.zero_grad()
         tot_loss_before = float('inf')
@@ -474,7 +475,7 @@ class Training:
         """
         load pretrained model, EMA model, optimizer(注意：__init_weights()方法并不适用于所有数据集)
         """
-        self._init_bias()
+        # self._init_bias()
         if self.hyp.get("pretrained_model_path", None):
             model_path = self.hyp["pretrained_model_path"]
             if Path(model_path).exists():
@@ -690,15 +691,19 @@ if __name__ == '__main__':
 
     class Args:
         cfg = "/home/uih/JYL/Programs/YOLO/config/train_yolov5.yaml"
-        pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolov5_small_for_voc.pth"
-        # lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
-        # img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
-        # name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
-        train_lab_dir = '/home/uih/JYL/Dataset/VOC/train2012/label'
-        train_img_dir = '/home/uih/JYL/Dataset/VOC/train2012/image'
-        name_path = '/home/uih/JYL/Dataset/VOC/train2012/names.txt'
-        val_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
-        val_lab_dir = "/home/uih/JYL/Dataset/VOC/val2012/label"
+        # pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolov5_small_for_voc.pth"
+        # train_lab_dir = '/home/uih/JYL/Dataset/VOC/train2012/label'
+        # train_img_dir = '/home/uih/JYL/Dataset/VOC/train2012/image'
+        # name_path = '/home/uih/JYL/Dataset/VOC/train2012/names.txt'
+        # val_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
+        # val_lab_dir = "/home/uih/JYL/Dataset/VOC/val2012/label"
+
+        train_lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
+        train_img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image'
+        name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
+        val_img_dir = "/home/uih/JYL/Dataset/GlobalWheatDetection/image"
+        val_lab_dir = "/home/uih/JYL/Dataset/GlobalWheatDetection/label"
+
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)

@@ -14,7 +14,7 @@ train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
   train_img_dir: ~  # 存放训练图像的文件夹路径
   train_lab_dir: ~  # 存放训练label的文件夹路径
-  test_img_dir: "./result/coco_test_imgs"  # for test
+  test_img_dir: "./result/wheat_test_imgs"  # for test
   val_img_dir: ~  # validation image dir
   val_lab_dir: ~  # validation label dir
   aspect_ratio: false  
@@ -32,15 +32,15 @@ train_hyp:
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
   accumulate_loss_step: 64  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
-  validation_every: 2  # 每隔多少个epoch validate一次
+  validation_every: 0.5  # 每隔多少个epoch validate一次
   show_tbar_every: 10  # 每个多少个step显示实时训练状态信息
   use_tta: true  # validation时是否使用TTA
   log_save_path: ~  
   save_log_txt: true  # 是否保存log文件
   model_save_dir: ~
-  mutil_scale_training: true  # 是否使用多尺度训练
+  mutil_scale_training: false  # 是否使用多尺度训练
   current_work_dir: null  # 当前工作目录（可以不设置）
-  calculate_map_every: 2  # 每个多少个epoch计算一次map
+  calculate_map_every: 10  # 每个多少个epoch计算一次map
   calculate_map: true
   save_ckpt_every: 5  # 每隔多少个epoch保存一次模型
   model_type: 'small'  # 使用模型类型
@@ -99,7 +99,7 @@ nms_hyp:
   wfb_skip_box_threshold: 0.001
 
 val_hyp:
-  show_gt_bbox: false  # 计算map后，是否保存gt
+  save_gt_bbox: false  # 计算map后，是否保存gt
   save_pred_bbox: false  # 计算map后，是否将预测结果保存
   half: false  # 是否使用半精度（float16）进行预测
 
