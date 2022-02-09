@@ -33,6 +33,7 @@ import cv2
 import emoji
 from loguru import logger
 from collections import Counter
+import argparse
 
 
 class Train:
@@ -220,40 +221,29 @@ class Train:
 
                     # warmup
                     self.warmup(epoch, cur_step)
-                    
-                    # ======================= traditionary ================
-                    pred_reg, pred_cls = self.model(img)
-                    loss_dict = self.loss_fcn(img, pred_reg, pred_cls, ann)
+
+                    # ========================== AMP =======================
+                    # forward
+                    with amp.autocast(enabled=self.use_gpu):
+                        pred_reg, pred_cls = self.model(img)
+                        loss_dict = self.loss_fcn(img, pred_reg, pred_cls, ann)
+
                     l1_loss = loss_dict['l1_loss']
                     iou_loss = loss_dict['iou_loss']
                     cls_loss = loss_dict['cls_loss']
                     tot_loss = loss_dict['tot_loss']
                     tar_nums = loss_dict['tar_nums']
-                    tot_loss.backward()
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
+
+                    # backward
+                    self.scaler.scale(tot_loss).backward()
+                    if cur_step % self.hyp['accumulate_loss_step'] == 0:
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                        self.optimizer.zero_grad()
+                        # maintain a model and update it every time, but it only using for inference
+                        if self.hyp['do_ema']:
+                            self.ema_model.update(self.model)
                     # ====================================================
-
-                    # # forward
-                    # with amp.autocast(enabled=self.use_gpu):
-                    #     pred_reg, pred_cls = self.model(img)
-                    #     loss_dict = self.loss_fcn(img, pred_reg, pred_cls, ann)
-
-                    # l1_loss = loss_dict['l1_loss']
-                    # iou_loss = loss_dict['iou_loss']
-                    # cls_loss = loss_dict['cls_loss']
-                    # tot_loss = loss_dict['tot_loss']
-                    # tar_nums = loss_dict['tar_nums']
-
-                    # # backward
-                    # self.scaler.scale(tot_loss).backward()
-                    # if cur_step % self.hyp['accumulate_loss_step'] == 0:
-                    #     self.scaler.step(self.optimizer)
-                    #     self.scaler.update()
-                    #     self.optimizer.zero_grad()
-                    #     # maintain a model and update it every time, but it only using for inference
-                    #     if self.hyp['do_ema']:
-                    #         self.ema_model.update(self.model)
 
                     # tensorboard
                     tot_loss, l1_loss, iou_loss, cls_loss = self.update_loss_meter(tot_loss.detach().item(), l1_loss, iou_loss, cls_loss)
@@ -295,19 +285,18 @@ class Train:
 
                     # update
                     t.update()
+
+                    # save the lastest model
+                    if epoch == self.hyp['total_epoch']:
+                        save_path = str(self.cwd / 'checkpoints' / f'finally.pth') 
+                        self.save_model(tot_loss, epoch, cur_step, True, save_path)
+
                     del img, ann, tot_loss, loss_dict, pred_cls, pred_reg
                     torch.cuda.empty_cache()
 
                 t.close()
             epoch_period = time_synchronize() - epoch_start
             self.optim_scheduler.step()
-
-        # save the lastest model
-        if self.hyp.get('model_save_dir', None) and Path(self.hyp['model_save_dir']).exists():
-            save_path = self.hyp['model_save_dir']
-        else:
-            save_path = str(self.cwd / 'checkpoints' / f'final.pth')
-        self.save_model(tot_loss, 'finally', 'finally', True, save_path)
 
     def warmup(self, epoch, cur_step):
         """
@@ -681,53 +670,32 @@ class Train:
 
 if __name__ == '__main__':
     config_ = Config()
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--cfg', type=str, required=True,dest='cfg', help='path to config file')
-    # parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
-    # parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
-    # parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
-    # parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
-    # parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
-    # parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
-    # parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    # parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
-    # parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
-    # parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
-    # parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
-    # parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
-    # parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
-    # parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
-    # parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
-    # parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
-    # parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
-    # parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
-    # parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, required=True,dest='cfg', help='path to config file')
+    parser.add_argument('--pretrained_model_path',default="", dest='pretrained_model_path') 
+    parser.add_argument('--batch_size', type=int, default=2, dest='batch_size')
+    parser.add_argument("--input_img_size", default=640, type=int, dest='input_img_size')
+    parser.add_argument('--train_img_dir', required=True, dest='train_img_dir', type=str)
+    parser.add_argument('--train_lab_dir', required=True, dest='train_lab_dir', type=str)
+    parser.add_argument('--val_img_dir', required=True, dest='val_img_dir', type=str)
+    parser.add_argument('--val_lab_dir', required=True, dest='val_lab_dir', type=str)
+    parser.add_argument('--test_img_dir', required=True, dest='test_img_dir', type=str)
+    parser.add_argument('--model_save_dir', default="", type=str, dest='model_save_dir')
+    parser.add_argument('--log_save_path', default="", type=str, dest="log_save_path")
+    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    parser.add_argument('--aspect_ratio_path', default=None, dest='aspect_ratio_path', type=str, help="aspect ratio list for dataloader sampler, only support serialization object by pickle")
+    parser.add_argument('--cache_num', default=0, dest='cache_num', type=int)
+    parser.add_argument('--total_epoch', default=300, dest='total_epoch', type=int)
+    parser.add_argument('--do_warmup', default=True, type=bool, dest='do_warmup')
+    parser.add_argument('--use_tta', default=True, type=bool, dest='use_tta')
+    parser.add_argument('--optimizer', default='sgd', type=str, choices=['sgd', 'adam'], dest='optimizer')
+    parser.add_argument('--iou_threshold', default=0.2, type=float, dest='iou_threshold')
+    parser.add_argument('--conf_threshold', default=0.3, type=float, dest='conf_threshold')
+    parser.add_argument('--cls_threshold', default=0.3, type=float, dest='cls_threshold')
+    parser.add_argument('--agnostic', default=True, type=bool, dest='agnostic', help='whether do NMS among the same class predictions.') 
+    parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
+    args = parser.parse_args()
 
-    class Args:
-        cfg = "/home/uih/JYL/Programs/YOLO/config/train_retinanet.yaml"
-        pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/retinanet_for_wheat.pth"
-        test_img_dir = "./result/wheat_test_imgs"
-
-        # train_lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
-        # train_img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image'
-        # name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
-        # val_img_dir = "/home/uih/JYL/Dataset/COCO2017/train/image"
-        # val_lab_dir = "/home/uih/JYL/Dataset/COCO2017/train/label"
-
-        train_lab_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/label'
-        train_img_dir = '/home/uih/JYL/Dataset/GlobalWheatDetection/image'
-        name_path = '/home/uih/JYL/Dataset/GlobalWheatDetection/names.txt'
-        val_img_dir = "/home/uih/JYL/Dataset/GlobalWheatDetection/image"
-        val_lab_dir = "/home/uih/JYL/Dataset/GlobalWheatDetection/label"
-
-        # train_lab_dir = '/home/uih/JYL/Dataset/VOC/train2012/label'
-        # train_img_dir = '/home/uih/JYL/Dataset/VOC/train2012/image'
-        # name_path = '/home/uih/JYL/Dataset/VOC/train2012/names.txt'
-        # val_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
-        # val_lab_dir = "/home/uih/JYL/Dataset/VOC/val2012/label"
-
-    args = Args()
     hyp = config_.get_config(args.cfg, args)
     retinanet = Train(hyp)
     retinanet.step()

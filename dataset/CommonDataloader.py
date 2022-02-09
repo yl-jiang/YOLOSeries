@@ -483,8 +483,6 @@ def YoloDataloader(hyp, is_training=True):
                                     pin_memory=hyp['pin_memory'], 
                                     batch_size=hyp['batch_size']
                                     )
-        
-
     elif not is_training and hyp.get('val_lab_dir', None) is not None:  # validation for compute mAP
         assert Path(hyp['val_img_dir']).exists() and Path(hyp['val_img_dir']).is_dir()
         assert Path(hyp['val_lab_dir']).exists() and Path(hyp['val_lab_dir']).is_dir()

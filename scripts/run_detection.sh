@@ -1,3 +1,7 @@
 #!/bin/bash
 source conda activate troch1.7
-python xxx/detect.py --cfg "xxx/config/detection.yaml" --img_dir "xxx/image" --pretrained_model_path "xxx/model_xlarge.pth" --model_type "xlarge" --name_path "xxx/names.txt"
+python ./detect_yolov5.py \
+--cfg ./config/detection_yolov5.yaml \
+--test_img_dir /home/uih/JYL/Dataset/VOC/val2012/image \
+--name_path /home/uih/JYL/Dataset/VOC/val2012/names.txt \
+--pretrained_model_path ./checkpoints/every_small.pth

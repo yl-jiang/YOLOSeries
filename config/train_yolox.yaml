@@ -43,7 +43,7 @@ train_hyp:
   mutil_scale_training: false  # 是否使用多尺度训练
   current_work_dir: null  # 当前工作目录（可以不设置）
   calculate_map_every: 10  # 每隔多少个epoch计算一次验证数据集的map
-  save_ckpt_every: 5  # 每隔多少个epoch保存一次模型
+  save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   model_type: 'small'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   iou_type: 'ciou'  # 计算回归损失时使用的iou类型 / ['iou', 'giou', 'ciou']中的一种

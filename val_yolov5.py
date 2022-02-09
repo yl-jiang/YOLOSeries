@@ -359,26 +359,25 @@ class Validation:
 
 if __name__ == '__main__':
     config_ = Config()
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
-    # parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
-    # parser.add_argument('--lab_dir', required=True, dest='lab_dir', type=str)
-    # parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
-    # parser.add_argument('--model_type', required=True, dest='model_type', type=str)
-    # parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    # parser.add_argument('--batch_size', default=8, dest='name_path', type=str)
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
+    parser.add_argument('--val_img_dir', required=True, dest='val_img_dir', type=str)
+    parser.add_argument('--val_lab_dir', required=True, dest='val_lab_dir', type=str)
+    parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
+    parser.add_argument('--model_type', required=True, dest='model_type', type=str)
+    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    parser.add_argument('--batch_size', default=8, dest='name_path', type=str)
+    args = parser.parse_args()
     
-    # ======================================================================
-    class Args:
-        cfg = "/home/uih/JYL/Programs/YOLO/config/detection_yolov5.yaml"
-        val_lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
-        val_img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
-        name_path = '/home/uih/JYL/Programs/YOLO/dataset/other/coco_names.txt'
-        # test_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
-        pretrained_model_path = "/home/uih/JYL/Programs/yolov5s_for_coco.pth"
-    args = Args()
-    # ======================================================================
+    # # ======================================================================
+    # class Args:
+    #     cfg = "/home/uih/JYL/Programs/YOLO/config/validation.yaml"
+    #     val_lab_dir = '/home/uih/JYL/Dataset/VOC/val2012/label'
+    #     val_img_dir = '/home/uih/JYL/Dataset/VOC/val2012/image/'
+    #     name_path = '/home/uih/JYL/Dataset/VOC/val2012/names.txt'
+    #     pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolov5_small_for_voc.pth"
+    # args = Args()
+    # # ======================================================================
 
     hyp = config_.get_config(args.cfg, args)
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])

@@ -1,4 +1,4 @@
-该项目是个人在学习[YOLOV5官方代码](https://github.com/ultralytics/yolov5)过程中，加入自己的一些理解以及必要注释，并根据个人习惯对代码结构进行重新组织，该项目主要目的是为了记录学习的过程。
+该项目是在学习[YOLOV5官方代码](https://github.com/ultralytics/yolov5)过程中，加入自己的一些理解以及必要注释，并根据个人习惯对代码结构进行重新组织，该项目主要目的是为了记录学习的过程。
 
 其实，从代码结构上看，YOLO系列的模型代码结构大部分是可以复用的，在学习了官方[YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)代码后，也将YOLOX集成到本项目中，使用方法与YOLOV5类似。
 ## 网络结构

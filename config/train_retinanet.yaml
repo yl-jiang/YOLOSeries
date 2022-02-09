@@ -7,8 +7,8 @@ loss_hyp:
     - 0.2
   negative_iou_thr: 0.4
   positive_iou_thr: 0.5
-  iou_loss_scale: 0.5
-  l1_loss_scale: 0.001
+  iou_loss_scale: 0.0
+  l1_loss_scale: 1.0
   cls_loss_scale: 1.0
   alpha : 0.25
   gamma : 2.0
@@ -25,8 +25,8 @@ train_hyp:
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 0
   input_img_size: 
-    - 640
-    - 640
+    - 448
+    - 448
   batch_size: 4
   drop_last: true
   pin_memory: true
@@ -42,7 +42,7 @@ train_hyp:
   save_log_txt : true
   log_save_path: ~  
   model_save_dir: ~
-  save_ckpt_every: 5  # 每隔多少个epoch保存一次模型
+  save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   mutil_scale_training : false
   current_work_dir : null
   calculate_map: true
@@ -53,19 +53,19 @@ train_hyp:
     - 4
     - 6
     - 3
-  iou_type: 'giou'
+  iou_type: 'ciou'
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   enable_tensorboard: true
 
 warmup_hyp:
   do_warmup: true
   warmup_epoch: 3
-  warmup_bias_lr: 0.01
+  warmup_bias_lr: 0.001
   warmup_momentum: 0.8
 
 optimizer_hyp:
   optimizer : 'sgd'
-  init_lr : 0.01
+  init_lr : 0.0001
   weight_decay : 0.0001
   momentum : 0.9
   lr_scheculer_bias: 0.2
@@ -90,7 +90,7 @@ data_hyp:
 
 nms_hyp:
   iou_threshold: 0.2
-  cls_threshold: 0.5
+  cls_threshold: 0.6
   max_predictions_per_img : 300
   min_prediction_box_wh : 2
   max_prediction_box_wh : 4096

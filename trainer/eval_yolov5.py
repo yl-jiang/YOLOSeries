@@ -40,8 +40,6 @@ class Evaluate:
         else:
             merge_preds_out = self.do_inference(inputs)  # (bs, N, 85)
         self.yolo.train()
-
-        # return self.do_nms(merge_preds_out)  # list of tensors
         return [torch.from_numpy(x) if x is not None else None for x in self.numba_nms(merge_preds_out) ]
 
     def do_wfb(self, preds_out):

@@ -264,7 +264,7 @@ class Detection:
             ascending_names = [names[i] for i in sort_index]
             if len(numbers) > 0:
                 if (self.cwd / "result" / 'pkl' / "coco_emoji_names.pkl").exists():
-                    emoji_names = pickle.load(open(str(self.cwd / "result" / 'pkl' / "coco_emoji_names.pkl"), 'rb'))
+                    emoji_names = pickle.load(open(str(self.cwd / "result" / 'pkl' / "voc_emoji_names.pkl"), 'rb'))
                     msg_ls = [" ".join([number, emoji_names[name]]) for name, number in zip(ascending_names, ascending_numbers)]
                 else:
                     msg_ls = [" ".join([number, name]) for name, number in zip(ascending_names, ascending_numbers)]
@@ -335,26 +335,22 @@ class Detection:
 
 if __name__ == '__main__':
     config_ = Config()
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
-    # parser.add_argument('--img_dir', required=True, dest='img_dir', type=str)
-    # parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
+    parser.add_argument('--test_img_dir', required=True, dest='test_img_dir', type=str)
+    parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
     # parser.add_argument('--model_type', required=True, dest='model_type', type=str)
-    # parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    # parser.add_argument('--output_dir', default=None, type=str, dest='output_dir')
-    # args = parser.parse_args()
-    # stratch_config = config_.config
+    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
+    parser.add_argument('--output_dir', default=None, type=str, dest='output_dir')
+    args = parser.parse_args()
 
     # ======================================================================
-    class Args:
-        cfg = "/home/uih/JYL/Programs/YOLO/config/detection_yolov5.yaml"
-        # lab_dir = '/home/uih/JYL/Dataset/COCO2017/train/label'
-        # img_dir = '/home/uih/JYL/Dataset/COCO2017/train/image/'
-        # name_path = '/home/uih/JYL/Dataset/COCO2017/train/names.txt'
-        name_path = '/home/uih/JYL/Programs/YOLO/dataset/other/coco_names.txt'
-        test_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
-        pretrained_model_path = "/home/uih/JYL/Programs/yolov5s_for_coco.pth"
-    args = Args()
+    # class Args:
+    #     cfg = "/home/uih/JYL/Programs/YOLO/config/detection_yolov5.yaml"
+    #     name_path = '/home/uih/JYL/Dataset/VOC/val2012/names.txt'
+    #     test_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
+    #     pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolov5_small_for_voc.pth"
+    # args = Args()
     # ======================================================================
 
     hyp = config_.get_config(args.cfg, args)
