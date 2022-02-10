@@ -112,12 +112,16 @@ $ python val_yolov5.py --cfg "./config/validation.yaml" --img_dir "your-image-di
 
 ## 模型初始化参数
 
-| Model | baidu | pwd |
+| Model | Baidu | pwd |
 | ----------- | ----------- | -------- |
-| yolov5 small for voc | https://pan.baidu.com/s/1OhixKNzD9Rzav61M-bX3qg | bdnn |
-| yolov5 small for coco | https://pan.baidu.com/s/1qz2J_KSCETIVtAJkqMnLlQ | ao2w |
-| yolox small for coco | https://pan.baidu.com/s/1T-9cfLCPpGYlH5c6XNlHSw | dtay |
-| yolox small for voc | https://pan.baidu.com/s/1O2OJYYbt7i2mk0WXzbCpYQ  | f5ud |
+| yolov5 small for wheat | https://pan.baidu.com/s/1rBRPZBA2NzABqCnDNwpYGA | 4brr |
+| yolov5 small for voc | https://pan.baidu.com/s/11syrvVvdPSt93M96KCiyYw | a0fe |
+| yolox small for wheat | https://pan.baidu.com/s/1lCZ3ZhWzw-haK7m7RtWzvQ  | 7ge4 |
+| yolox small for voc | https://pan.baidu.com/s/1I72-oWXJ1xdiatUxjx53jQ | mug9 |
+| yolox small for coco | https://pan.baidu.com/s/11G8VBeghpFKU7sIuvJ63YA | 55kg |
+| retinanet small for wheat | https://pan.baidu.com/s/1prbKi8xJQI5uGAQynSQ_Lw | frw8 |
+| retinanet small for voc | https://pan.baidu.com/s/1ZbKGiGGo6z0Xtul1T4Myng  | rop1 |
+| retinanet small for coco | https://pan.baidu.com/s/1yKmwW1M6zk67VVD6WYD6gg  | w1nx |
 
 yoloxs, yoloxm, yoloxl, yoloxx使用的backbone分别与yolov5s, yolov5m, yolov5l, yolov5x一致，有关yolox的预训练模型只在backbone部分载入了yolov5官方的预训练参数，剩余部分layer参数使用随机初始化。
 
