@@ -64,6 +64,8 @@ from .data_aug import cutout
 from .data_aug import mixup
 from .data_aug import RandomFlipUD
 from .data_aug import RandomHSV
+from .data_aug import scale_jitting
+from .data_aug import YOCO
 
 
 from .torch_tools import fixed_imgsize_collector

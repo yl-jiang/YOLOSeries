@@ -129,7 +129,7 @@ class CV2Transform:
         self.randomScale()
         self.randomBlur()
         # self.RandomBrightness()
-        self.RandomHue()
+        self.randomHue()
         # self.RandomSaturation()
         self.randomShift()
         self.randomCrop()
@@ -170,7 +170,7 @@ class CV2Transform:
         if random.random() < self.aug_threshold:
             cv2.blur(self.img, (5, 5), dst=self.img)
 
-    def RandomHue(self, hgain=0.5, sgain=0.5, vgain=0.5):
+    def randomHue(self, hgain=0.5, sgain=0.5, vgain=0.5):
         # 图片色调
         if random.random() < self.aug_threshold:
             r = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain] + 1  # random gains

@@ -10,7 +10,7 @@ import cv2
 from PIL import Image
 import numpy as np
 import random
-from utils import RandomHSV, RandomFlipLR, RandomFlipUD
+from utils import RandomHSV, RandomFlipLR, RandomFlipUD, scale_jitting, YOCO
 from utils import maybe_mkdir, clear_dir
 from utils import mosaic, random_perspective, valid_bbox, mixup, cutout
 import torch
@@ -418,6 +418,8 @@ class YoloDataset(Dataset, Generator):
                             self.data_aug_param['sgain'], self.data_aug_param['vgain'])
             img, bboxes = RandomFlipLR(img, bboxes, self.data_aug_param['fliplr'])
             img, bboxes = RandomFlipUD(img, bboxes, self.data_aug_param['flipud'])
+            if random.random() < self.data_aug_param.get('scale_jitting_p', 0.0):
+                img, bboxes, labels = scale_jitting(img, bboxes, labels)
             ann.update({'classes': labels, 'bboxes': bboxes})
 
         if len(ann['classes']) > 0:
@@ -535,8 +537,12 @@ def test():
     print(f"Build Aspect Ratio BatchSampler!")
     _start = time()
 
-    ar_list = pickle.load(open("/home/uih/JYL/Programs/YOLO/dataset/pkl/coco_aspect_ratio.pkl", 'rb'))
-    sampler = AspectRatioBatchSampler(dataset, batch_size, True, aspect_ratio_list=ar_list)
+    # ar_list = pickle.load(open("/home/uih/JYL/Programs/YOLO/dataset/pkl/coco_aspect_ratio.pkl", 'rb'))
+    aug_hyp['aspect_ratio_path'] = '/home/uih/JYL/Programs/YOLO/dataset/pkl/coco_aspect_ratio.pkl'
+    aug_hyp['batch_size'] = 5
+    aug_hyp['drop_last'] = True
+    aug_hyp['current_work_dir'] = '/home/uih/JYL/Programs/YOLO/'
+    sampler = AspectRatioBatchSampler(dataset, aug_hyp)
     print(f"- Use time {time() - _start:.3f}s")
     loader = DataLoader(dataset, collate_fn=collector, batch_sampler=sampler)
     with tqdm(total=len(loader), ncols=50) as t:
