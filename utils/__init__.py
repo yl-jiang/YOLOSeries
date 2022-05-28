@@ -73,4 +73,4 @@ from .torch_tools import AspectRatioBatchSampler
 
 from .logger import assemble_hyp
 
-from .kmeans_anchor import GPUAnchor
+from .anchor import GPUAnchor
