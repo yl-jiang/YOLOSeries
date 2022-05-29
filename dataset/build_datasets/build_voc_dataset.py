@@ -1,9 +1,6 @@
-import os
 import numpy as np
 from PIL import Image
-import random
 from bs4 import BeautifulSoup
-import lxml
 from tqdm import tqdm
 from pathlib import Path
 import shutil

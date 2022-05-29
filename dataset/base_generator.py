@@ -1,10 +1,4 @@
-from pycocotools.coco import COCO
 import numpy as np
-import skimage.io as io
-import matplotlib.pyplot as plt
-import cv2
-from PIL import Image
-from pathlib import Path
 import warnings
 
 
