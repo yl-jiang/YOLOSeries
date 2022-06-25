@@ -1,11 +1,12 @@
-import torch
-from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
-import matplotlib.pyplot as plt
-import cv2
-from utils import letter_resize_img
-import torchvision
 
+import cv2
+import torch
+import torchvision
+import matplotlib.pyplot as plt
+from torch.utils.data import Dataset, DataLoader
+
+from utils import letter_resize_img
 
 class TestDataset(Dataset):
 

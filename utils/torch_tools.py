@@ -1,12 +1,14 @@
-from torch.utils.data.sampler import Sampler
 import random
-import torch
-import torchvision
-from utils import letter_resize_bbox, letter_resize_img, maybe_mkdir, clear_dir
-from tqdm import tqdm
 import pickle
-import numpy as np
 from pathlib import Path
+
+import torch
+import numpy as np
+import torchvision
+from tqdm import tqdm
+from torch.utils.data.sampler import Sampler
+
+from utils import letter_resize_bbox, letter_resize_img, maybe_mkdir, clear_dir
 
 
 def torch_normalization(img):

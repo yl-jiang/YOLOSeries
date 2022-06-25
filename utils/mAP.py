@@ -1,15 +1,17 @@
+import sys
+from pathlib import Path
+
 import numpy as np
+import matplotlib.pyplot as plt
 from collections import defaultdict
 from numpy.lib.arraysetops import unique
-import matplotlib.pyplot as plt
-from pathlib import Path
-import sys
 
+import seaborn as sn
 from numpy.matrixlib import matrix
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
+
 from utils import maybe_mkdir
-import seaborn as sn
 
 
 def iou(box1, box2):

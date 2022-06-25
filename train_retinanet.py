@@ -1,40 +1,39 @@
 import sys
-from pathlib import Path
-
-current_work_directionary = Path(__file__).parent.absolute()
-sys.path.insert(0, str(current_work_directionary))
-
-import torch.nn.functional as F
-import torch
-from torch import nn
-from config import Config
-from torch.utils.tensorboard import SummaryWriter
-import torch.optim.lr_scheduler as lr_scheduler
-import numpy as np
-from tqdm import tqdm
-from pathlib import Path
-from models import RetinaNet
-from datetime import datetime
-from torchnet.meter import AverageValueMeter
-from dataset import YoloDataloader, testdataloader
-from torch import optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-from utils import maybe_mkdir, cv2_save_img, clear_dir, assemble_hyp, mAP_v2, time_synchronize, summary_model, catch_warnnings
-from torch.cuda import amp
-from loss import RetinaNetLoss
-from trainer import ExponentialMovingAverageModel
-from trainer import RetinaNetEvaluater
 import math
 import numbers
 import logging
 import random
 import pickle
+import argparse
+from pathlib import Path
+from datetime import datetime
+from collections import Counter
+
+current_work_directionary = Path(__file__).parent.absolute()
+sys.path.insert(0, str(current_work_directionary))
+
 import cv2
 import emoji
+import torch
+import numpy as np
+from torch import nn
+from tqdm import tqdm
+from torch import optim
+import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
+import torch.optim.lr_scheduler as lr_scheduler
+from torchnet.meter import AverageValueMeter
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.cuda import amp
 from loguru import logger
-from collections import Counter
-import argparse
 
+from config import Config
+from models import RetinaNet
+from loss import RetinaNetLoss
+from trainer import ExponentialMovingAverageModel
+from trainer import RetinaNetEvaluater
+from dataset import YoloDataloader, testdataloader
+from utils import maybe_mkdir, cv2_save_img, clear_dir, assemble_hyp, mAP_v2, time_synchronize, summary_model, catch_warnnings
 
 class Train:
 

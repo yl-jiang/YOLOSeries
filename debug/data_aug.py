@@ -4,7 +4,7 @@ import math
 import cv2
 import numpy as np
 
-from utils import xywh2xyxy
+# from utils import xywh2xyxy
 
 # region
 # ===================================== aug for img =====================================
@@ -13,19 +13,20 @@ class CV2Transform:
     pass
     """
     def __init__(self, aug_threshold=None, strict=False, fill_value=128):
+        # cv_img:bgr/(h,w,c)
+        # bboxes:[[xmin,ymin,xmax,ymax],...]
+        # labels:[2,4,...]
 
         if aug_threshold is None:
-            self.aug_threshold = 0.3
+            self.aug_threshold = 0.2
         else:
             self.aug_threshold = aug_threshold
 
         self.strict = strict
         self.fill_value = fill_value
 
+
     def __call__(self, cv_img, bboxes=None, labels=None):
-        # cv_img:bgr/(h,w,c)
-        # bboxes:[[xmin,ymin,xmax,ymax],...]
-        # labels:[2,4,...]
         
         self.img = cv_img
         self.bboxes = bboxes
@@ -42,7 +43,6 @@ class CV2Transform:
         self.randomShift()
         self.randomCrop()
         return self.img, self.bboxes, self.labels
-        
 
     @classmethod
     def _check_input(cls, cv_img, bboxes, labels):
@@ -56,20 +56,6 @@ class CV2Transform:
             raise ValueError("labels's type must be ndarray")
         return cls(cv_img, bboxes, labels)
 
-
-    def yoco(self, img_org, img_aug, thresh):
-        assert img_org.shape == img_aug.shape
-        h, w, c = img_org.shape
-        aug_img = img_aug
-        if not self.done_yoco:
-            if np.random.random() < thresh:  # 垂直切分并增强后合并
-                self.done_yoco = True
-                aug_img = np.concatenate((img_org[:, 0:int(w/2), :], img_aug[:, int(w/2):, :]), axis=1)
-            if not self.done_yoco and np.random.random() < thresh:
-                aug_img = np.concatenate((img_org[0:h//2, :, :], img_aug[h//2:, :, :]), axis=0)
-        return aug_img
-
-
     def randomFlip(self):
         # 垂直翻转/y坐标不变，x坐标变化
         if random.random() < self.aug_threshold:
@@ -80,6 +66,20 @@ class CV2Transform:
             self.bboxes[:, 0] = xmin
             self.bboxes[:, 2] = xmax
             self.img = img
+
+    def yoco(self, img_org, img_aug, thresh):
+        assert img_org.shape == img_aug.shape
+        h, w, c = img_org.shape
+        aug_img = img_aug
+        if not self.done_yoco:
+            if np.random.random() < thresh:  # 垂直切分并增强后合并
+                print("do yoco H")
+                self.done_yoco = True
+                aug_img = np.concatenate((img_org[:, 0:int(w/2), :], img_aug[:, int(w/2):, :]), axis=1)
+            if not self.done_yoco and np.random.random() < thresh:
+                print("do yoco V")
+                aug_img = np.concatenate((img_org[0:h//2, :, :], img_aug[h//2:, :, :]), axis=0)
+        return aug_img
 
     def randomScale(self):
         # 固定住高度，以0.8-1.2伸缩宽度，做图像形变
@@ -109,29 +109,29 @@ class CV2Transform:
             lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
 
             img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
-            hsv_org = cv2.merge((hue, sat, val))
-            img_hsv = self.yoco(hsv_org, img_hsv, self.aug_threshold)
+            hsv_copy = cv2.merge((hue, sat, val))
+            img_hsv = self.yoco(hsv_copy, img_hsv, self.aug_threshold)
             cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=self.img)  # no return needed
 
     def RandomSaturation(self):
         # 图片饱和度
         if random.random() < self.aug_threshold:
             hsv = cv2.cvtColor(self.img, cv2.COLOR_BGR2HSV)
-            hsv_org = hsv.copy()
+            hsv_copy = hsv.copy()
             h, s, v = cv2.split(hsv)
             adjust = random.choice([0.5, 1.5])
             s = s.astype(np.float32)
             s = s * adjust
             s = np.clip(s, 0, 255).astype(hsv.dtype)
             hsv = cv2.merge((h, s, v))
-            hsv = self.yoco(hsv_org, hsv, self.aug_threshold)
+            hsv = self.yoco(hsv_copy, hsv, self.aug_threshold)
             cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR, dst=self.img)
 
     def RandomBrightness(self):
         # 图片亮度
         if random.random() < self.aug_threshold:
             hsv = cv2.cvtColor(self.img, cv2.COLOR_BGR2HSV)
-            hsv_org = hsv.copy()
+            hsv_copy = hsv.copy()
             # hsv分别表示：色调（H），饱和度（S），明度（V）
             h, s, v = cv2.split(hsv)
             adjust = random.choice([0.5, 1.5])
@@ -139,7 +139,7 @@ class CV2Transform:
             v = v * adjust
             v = np.clip(v, 0, 255).astype(hsv.dtype)
             hsv = cv2.merge((h, s, v))
-            hsv = self.yoco(hsv_org, hsv, self.aug_threshold)
+            hsv = self.yoco(hsv_copy, hsv, self.aug_threshold)
             cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR, dst=self.img)
 
     def randomShift(self):
@@ -251,7 +251,6 @@ def RandomSaturation(img, thresh):
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
         adjust = random.choice([0.5, 1.5])
-        s = s.astype(np.float32)
         s *= adjust
         s = np.clip(s, 0, 255).astype(hsv.dtype)
         hsv = cv2.merge((h, s, v))
@@ -260,7 +259,7 @@ def RandomSaturation(img, thresh):
     return img
 
 
-def RandomBrightness(img, thresh):
+def RandomBrightness(img, thresh=0.6):
     # 图片亮度
     if random.random() < thresh:
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -276,7 +275,7 @@ def RandomBrightness(img, thresh):
     return img
 
 
-def RandomHSV(img, thresh, hgain=0.5, sgain=0.5, vgain=0.5):
+def RandomHSV(img, thresh=0.6, hgain=0.5, sgain=0.5, vgain=0.5):
     """
     将输入的RGB模态的image转换为HSV模态，并随机从对比度，饱和度以及亮度三个维度进行变换。
 
@@ -434,38 +433,38 @@ def randomCrop(self):
             self.labels = labels_out
 
 
-def valid_bbox(bboxes, box_type='xyxy', wh_thr=2, ar_thr=10, area_thr=16):
-    """
-    根据bbox的width阈值，height阈值，width-height ratio阈值以及area阈值，过滤掉不满足限制条件的bbox。
+# def valid_bbox(bboxes, box_type='xyxy', wh_thr=2, ar_thr=10, area_thr=16):
+#     """
+#     根据bbox的width阈值，height阈值，width-height ratio阈值以及area阈值，过滤掉不满足限制条件的bbox。
 
-    :param wh_thr:
-    :param area_thr: area threshold
-    :param ar_thr: aspect ratio threshold
-    :param bboxes: ndarray or list; [[a, b, c, d], [e, f, g, h], ...]
-    :param box_type: 'xyxy' or 'xywh'; [xmin, ymin, xmax, ymax] or [center_x, center_y, w, h]
-    :return:
-    """
-    if box_type == 'xywh':
-        labels = xywh2xyxy(np.array(bboxes))
-    elif box_type:
-        labels = np.array(bboxes)
-    else:
-        raise ValueError(f'unknow bbox format: {box_type}')
+#     :param wh_thr:
+#     :param area_thr: area threshold
+#     :param ar_thr: aspect ratio threshold
+#     :param bboxes: ndarray or list; [[a, b, c, d], [e, f, g, h], ...]
+#     :param box_type: 'xyxy' or 'xywh'; [xmin, ymin, xmax, ymax] or [center_x, center_y, w, h]
+#     :return:
+#     """
+#     if box_type == 'xywh':
+#         labels = xywh2xyxy(np.array(bboxes))
+#     elif box_type:
+#         labels = np.array(bboxes)
+#     else:
+#         raise ValueError(f'unknow bbox format: {box_type}')
 
-    x = labels[:, 2] > labels[:, 0]  # xmax > xmin
-    y = labels[:, 3] > labels[:, 1]  # ymax > ymin
-    w = labels[:, 2] - labels[:, 0]
-    h = labels[:, 3] - labels[:, 1]
-    w_mask = w > wh_thr
-    h_mask = h > wh_thr
-    area_mask = (w * h) >= area_thr
-    ar_1, ar_2 = w / (h+1e-16), h / (w+1e-16)
-    ar = np.where(ar_1 > ar_2, ar_1, ar_2)
-    ar_mask = ar < ar_thr
-    valid_idx = np.stack([x, y, ar_mask, area_mask, h_mask, w_mask], axis=1)
-    valid_inx = np.all(valid_idx, axis=1)
+#     x = labels[:, 2] > labels[:, 0]  # xmax > xmin
+#     y = labels[:, 3] > labels[:, 1]  # ymax > ymin
+#     w = labels[:, 2] - labels[:, 0]
+#     h = labels[:, 3] - labels[:, 1]
+#     w_mask = w > wh_thr
+#     h_mask = h > wh_thr
+#     area_mask = (w * h) >= area_thr
+#     ar_1, ar_2 = w / (h+1e-16), h / (w+1e-16)
+#     ar = np.where(ar_1 > ar_2, ar_1, ar_2)
+#     ar_mask = ar < ar_thr
+#     valid_idx = np.stack([x, y, ar_mask, area_mask, h_mask, w_mask], axis=1)
+#     valid_inx = np.all(valid_idx, axis=1)
 
-    return valid_inx
+#     return valid_inx
 
 
 def random_perspective(img, tar_bboxes, tar_labels, degrees=10, translate=.1, scale=.1, shear=10,

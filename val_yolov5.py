@@ -1,30 +1,30 @@
-from collections import Counter
-import emoji
-from pathlib import Path
 import sys
+import argparse
+from pathlib import Path
+from datetime import datetime
+from collections import Counter
 
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
 
 import cv2
-import torch.cuda
-from models import Yolov5Small, Yolov5SmallWithPlainBscp, Yolov5Large, Yolov5Middle, Yolov5XLarge
-from models import Yolov5SmallDW, Yolov5MiddleDW, Yolov5LargeDW, Yolov5XLargeDW
-from tqdm import tqdm
-import numpy as np
-from utils import cv2_save_img
-from utils import maybe_mkdir
-from utils import time_synchronize
-from datetime import datetime
-from trainer import ExponentialMovingAverageModel
-from trainer import Evaluate
-from dataset import YoloDataloader
-from utils import cv2_save_img_plot_pred_gt, ConvBnAct, fuse_conv_bn, summary_model, mAP_v2
+import emoji
 import pickle
-import argparse
-from config import Config
+import torch.cuda
+import numpy as np
+from tqdm import tqdm
 from loguru import logger
 
+from config import Config
+from trainer import Evaluate
+from utils import maybe_mkdir
+from utils import cv2_save_img
+from utils import time_synchronize
+from dataset import YoloDataloader
+from trainer import ExponentialMovingAverageModel
+from utils import cv2_save_img_plot_pred_gt, ConvBnAct, fuse_conv_bn, summary_model, mAP_v2
+from models import Yolov5Small, Yolov5SmallWithPlainBscp, Yolov5Large, Yolov5Middle, Yolov5XLarge
+from models import Yolov5SmallDW, Yolov5MiddleDW, Yolov5LargeDW, Yolov5XLargeDW
 
 class Validation:
 

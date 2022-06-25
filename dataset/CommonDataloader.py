@@ -1,30 +1,33 @@
-import pickle
+import os
 import sys
+import random
+import pickle
+import warnings
+from time import time
 from pathlib import Path
+from functools import partial
+
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
 
-from dataset import Generator
-from torch.utils.data import Dataset, DataLoader
 import cv2
-from PIL import Image
-import numpy as np
-import random
-from utils import RandomHSV, RandomFlipLR, RandomFlipUD, scale_jitting, YOCO
-from utils import maybe_mkdir, clear_dir
-from utils import mosaic, random_perspective, valid_bbox, mixup, cutout
-import torch
-import torch.backends.cudnn as cudnn
-from time import time
-from tqdm import tqdm
 import h5py
-from multiprocessing.pool import ThreadPool
-import os
-from functools import partial
-from utils import fixed_imgsize_collector, AspectRatioBatchSampler
-import warnings
+import torch
+import numpy as np
+from PIL import Image
+from tqdm import tqdm
 from loguru import logger
+import torch.backends.cudnn as cudnn
+from multiprocessing.pool import ThreadPool
+from torch.utils.data import Dataset, DataLoader
+
+from dataset import Generator
+from utils import maybe_mkdir, clear_dir
+from utils import fixed_imgsize_collector, AspectRatioBatchSampler
+from utils import mosaic, random_perspective, valid_bbox, mixup, cutout
+from utils import RandomHSV, RandomFlipLR, RandomFlipUD, scale_jitting, YOCO
 NUM_THREADS = min(8, os.cpu_count())
+
 
 def init_random_seed(seed=7):
     np.random.seed(seed)

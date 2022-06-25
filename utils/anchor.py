@@ -1,10 +1,11 @@
 import random
-import matplotlib.pyplot as plt
-import numpy as np
-from pathlib import Path
-from tqdm import tqdm
 import warnings
+from pathlib import Path
+
 import torch
+import numpy as np
+from tqdm import tqdm
+import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 
 def show_result(class_list, raw_data, center_coordinate):

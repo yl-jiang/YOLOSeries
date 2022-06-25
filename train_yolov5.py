@@ -1,30 +1,30 @@
 import sys
+import math
+import pickle
+import random
 import logging
+import numbers
+import argparse
 from pathlib import Path
+from datetime import datetime
+from collections import Counter
 
-import cv2
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
-from tqdm import tqdm
 
+import cv2
+import emoji
 import torch.cuda
-from torch.utils.tensorboard import SummaryWriter
 import numpy as np
-from datetime import datetime
-import random
-import torch.nn.functional as F
-import math
-import torch.optim.lr_scheduler as lr_scheduler
+from torch import nn
+from tqdm import tqdm
+from loguru import logger
 from torch.cuda import amp
 import torch.optim as optim
+import torch.nn.functional as F
 from torchnet.meter import AverageValueMeter
-from torch import nn
-import argparse
-import pickle
-from collections import Counter
-import emoji
-from loguru import logger
-import numbers
+import torch.optim.lr_scheduler as lr_scheduler
+from torch.utils.tensorboard import SummaryWriter
 
 from config import Config
 from loss import YOLOV5Loss
@@ -34,7 +34,7 @@ from utils import maybe_mkdir, clear_dir
 from trainer import ExponentialMovingAverageModel
 from utils import time_synchronize, summary_model
 from dataset import testdataloader, YoloDataloader
-from utils import mAP_v2, cv2_save_img_plot_pred_gt, catch_warnnings
+from utils import mAP_v2, catch_warnnings
 from models import Yolov5Small, Yolov5Middle, Yolov5Large, Yolov5SmallWithPlainBscp, Yolov5XLarge
 from models import Yolov5SmallDW, Yolov5MiddleDW, Yolov5LargeDW, Yolov5XLargeDW
 

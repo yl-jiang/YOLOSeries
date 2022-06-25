@@ -1,7 +1,8 @@
-from collections import Counter
-import collections, emoji
-from emoji.core import emojize
 import pickle
+from collections import Counter
+
+import emoji
+from emoji.core import emojize
 
 counter = Counter([])
 print(counter)

@@ -1,42 +1,42 @@
-from pathlib import Path
 import sys
+import math
+import pickle
+import random
+import logging
+import numbers
+import argparse
+from datetime import datetime
+from collections import Counter
+from pathlib import Path
 
-from numpy.lib.arraysetops import isin
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
 
 import cv2
-import torch.cuda
-from torch.utils.tensorboard import SummaryWriter
-from models import YoloXSmall, YoloXMiddle, YoloXLarge, YoloXDarkNet21, YoloXDarkNet53
-from tqdm import tqdm
-from config import Config
-import logging
-import numpy as np
-from utils import cv2_save_img, assemble_hyp
-from utils import maybe_mkdir, clear_dir
-from utils import time_synchronize, summary_model
-from datetime import datetime
-import random
-import torch.nn.functional as F
-import math
-import torch.optim.lr_scheduler as lr_scheduler
-from torch.cuda import amp
-from loss import YOLOXLoss
-from trainer import ExponentialMovingAverageModel
-import torch.optim as optim
-from torchnet.meter import AverageValueMeter
-from trainer import YOLOXEvaluater as Evaluate
-from torch import nn
-from dataset import testdataloader, YoloDataloader
-import argparse
-import pickle
-from utils import mAP_v2, cv2_save_img_plot_pred_gt, catch_warnnings
-from collections import Counter
 import emoji
+import torch.cuda
+import numpy as np
+from torch import nn
+from tqdm import tqdm
 from loguru import logger
-import numbers
+from torch.cuda import amp
+import torch.optim as optim
+import torch.nn.functional as F
+from numpy.lib.arraysetops import isin
+from torchnet.meter import AverageValueMeter
+import torch.optim.lr_scheduler as lr_scheduler
+from trainer import YOLOXEvaluater as Evaluate
+from torch.utils.tensorboard import SummaryWriter
 
+from config import Config
+from loss import YOLOXLoss
+from utils import maybe_mkdir, clear_dir
+from utils import cv2_save_img, assemble_hyp
+from utils import time_synchronize, summary_model
+from trainer import ExponentialMovingAverageModel
+from dataset import testdataloader, YoloDataloader
+from utils import mAP_v2, cv2_save_img_plot_pred_gt, catch_warnnings
+from models import YoloXSmall, YoloXMiddle, YoloXLarge, YoloXDarkNet21, YoloXDarkNet53
 
 class Training:
 
