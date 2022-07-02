@@ -57,7 +57,7 @@ class YOLOV5Loss:
         assert torch.sum(targets[0][..., -1]) == 0., f"please check the data format of anchor_ids"
 
         cls_loss, iou_loss, cof_loss = torch.zeros(1, device=self.device), torch.zeros(1, device=self.device), torch.zeros(1, device=self.device)
-        balances = [4., 1., 0.4] if len(stage_preds) == 3 else [4., 1., 0.4, 0.1]
+        # balances = [4., 1., 0.4] if len(stage_preds) == 3 else [4., 1., 0.4, 0.1]
         tot_tar_num = 0
         s = 3 / len(stage_preds)
         for i in range(len(stage_preds)):  # each stage
@@ -118,8 +118,8 @@ class YOLOV5Loss:
 
             # 所有样本均参与置信度损失的计算 / 在3中loss中confidence loss是最为重要的
             cof_loss_tmp = (self.bce_cof(preds[..., 4], t_cof) * cof_factor).mean()
-            cof_loss_tmp *= balances[i]
-            balances[i] = balances[i] * 0.9999 + 0.0001 / cof_loss_tmp.detach().item()
+            cof_loss_tmp *= self.balances[i]
+            self.balances[i] = self.balances[i] * 0.9999 + 0.0001 / cof_loss_tmp.detach().item()
             cof_loss += cof_loss_tmp
 
         self.balances = [x/self.balances[1] for x in self.balances]
