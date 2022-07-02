@@ -27,6 +27,7 @@ class YOLOXLoss:
         self.bce_cof = nn.BCEWithLogitsLoss(pos_weight=cof_pos_weight, reduction='none').to(self.device)
         self.l1_loss = nn.L1Loss(reduction='none')
         self.cls_smoothness = hyp['class_smooth_factor']
+        self.balances = [4., 1., 0.4] if self.num_stage == 3 else [4., 1., 0.4, 0.1]
 
     def __call__(self, tars, preds):
         """
@@ -42,7 +43,7 @@ class YOLOXLoss:
 
         tot_num_fg, tot_num_gt = 0, 0
         tot_cls_loss, tot_iou_loss, tot_cof_loss, tot_l1_reg_loss = torch.zeros(1, device=self.device), torch.zeros(1, device=self.device), torch.zeros(1, device=self.device), torch.zeros(1, device=self.device)
-        for k in preds.keys():  # each stage
+        for i, k in enumerate(preds.keys()):  # each stage
             h, w = preds[k].shape[-2:]
             stride = self.img_sz[0] / h  # 该stage下采样尺度 
             grid = self.grids.get(f"stride_{stride}", torch.zeros(1))
@@ -59,14 +60,18 @@ class YOLOXLoss:
             grid = grid.repeat(1, self.num_anchors, 1, 1, 1).contiguous().reshape(1, -1, 2)
             
             stage_out_dict = self.calculate_loss_of_each_stage(tars.float(), pred.float(), grid[0].float(), stride)
+            cof_loss_tmp = stage_out_dict['cof_loss'] * self.balances[i]
+            self.balances[i] = self.balances[i] * 0.9999 + 0.0001 / cof_loss_tmp.detach().item()
+            tot_cof_loss += cof_loss_tmp
+
             tot_num_fg += stage_out_dict['num_fg']
             tot_num_gt += stage_out_dict['num_gt']
             tot_cls_loss += stage_out_dict['cls_loss'] 
             tot_iou_loss += stage_out_dict['iou_loss'] 
-            tot_cof_loss += stage_out_dict['cof_loss'] 
             tot_l1_reg_loss += stage_out_dict['l1_reg_loss']
             del stage_out_dict
         
+        self.balances = [x/self.balances[1] for x in self.balances]
         if self.num_class == 1:
             tot_cls_loss = tot_cof_loss.new_tensor(0.0)
 
@@ -177,7 +182,12 @@ class YOLOXLoss:
         iou_loss = self.iou_loss(preds[..., :4].float(), batch_tar_box.float(), fg, self.hyp['iou_type'])  # regression
 
         # cofidence loss
+        if self.hyp['use_focal_loss']:
+            cof_factor = self.focal_loss_factor(preds[..., 4].view(-1, 1), batch_tar_cof.type(preds.type()))
+        else:
+            cof_factor = torch.ones_like(batch_tar_cof.type(preds.type()))
         cof_loss = self.bce_cof(preds[..., 4].view(-1, 1), batch_tar_cof.type(preds.type()))  # cofidence
+        cof_loss *= cof_factor
 
         # classification loss
         assert preds[..., 5:].view(-1, self.num_class)[fg].size() == batch_tar_cls.size()
