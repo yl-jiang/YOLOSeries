@@ -6,7 +6,7 @@ sys.path.insert(0, str(current_work_dir))
 import torch
 from torch import nn
 from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect, SEBottleneckCSP, C3BottleneckCSP, FastSPP
-
+from collections import OrderedDict
 
 class SmallYOLOXBackboneAndNeck(nn.Module):
 
@@ -156,7 +156,11 @@ class Detect(nn.Module):
         # pred_l: (batch_size, num_anchors, 85, H/32, W/32)
         # pred_m: (batch_size, num_anchors, 85, H/16, W/16)
         # pred_s: (batch_size, num_anchors, 85, H/8, W/8)
-        return {'pred_s': pred_s, 'pred_m': pred_m, 'pred_l': pred_l}
+        pred_out = OrderedDict()
+        pred_out['pred_s'] = pred_s
+        pred_out['pred_m'] = pred_m
+        pred_out['pred_l'] = pred_l
+        return pred_out
 
 
 class YoloXSmall(nn.Module):
