@@ -119,8 +119,7 @@ if __name__ == '__main__':
     # img, bbox = trans.randomFlip(cv_img, bbox_head)
     print(trans.img.shape)
     # print(trans.bboxes)
-    cv2.rectangle(trans.img, (trans.bboxes[:, 1], trans.bboxes[:, 0]), (trans.bboxes[:, 3], trans.bboxes[:, 2]),
-                  (55, 255, 155), 5)
+    cv2.rectangle(trans.img, (trans.bboxes[:, 1], trans.bboxes[:, 0]), (trans.bboxes[:, 3], trans.bboxes[:, 2]), (55, 255, 155), 5)
 
     cv2.imshow('image', trans.img)
     cv2.waitKey(50000)
