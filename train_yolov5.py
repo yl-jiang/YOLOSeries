@@ -33,7 +33,7 @@ from utils import cv2_save_img
 from utils import maybe_mkdir, clear_dir
 from trainer import ExponentialMovingAverageModel
 from utils import time_synchronize, summary_model
-from dataset import testdataloader, YoloDataloader
+from data import testdataloader, YoloDataloader
 from utils import mAP_v2, catch_warnnings
 from models import Yolov5Small, Yolov5Middle, Yolov5Large, Yolov5SmallWithPlainBscp, Yolov5XLarge
 from models import Yolov5SmallDW, Yolov5MiddleDW, Yolov5LargeDW, Yolov5XLargeDW

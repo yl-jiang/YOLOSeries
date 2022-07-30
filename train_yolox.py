@@ -34,7 +34,7 @@ from utils import maybe_mkdir, clear_dir
 from utils import cv2_save_img, assemble_hyp
 from utils import time_synchronize, summary_model
 from trainer import ExponentialMovingAverageModel
-from dataset import testdataloader, YoloDataloader
+from data import testdataloader, YoloDataloader
 from utils import mAP_v2, cv2_save_img_plot_pred_gt, catch_warnnings
 from models import YoloXSmall, YoloXMiddle, YoloXLarge, YoloXDarkNet21, YoloXDarkNet53
 

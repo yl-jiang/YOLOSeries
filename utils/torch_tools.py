@@ -48,7 +48,7 @@ class AspectRatioBatchSampler(Sampler):
         """
         必须要被重载的方法。
 
-        Return：
+        Return:
             组成每个batch的image indxies
         """
         random.shuffle(self.groups)
@@ -59,8 +59,8 @@ class AspectRatioBatchSampler(Sampler):
         """
         必须要被重载的方法。
 
-        Reutn：
-            根据设定的batch size，返回数据集总共可以分成多少batch。
+        Reutn:
+            根据设定的batch size, 返回数据集总共可以分成多少batch。
         """
         if self.drop_last:
             return len(self.data_source) // self.batch_size
@@ -71,8 +71,8 @@ class AspectRatioBatchSampler(Sampler):
         """
         按照图片的长宽比对输入网络训练图片进行从小到大的重新排列。
 
-        Return：
-            返回一个list，list中的每一个元素表示的是组成对应batch的image indexies。
+        Return:
+            返回一个list, list中的每一个元素表示的是组成对应batch的image indexies。
         """
         # determine the order of the images
         order = list(range(len(self.data_source))) 
@@ -112,11 +112,11 @@ def fixed_imgsize_collector(data_in, dst_size):
     anns = [d[1] for d in data_in]
     img_ids = [d[2] for d in data_in]
 
-    # batch内image的图像拥有相同的shape，batch之间image的shape不一样
+    # batch内image的图像拥有相同的shape, batch之间image的shape不一样
     # dst_size = padding(dst_size, 32)
     imgs_out = torch.zeros(batch_size, 3, dst_size[0], dst_size[1])
     boxes_num = [len(ann['bboxes']) for ann in anns]
-    # 初始化为-1是为了区分有无object的bbox，最后一个维度是为了标记一个batch中每个ann对应的img idx，for build_target()
+    # 初始化为-1是为了区分有无object的bbox, 最后一个维度是为了标记一个batch中每个ann对应的img idx, for build_target()
     anns_out = torch.ones(batch_size, max(boxes_num), 6) * -1
 
     # resize_info在测试时恢复原始图像用

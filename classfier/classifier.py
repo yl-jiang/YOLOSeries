@@ -3,7 +3,7 @@ import torch
 import torchvision.models as models
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
-from dataset import auxiliary_classifier_dataloader
+from data import auxiliary_classifier_dataloader
 from tqdm import tqdm
 
 
