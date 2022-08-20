@@ -9,7 +9,7 @@ class Config:
 
     def update_config(self, args):
         for k, v in args.__dict__.items():
-            self.config.update({k, v}) 
+            self.config.update({k: v}) 
 
     def get_config(self, cfg, args=None):
         configs = yaml.load(open(str(cfg)), Loader=yaml.FullLoader)
