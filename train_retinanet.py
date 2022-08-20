@@ -32,7 +32,7 @@ from models import RetinaNet
 from loss import RetinaNetLoss
 from trainer import ExponentialMovingAverageModel
 from trainer import RetinaNetEvaluater
-from data import YoloDataloader, testdataloader
+from dataset import YoloDataloader, testdataloader
 from utils import maybe_mkdir, cv2_save_img, clear_dir, assemble_hyp, mAP_v2, time_synchronize, summary_model, catch_warnnings
 
 class Train:

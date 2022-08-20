@@ -20,7 +20,7 @@ from trainer import Evaluate
 from utils import maybe_mkdir
 from utils import cv2_save_img
 from utils import time_synchronize
-from data import YoloDataloader
+from dataset import YoloDataloader
 from trainer import ExponentialMovingAverageModel
 from utils import cv2_save_img_plot_pred_gt, ConvBnAct, fuse_conv_bn, summary_model, mAP_v2
 from models import Yolov5Small, Yolov5SmallWithPlainBscp, Yolov5Large, Yolov5Middle, Yolov5XLarge

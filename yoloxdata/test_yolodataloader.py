@@ -1,13 +1,13 @@
 from email.mime import base
 from traitlets import TraitType
-from data.dataset import YOLODataset
-from data import Transform, InfiniteSampler, YOLOBatchSampler, YOLODataLoader, worker_init_reset_seed
-from data.dataset import MosaicTransformDataset
-from data import FixSizeCollector
-from data import InfiniteAspectRatioBatchSampler
+from yoloxdata.dataset import YOLODataset
+from yoloxdata import Transform, InfiniteSampler, YOLOBatchSampler, YOLODataLoader, worker_init_reset_seed
+from yoloxdata.dataset import MosaicTransformDataset
+from yoloxdata import FixSizeCollector
+from yoloxdata import InfiniteAspectRatioBatchSampler
 import numpy as np
 import torch
-from data import DataPrefetcher
+from yoloxdata import DataPrefetcher
 from tqdm import trange
 from pathlib import Path
 base_dir = Path("/Volumes/Samsung/Dataset/")
