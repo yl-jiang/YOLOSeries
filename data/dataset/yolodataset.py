@@ -422,9 +422,9 @@ def YoloDataloader(hyp, is_training=True):
 def test():
     init_random_seed()
 
-    dataset = YoloDataset('/home/uih/JYL/Dataset/Others/COCO2017/train/image/',
-                          "/home/uih/JYL/Dataset/Others/COCO2017/train/label/",
-                          '/home/uih/JYL/Dataset/Others/COCO2017/train/names.txt',
+    dataset = YoloDataset('xxx/Dataset/Others/COCO2017/train/image/',
+                          "xxx/Dataset/Others/COCO2017/train/label/",
+                          'xxx/Dataset/Others/COCO2017/train/names.txt',
                           [448, 448], 0)
     collector = partial(fixed_imgsize_collector, dst_size=[448, 448])
     batch_size = 5
@@ -432,10 +432,10 @@ def test():
     _start = time()
 
     aug_hyp = {}
-    aug_hyp['aspect_ratio_path'] = '/home/uih/JYL/Projects/Others/GitHub/YOLOSeries/data/pkl/coco_aspect_ratio.pkl'
+    aug_hyp['aspect_ratio_path'] = 'xxx/pkl/coco_aspect_ratio.pkl'
     aug_hyp['batch_size'] = 5
     aug_hyp['drop_last'] = True
-    aug_hyp['current_work_dir'] = '/home/uih/JYL/Projects/Others/GitHub/YOLOSeries'
+    aug_hyp['current_work_dir'] = 'xxx/YOLOSeries'
     sampler = AspectRatioBatchSampler(dataset, aug_hyp)
     print(f"- Use time {time() - _start:.3f}s")
     loader = DataLoader(dataset, collate_fn=collector, batch_sampler=sampler)

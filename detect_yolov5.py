@@ -345,17 +345,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', default=None, type=str, dest='output_dir')
     args = parser.parse_args()
 
-    # ======================================================================
-    # class Args:
-    #     cfg = "/home/uih/JYL/Programs/YOLO/config/detection_yolov5.yaml"
-    #     name_path = '/home/uih/JYL/Dataset/VOC/val2012/names.txt'
-    #     test_img_dir = "/home/uih/JYL/Dataset/VOC/val2012/image"
-    #     pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolov5_small_for_voc.pth"
-    # args = Args()
-    # ======================================================================
-
     hyp = config_.get_config(args.cfg, args)
-    # assert hyp['model_type'] in hyp['pretrained_model_path'], f"hyp['model_type']: {hyp['model_type']}, but hyp['pretrained_model_path']: {hyp['pretrained_model_path']}"
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
     det = Detection(anchors, hyp, False)
 

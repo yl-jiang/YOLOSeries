@@ -3,6 +3,7 @@ import math
 
 import cv2
 import numpy as np
+from functools import reduce
 
 from utils import xywh2xyxy
 
@@ -71,7 +72,7 @@ class CV2Transform:
 
 
     def randomFlip(self):
-        # 垂直翻转/y坐标不变，x坐标变化
+        # 垂直翻转/y坐标不变,x坐标变化
         if random.random() < self.aug_threshold:
             img = np.fliplr(self.img).copy()
             h, w = self.img.shape[:2]
@@ -82,10 +83,10 @@ class CV2Transform:
             self.img = img
 
     def randomScale(self):
-        # 固定住高度，以0.8-1.2伸缩宽度，做图像形变
+        # 固定住高度,以0.8-1.2伸缩宽度,做图像形变
         if random.random() < self.aug_threshold:
             scale = random.uniform(0.8, 1.2)
-            # cv2.resize(img, shape)/其中shape->[宽，高]
+            # cv2.resize(img, shape)/其中shape->[宽,高]
             self.img = cv2.resize(self.img, None, fx=scale, fy=1)
             self.bboxes[:, [0, 2]] *= scale
 
@@ -132,7 +133,7 @@ class CV2Transform:
         if random.random() < self.aug_threshold:
             hsv = cv2.cvtColor(self.img, cv2.COLOR_BGR2HSV)
             hsv_org = hsv.copy()
-            # hsv分别表示：色调（H），饱和度（S），明度（V）
+            # hsv分别表示：色调(H),饱和度(S),明度(V)
             h, s, v = cv2.split(hsv)
             adjust = random.choice([0.5, 1.5])
             v = v.astype(np.float32)
@@ -173,7 +174,7 @@ class CV2Transform:
             mask2 = (center_shift_y > 0) & (center_shift_y < h)
             mask = np.logical_and(mask1, mask2)
             boxes_in = self.bboxes[mask]
-            # 如果做完平移后bbox的中心点被移到了图像外，就撤销平移操作
+            # 如果做完平移后bbox的中心点被移到了图像外,就撤销平移操作
             if len(boxes_in) > 0:
                 # bbox平移
                 boxes_in[:, [1, 3]] = np.clip(boxes_in[:, [1, 3]] + shift_y, a_min=min_y, a_max=max_y)
@@ -187,7 +188,7 @@ class CV2Transform:
         # 随机裁剪
         if random.random() < self.aug_threshold:
             height, width, c = self.img.shape
-            # x,y代表裁剪后的图像的中心坐标，h,w表示裁剪后的图像的高，宽
+            # x,y代表裁剪后的图像的中心坐标,h,w表示裁剪后的图像的高,宽
             h = random.uniform(0.6 * height, height)
             w = random.uniform(0.6 * width, width)
             x = random.uniform(width / 4, 3 * width / 4)
@@ -264,7 +265,7 @@ def RandomBrightness(img, thresh):
     # 图片亮度
     if random.random() < thresh:
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        # hsv分别表示：色调（H），饱和度（S），明度（V）
+        # hsv分别表示：色调(H),饱和度(S),明度(V)
         h, s, v = cv2.split(hsv)
         adjust = random.choice([0.5, 1.5])
         v = v.astype(np.float32)
@@ -278,7 +279,7 @@ def RandomBrightness(img, thresh):
 
 def RandomHSV(img, thresh, hgain=0.5, sgain=0.5, vgain=0.5):
     """
-    将输入的RGB模态的image转换为HSV模态，并随机从对比度，饱和度以及亮度三个维度进行变换。
+    将输入的RGB模态的image转换为HSV模态,并随机从对比度,饱和度以及亮度三个维度进行变换。
 
     :param img: ndarray / RGB
     :param thresh:
@@ -356,7 +357,7 @@ def randomShift(self):
         mask2 = (center_shift_y > 0) & (center_shift_y < h)
         mask = np.logical_and(mask1, mask2)
         boxes_in = self.bboxes[mask]
-        # 如果做完平移后bbox的中心点被移到了图像外，就撤销平移操作
+        # 如果做完平移后bbox的中心点被移到了图像外,就撤销平移操作
         if len(boxes_in) > 0:
             # bbox平移
             boxes_in[:, [1, 3]] = np.clip(boxes_in[:, [1, 3]] + shift_y, a_min=min_y, a_max=max_y)
@@ -377,10 +378,10 @@ def RandomScale(img, bboxes, thresh):
     """
     assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
 
-    # 固定住高度，以0.8-1.2伸缩宽度，做图像形变
+    # 固定住高度,以0.8-1.2伸缩宽度,做图像形变
     if random.random() < thresh:
         scale = random.uniform(0.8, 1.2)
-        # cv2.resize(img, shape)/其中shape->[宽，高]
+        # cv2.resize(img, shape)/其中shape->[宽,高]
         img_out = cv2.resize(img, None, fx=scale, fy=1)
         bboxes_out = np.zeros_like(bboxes)
         bboxes_out[:, [0, 2]] *= bboxes[:, [0, 2]] * scale
@@ -392,7 +393,7 @@ def randomCrop(self):
     # 随机裁剪
     if random.random() < self.aug_threshold:
         height, width, c = self.img.shape
-        # x,y代表裁剪后的图像的中心坐标，h,w表示裁剪后的图像的高，宽
+        # x,y代表裁剪后的图像的中心坐标,h,w表示裁剪后的图像的高,宽
         h = random.uniform(0.6 * height, height)
         w = random.uniform(0.6 * width, width)
         x = random.uniform(width / 4, 3 * width / 4)
@@ -436,7 +437,7 @@ def randomCrop(self):
 
 def valid_bbox(bboxes, box_type='xyxy', wh_thr=2, ar_thr=10, area_thr=16):
     """
-    根据bbox的width阈值，height阈值，width-height ratio阈值以及area阈值，过滤掉不满足限制条件的bbox。
+    根据bbox的width阈值,height阈值,width-height ratio阈值以及area阈值,过滤掉不满足限制条件的bbox。
 
     :param wh_thr:
     :param area_thr: area threshold
@@ -629,7 +630,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
         box[:, [1, 3]] -= ymin_i
 
         # ===============================================================
-        # 对target进行过滤，剔除掉经过裁切后与原bbox重合面积过小的bbox
+        # 对target进行过滤,剔除掉经过裁切后与原bbox重合面积过小的bbox
         box[:, [0, 2]] += xmin_o  # x
         box[:, [1, 3]] += ymin_o  # y
         org_box_area = np.prod(bboxes[i][:, 2:4] - bboxes[i][:, 0:2], axis=1) + 1e-16
@@ -656,7 +657,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
 
 def mixup(img1, bbox1, label1, img2, bbox2, label2):
     """
-    使用不同的透明度混合两张图像（保持两张图像的target box）。
+    使用不同的透明度混合两张图像(保持两张图像的target box)。
 
     :param bbox2:
     :param bbox1:
@@ -693,7 +694,7 @@ def RandomFlipLR(img, bboxes, thresh):
     """
     assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
 
-    # 水平翻转/y坐标不变，x坐标变化
+    # 水平翻转/y坐标不变,x坐标变化
     if random.random() < thresh:
         img_out = np.fliplr(img).copy()
         _, w = img.shape[:2]
@@ -716,7 +717,7 @@ def RandomFlipUD(img, bboxes, thresh):
     """
     assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
 
-    # 竖直翻转/x坐标不变，y坐标变化
+    # 竖直翻转/x坐标不变,y坐标变化
     if random.random() < thresh:
         img_out = np.flipud(img).copy()
         h, _ = img.shape[:2]
@@ -729,19 +730,21 @@ def RandomFlipUD(img, bboxes, thresh):
     return img, bboxes
 
 
-def cutout(img, bbox, cls, cutout_iou_thr=0.3, skip_or_remove=False):
+def cutout(img, bbox, cls, cutout_iou_thr=0.3):
     """
-    在图像中挖孔，并使用随机颜色填充。
+    在图像中挖孔,并使用随机颜色填充。
 
     :param img: ndarray / (h, w, 3)
     :param bbox: ndarray / (N, 4) / [xmin, ymin, xmax, ymax]
     :param cls: ndarray / (N,) / [1, 2, 3, ...]
     :param cutout_p: 使用cutout的概率
-    :param cutout_iou_thr: cutout部分图像与target的所有bbox计算iou，iou值小于等于该阈值的mask视为有效的mask（剔除与target重合过多的mask）
-    :param skip_or_remove: 当cutout部分与target的某个bbox重合面积过大时，是否选择删除相应的target bbox还是跳过这一次的cutout操作 / =True, 删除; =False, 跳过
+    :param cutout_iou_thr: cutout部分图像与target的所有bbox计算iou,iou值小于等于该阈值的mask视为有效的mask(剔除与target重合过多的mask)
     """
     scales = [0.5] * 1 + [0.25] * 2 + [0.125] * 4 + [0.0625] * 8 + [0.03125] * 16  # image size fraction
     h, w, _ = img.shape
+
+    img_cut, bboxes_cut, classes_cut = img.copy(), bbox.copy(), cls.copy()
+    valid_ann_idx = []
 
     for s in scales:
         mask_h = np.random.randint(1, int(h * s))
@@ -770,25 +773,29 @@ def cutout(img, bbox, cls, cutout_iou_thr=0.3, skip_or_remove=False):
         ints_area = np.clip(ints_w * ints_h, 0., None)
         iou = ints_area / (mask_area + bbox_area - ints_area + 1e-16)  # (N,)
         valid_idx = iou <= cutout_iou_thr
+        valid_ann_idx.append(np.nonzero(valid_idx))
+        illegal_idx = iou > cutout_iou_thr
 
-        if skip_or_remove:  # 如果cutout部分图像与target中的某个bbox重合面积过大，则删除相应的target bbox(舍弃target)
+        if np.all(illegal_idx):  # 如果cutout部分图像与target的某个bbox重合面积过大,则跳过这一次的cutout操作(舍弃mask)
+            continue
+        else:  # 如果cutout部分图像与target中的某个bbox重合面积过大,则删除相应的target bbox(舍弃target)
             mask_color = [np.random.randint(69, 200) for _ in range(3)]
-            img[mask_ymin:mask_ymax, mask_xmin:mask_xmax] = mask_color
-            if (len(bbox) > 0):
-                bbox = bbox[valid_idx]
-                cls = np.array(cls)[valid_idx]
-        else:  # 如果cutout部分图像与target的某个bbox重合面积过大，则跳过这一次的cutout操作(舍弃mask)
-            if np.any(valid_idx):
-                continue
-                
-    return img, bbox, cls
+            img_cut[mask_ymin:mask_ymax, mask_xmin:mask_xmax] = mask_color
+
+    valid_idx = reduce(np.intersect1d, valid_ann_idx)
+    if 0 < len(valid_idx): 
+        bboxes_cut = bboxes_cut[valid_idx]
+        classes_cut = np.array(classes_cut)[valid_idx]
+        return img_cut, bboxes_cut, classes_cut
+    else:
+        return img, bbox, cls
 
 
 def scale_jitting(img, bbox, label, dst_size=None):
     """
     :param: bbox: (xmin, ymin, xmax, ymax)
     :param: dst_size: (h, w)
-    将输入的image进行随机scale的缩放后，再从缩放后的image中裁剪固定尺寸的image
+    将输入的image进行随机scale的缩放后,再从缩放后的image中裁剪固定尺寸的image
     """
     FLIP_LR = np.random.rand() > 0.5
 
@@ -799,7 +806,7 @@ def scale_jitting(img, bbox, label, dst_size=None):
 
     # jit_scale = max(img.shape[0]/dst_size[0], img.shape[1]/dst_size[1], dst_size[0]/img.shape[0], dst_size[1]/img.shape[1])
     scale = min(img.shape[0]/dst_size[0], img.shape[1]/dst_size[1])
-    # 确保输入图片的尺寸大于dst_size，如果不满足则放大输入的image
+    # 确保输入图片的尺寸大于dst_size,如果不满足则放大输入的image
     if scale < 1.:
         jit_scale = max(dst_size[0]/img.shape[0], dst_size[1]/img.shape[1]) + np.random.uniform(0.5, 1.5)
     else:

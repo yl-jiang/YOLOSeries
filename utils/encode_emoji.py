@@ -59,12 +59,12 @@ VOC_LABEL_NAMES = ('aeroplane', 'bicycle', 'bird', 'boat', 'bottle',
 d = {}
 for name, emoji_name in zip(COCO_BBOX_LABEL_NAMES, coco_emoji_coco_name):
     d[name] = f":{emoji_name}:"
-pickle.dump(d, open("/home/uih/JYL/Programs/YOLO/result/pkl/coco_emoji_names.pkl", 'wb'))
+pickle.dump(d, open("./result/pkl/coco_emoji_names.pkl", 'wb'))
 
 d = {}
 for name, emoji_name in zip(VOC_LABEL_NAMES, voc_emoji_name):
     d[name] = f":{emoji_name}:"
-pickle.dump(d, open("/home/uih/JYL/Programs/YOLO/result/pkl/voc_emoji_names.pkl", 'wb'))
+pickle.dump(d, open("./result/pkl/voc_emoji_names.pkl", 'wb'))
 
 print(emoji.demojize("👔"))
 

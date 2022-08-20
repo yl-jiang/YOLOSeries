@@ -531,20 +531,19 @@ def test():
               "data_aug_cutout_iou_thr": 0.3, 
     }
 
-    dataset = YoloDataset('/home/uih/JYL/Dataset/COCO2017/train/image/',
-                          "/home/uih/JYL/Dataset/COCO2017/train/label/",
-                          '/home/uih/JYL/Dataset/COCO2017/train/names.txt',
+    dataset = YoloDataset('xxx/Dataset/COCO2017/train/image/',
+                          "xxx/Dataset/COCO2017/train/label/",
+                          'xxx/Dataset/COCO2017/train/names.txt',
                           [448, 448], aug_hyp, 0)
     collector = partial(fixed_imgsize_collector, dst_size=[448, 448])
     batch_size = 5
     print(f"Build Aspect Ratio BatchSampler!")
     _start = time()
 
-    # ar_list = pickle.load(open("/home/uih/JYL/Programs/YOLO/dataset/pkl/coco_aspect_ratio.pkl", 'rb'))
-    aug_hyp['aspect_ratio_path'] = '/home/uih/JYL/Programs/YOLO/dataset/pkl/coco_aspect_ratio.pkl'
+    aug_hyp['aspect_ratio_path'] = 'xxx/pkl/coco_aspect_ratio.pkl'
     aug_hyp['batch_size'] = 5
     aug_hyp['drop_last'] = True
-    aug_hyp['current_work_dir'] = '/home/uih/JYL/Programs/YOLO/'
+    aug_hyp['current_work_dir'] = 'xxx/YOLO/'
     sampler = AspectRatioBatchSampler(dataset, aug_hyp)
     print(f"- Use time {time() - _start:.3f}s")
     loader = DataLoader(dataset, collate_fn=collector, batch_sampler=sampler)

@@ -99,7 +99,7 @@ class COCOGenerator(ABC):
 if __name__ == "__main__":
     import shutil
 
-    coco = COCOGenerator("/home/uih/JYL/Dataset/COCO2017/", "train2017", False)
+    coco = COCOGenerator("xxx/Dataset/COCO2017/", "train2017", False)
     for i in tqdm(range(len(coco)), total=len(coco)):
         ann = coco.load_annotations(i)
         img_id = coco.img_ids[i]
@@ -107,12 +107,12 @@ if __name__ == "__main__":
         cls_ = ann['classes']
         img_src = coco.get_img_path(i)
         assert Path(img_src).exists()
-        img_dst = Path("/home/uih/JYL/Dataset/COCO2017/image/") / f"{img_id}.jpg"
+        img_dst = Path("xxx/Dataset/COCO2017/image/") / f"{img_id}.jpg"
         shutil.copy(str(img_src), str(img_dst))
-        with open("/home/uih/JYL/Dataset/COCO2017/label/" + f"{img_id}.txt", 'w') as f:
+        with open("xxx/Dataset/COCO2017/label/" + f"{img_id}.txt", 'w') as f:
             for c, b in zip(cls_, box):
                 f.write(f"{c} {b[0]} {b[1]} {b[2]} {b[3]}\n")
 
-    with open("/home/uih/JYL/Dataset/COCO2017/train/names.txt", 'w') as f:
+    with open("xxx/Dataset/COCO2017/train/names.txt", 'w') as f:
         for k, v in coco.class2label.items():
             f.write(f"{k} {v}\n")

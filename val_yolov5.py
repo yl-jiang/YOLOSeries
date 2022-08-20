@@ -369,16 +369,6 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=8, dest='name_path', type=str)
     args = parser.parse_args()
     
-    # # ======================================================================
-    # class Args:
-    #     cfg = "/home/uih/JYL/Programs/YOLO/config/validation.yaml"
-    #     val_lab_dir = '/home/uih/JYL/Dataset/VOC/val2012/label'
-    #     val_img_dir = '/home/uih/JYL/Dataset/VOC/val2012/image/'
-    #     name_path = '/home/uih/JYL/Dataset/VOC/val2012/names.txt'
-    #     pretrained_model_path = "/home/uih/JYL/Programs/YOLO_ckpts/yolov5_small_for_voc.pth"
-    # args = Args()
-    # # ======================================================================
-
     hyp = config_.get_config(args.cfg, args)
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
     val = Validation(anchors, hyp)
