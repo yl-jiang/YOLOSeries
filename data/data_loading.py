@@ -4,6 +4,7 @@
 
 import os
 import random
+from tkinter.messagebox import NO
 import uuid
 
 import numpy as np
@@ -12,11 +13,11 @@ import torch
 from torch.utils.data.dataloader import DataLoader as torchDataLoader
 from torch.utils.data.dataloader import default_collate
 
-# from .samplers import YoloBatchSampler
+from .samplers import YOLOBatchSampler
 
+__all__ = ["YOLODataLoader", "worker_init_reset_seed"]
 
-
-class YOLOXDataLoader(torchDataLoader):
+class YOLODataLoader(torchDataLoader):
     """
     Lightnet dataloader that enables on the fly resizing of the images.
     See :class:`torch.utils.data.DataLoader` for more information on the arguments.
@@ -29,6 +30,7 @@ class YOLOXDataLoader(torchDataLoader):
         self.__initialized = False
         shuffle = False
         batch_sampler = None
+        sampler = None
         if len(args) > 5:
             shuffle = args[2]
             sampler = args[3]
@@ -57,23 +59,15 @@ class YOLOXDataLoader(torchDataLoader):
             if sampler is None:
                 if shuffle:
                     sampler = torch.utils.data.sampler.RandomSampler(self.dataset)
-                    # sampler = torch.utils.data.DistributedSampler(self.dataset)
                 else:
                     sampler = torch.utils.data.sampler.SequentialSampler(self.dataset)
-            batch_sampler = YoloBatchSampler(
-                sampler,
-                self.batch_size,
-                self.drop_last,
-                input_dimension=self.dataset.input_dim,
-            )
-            # batch_sampler = IterationBasedBatchSampler(batch_sampler, num_iterations =
-
-        self.batch_sampler = batch_sampler
-
+            batch_sampler = YOLOBatchSampler(sampler, self.batch_size, self.drop_last)
+            self.batch_sampler = batch_sampler
         self.__initialized = True
+        
 
     def close_mosaic(self):
-        self.batch_sampler.mosaic = False
+        self.batch_sampler.do_mosaic = False
 
 
 def list_collate(batch):

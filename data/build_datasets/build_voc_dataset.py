@@ -88,4 +88,4 @@ def parse_xmls(voc_data_dir, img_save_dir, lab_save_dir):
 
 if __name__ == '__main__':
     # test all data parser
-    parse_xmls("xxx/Dataset/VOC/VOCtest2012/VOC2012/", "xxx/Dataset/VOC/val2012/image", "xxx/Dataset/VOC/val2012/label")
+    parse_xmls("/Dataset/VOC/VOCtest2012/VOC2012/", "/Dataset/VOC/val2012/image", "/Dataset/VOC/val2012/label")

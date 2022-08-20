@@ -4,6 +4,7 @@
 
 import bisect
 from functools import wraps
+from numpy import isin
 
 from torch.utils.data.dataset import ConcatDataset as torchConcatDataset
 from torch.utils.data.dataset import Dataset as torchDataset
@@ -65,10 +66,12 @@ class Dataset(torchDataset):
         input_dimension (tuple): (width,height) tuple with default dimensions of the network
     """
 
-    def __init__(self, input_dimension, mosaic=True):
+    def __init__(self, input_dimension, do_mosaic=True):
         super().__init__()
+        if isinstance(input_dimension, int):
+            input_dimension = [input_dimension, input_dimension]
         self.__input_dim = input_dimension[:2]
-        self.enable_mosaic = mosaic
+        self.enable_mosaic = do_mosaic
 
     @property
     def input_dim(self):

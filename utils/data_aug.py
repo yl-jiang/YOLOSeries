@@ -730,7 +730,7 @@ def RandomFlipUD(img, bboxes, thresh):
     return img, bboxes
 
 
-def cutout(img, bbox, cls, cutout_iou_thr=0.3):
+def cutout(img, bbox, cls, cutout_iou_thr=0.7):
     """
     在图像中挖孔,并使用随机颜色填充。
 

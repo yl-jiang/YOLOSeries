@@ -1,11 +1,11 @@
+from cProfile import label
 import os
 import sys
 import random
-import pickle
+from unicodedata import name
 import warnings
 from time import time
 from pathlib import Path
-from functools import partial
 
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
@@ -19,12 +19,11 @@ from tqdm import tqdm
 from loguru import logger
 import torch.backends.cudnn as cudnn
 from multiprocessing.pool import ThreadPool
-from torch.utils.data import Dataset, DataLoader
 
-from data import Generator
+from .base_generator import Generator
 from utils import maybe_mkdir, clear_dir
-from utils import fixed_imgsize_collector, AspectRatioBatchSampler
 from utils import valid_bbox
+from .datasets_wrapper import Dataset
 NUM_THREADS = min(8, os.cpu_count())
 
 
@@ -36,37 +35,24 @@ def init_random_seed(seed=7):
     cudnn.benchmark = False
 
 
-class YoloDataset(Dataset, Generator):
+class YOLODataset(Dataset, Generator):
 
-    def __init__(self, img_dir, lab_dir, name_path, input_img_size, cache_num=0) -> None:
+    def __init__(self, img_dir, lab_dir, name_path, input_dim, cache_num=0, preproc=None) -> None:
         """
         Args:
             img_dir: 该文件夹下只存放图像文件
             lab_dir: 该文件夹下只存放label文件(.txt), 文件中的每一行存放一个bbox以及对应的class(例如: 0 134 256 448 560)
         """
-        super().__init__()
+        super().__init__(input_dimension=input_dim)
         
         self.img_dir = Path(img_dir)
-        self.lab_dir = Path(lab_dir) if lab_dir is not None else lab_dir
-        print(f"Checking the consistency of dataset!")
-        _start = time()
+        self.lab_dir = Path(lab_dir)
+        self.preproc = preproc
         if self.lab_dir is not None:
             self._check_dataset()
 
-        print(f"- Use time {time() - _start:.3f}s")
-
         self.img_files = [_ for _ in self.img_dir.iterdir() if _.is_file()]
-
-        print(f"Parser names!")
-        _start = time()
         self.classes, self.labels, self.cls2lab, self.lab2cls = self.parse_names(name_path)
-        print(f"- Use time {time() - _start:.3f}s")
-
-        self.input_img_size = input_img_size
-
-        if isinstance(input_img_size, (list, tuple)):
-            self.input_img_size = np.array(input_img_size)
-        self.input_img_size = input_img_size
 
         # 在内存中事先缓存一部分数据，方便快速读取（尽量榨干机器的全部性能），这个值根据具体的设备需要手动调整
         self.cache_num_in_ram = min(cache_num, len(self))  # 缓存到内存（RAM）中的数据量大小（正比于当前机器RAM的大小）
@@ -75,7 +61,7 @@ class YoloDataset(Dataset, Generator):
         self.cached_box = [None] * self.cache_num_in_ram
         self.cached_img = [None] * self.cache_num_in_ram
 
-        self.cache_dir = "./dataset/cache/"
+        self.cache_dir = "./data/cache/"
         if self.cache_num_in_ram > 0:
             self.load()
 
@@ -95,6 +81,8 @@ class YoloDataset(Dataset, Generator):
         return cls(img_dir, lab_dir)
 
     def parse_names(self, name_path):
+        print(f"Parser names.txt: {name_path}")
+        _start = time()
         assert Path(name_path).exists(), f"{name_path} is not exists!"
         classes, labels = [], []
         with open(name_path, 'r') as f:
@@ -104,6 +92,7 @@ class YoloDataset(Dataset, Generator):
                 labels.append(" ".join(contents[1:])) # 有些label的名称包含多个单词
         cls2lab = dict([(c, l) for c, l in zip(classes, labels)])
         lab2cls = dict([(l, c) for c, l in zip(classes, labels)])
+        print(f"- Use time {time() - _start:.3f}s")
         return classes, labels, cls2lab, lab2cls
 
     def size(self):
@@ -139,6 +128,8 @@ class YoloDataset(Dataset, Generator):
         return len(self.img_files)
 
     def _check_dataset(self):
+        print(f"Checking the consistency of dataset!")
+        _start = time()
         img_filenames = set([_.stem for _ in self.img_dir.iterdir()])
         lab_filenames = set([_.stem for _ in self.lab_dir.iterdir()])
         assert len(lab_filenames) == len(img_filenames), f"there are {len(lab_filenames)} label files, but found {len(img_filenames)} image files!"
@@ -148,6 +139,7 @@ class YoloDataset(Dataset, Generator):
                 img_filenames.add(p.stem)
 
         assert len(img_filenames) == len(lab_filenames)
+        print(f"- Use time {time() - _start:.3f}s")
 
     def load_img(self, img_index):
         assert 0 <= img_index < self.size(), f"img_index must be in [0, {self.size}), but got {img_index}"
@@ -188,7 +180,7 @@ class YoloDataset(Dataset, Generator):
                 ann = ann[None, :]
             assert ann.ndim == 2 and ann.shape[1] == 5, f"annotation's shape must same as (N, 5) that represent 'class, xmin, ymin, xmax, ymax' for each element, but got {ann.shape}\n {ann}"
             # 过滤掉一些不合格的bbox
-            whs = ann[:, [2, 3]] - ann[:, [0, 1]]
+            whs = ann[:, [3, 4]] - ann[:, [1, 2]]
             mask = np.all(whs >= 1, axis=1)
             ann = ann[mask]
         else:
@@ -316,7 +308,7 @@ class YoloDataset(Dataset, Generator):
                 # pt2: 右下角
                 # color: color
                 # thickness: 表示矩形边框的厚度，如果为负值，如 CV_FILLED，则表示填充整个矩形
-                img = cv2.rectangle(img, pt1=lt, pt2=rb, color=[100, 149, 237], thickness=2)
+                img = cv2.rectangle(img, pt1=lt, pt2=rb, color=[200, 0, 0], thickness=1)
                 # text:显示的文本
                 # org文本框左下角坐标（只接受元素为int的元组）
                 # fontFace：字体类型
@@ -325,14 +317,16 @@ class YoloDataset(Dataset, Generator):
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 caption = names[i]
                 img = cv2.putText(img,
-                                text=caption,
-                                org=bl,
-                                fontFace=font, fontScale=0.75,
-                                color=[135, 206, 235],
-                                thickness=1)
-        cv2.imwrite(str(save_path), img[:, :, ::-1])
+                                  text=caption,
+                                  org=lt,
+                                  fontFace=font, fontScale=0.35,
+                                  color=[200, 0, 0],
+                                  thickness=1, 
+                                  lineType=cv2.LINE_AA)
+        cv2.imwrite(str(save_path), np.ascontiguousarray(img[:, :, ::-1]))
 
     @logger.catch
+    @Dataset.mosaic_getitem
     def __getitem__(self, ix):
         """
         Args:
@@ -342,13 +336,7 @@ class YoloDataset(Dataset, Generator):
             ann: {'bboxes': [[xmin, ymin, xmax, ymax], [...]], classes: [cls1, cls2, ...]}
             img_name: string
         """
-        # only detection image
-        if self.lab_dir is None: 
-            # 单纯的的测试模式是不需要label的，这里创建一个临时的label是为了复用fixed_imgsize_collector函数
-            dummy_ann = {'bboxes': np.zeros(shape=(1,4)), "classes": np.zeros((1))} 
-            return self.load_img(ix), dummy_ann, str(0)
 
-        # traing or validation
         img, ann = self.load_img_and_ann(ix)
 
         if len(ann['classes']) > 0:
@@ -360,111 +348,10 @@ class YoloDataset(Dataset, Generator):
         while np.sum(ann['bboxes']) == 0: 
             i = random.randint(0, len(self)-1)
             img, ann = self.load_img_and_ann(i)
+        
+        if self.preproc is not None:
+            img, bboxes, classes = self.preproc(img, ann['bboxes'], ann['classes'])
+            ann = {'bboxes': bboxes, 'classes': classes}
 
         return img, ann, str(Path(self.get_img_path(ix)).stem)
         
-
-def YoloDataloader(hyp, is_training=True):
-    """
-    pytorch dataloader for cocodataset.
-    :param kwargs:
-    :return:
-    """
-    collector_fn = partial(fixed_imgsize_collector, dst_size=hyp['input_img_size'])
-
-    if is_training:
-        
-        assert Path(hyp['train_img_dir']).exists() and Path(hyp['train_img_dir']).is_dir()
-        assert Path(hyp['train_lab_dir']).exists() and Path(hyp['train_lab_dir']).is_dir()
-        dataset = YoloDataset(hyp['train_img_dir'], hyp['train_lab_dir'], hyp['name_path'], hyp['input_img_size'], hyp['cache_num'])
-        if hyp.get('aspect_ratio', False):  # 是否采用按照数据集中图片长宽比从小到大的顺序sample数据
-            print(f"Build Aspect Ratio BatchSampler!")
-            _start = time()
-            batch_sampler = AspectRatioBatchSampler(dataset, hyp)
-            print(f"- Use time {time() - _start:.3f}s")
-            # 使用自定义的batch_sampler时，不要给DataLoader中的batch_size,shuffle赋值，因为这些参数会在自定义的batch_sampler中已经定义了
-            dataloader = DataLoader(dataset,
-                                    batch_sampler=batch_sampler,
-                                    collate_fn=collector_fn,
-                                    num_workers=hyp['num_workers'],
-                                    pin_memory=hyp['pin_memory'], 
-                                    )
-        else:
-            # 使用自定义的batch_sampler时，不要给DataLoader中的batch_size,shuffle赋值，因为这些参数会在自定义的batch_sampler中已经定义了
-            dataloader = DataLoader(dataset,
-                                    collate_fn=collector_fn,
-                                    num_workers=hyp['num_workers'],
-                                    pin_memory=hyp['pin_memory'], 
-                                    batch_size=hyp['batch_size']
-                                    )
-    elif not is_training and hyp.get('val_lab_dir', None) is not None:  # validation for compute mAP
-        assert Path(hyp['val_img_dir']).exists() and Path(hyp['val_img_dir']).is_dir()
-        assert Path(hyp['val_lab_dir']).exists() and Path(hyp['val_lab_dir']).is_dir()
-        dataset = YoloDataset(hyp['val_img_dir'], hyp['val_lab_dir'], hyp['name_path'], hyp['input_img_size'], None)
-        dataloader = DataLoader(dataset, batch_size=hyp['batch_size'], 
-                                shuffle=False, drop_last=False, 
-                                num_workers=hyp['num_workers'], 
-                                pin_memory=hyp['pin_memory'], 
-                                collate_fn=collector_fn)
-    else:  # just detection
-        assert Path(hyp['test_img_dir']).exists() and Path(hyp['test_img_dir']).is_dir()
-        dataset = YoloDataset(hyp['test_img_dir'], None, hyp['name_path'], hyp['input_img_size'], None)
-        dataloader = DataLoader(dataset, batch_size=hyp['batch_size'],
-                                shuffle=False, drop_last=False,
-                                num_workers=hyp['num_workers'],
-                                pin_memory=hyp['pin_memory'],
-                                collate_fn=collector_fn)
-    
-    
-    return dataloader, dataset
-
-
-def test():
-    init_random_seed()
-
-    dataset = YoloDataset('xxx/Dataset/Others/COCO2017/train/image/',
-                          "xxx/Dataset/Others/COCO2017/train/label/",
-                          'xxx/Dataset/Others/COCO2017/train/names.txt',
-                          [448, 448], 0)
-    collector = partial(fixed_imgsize_collector, dst_size=[448, 448])
-    batch_size = 5
-    print(f"Build Aspect Ratio BatchSampler!")
-    _start = time()
-
-    aug_hyp = {}
-    aug_hyp['aspect_ratio_path'] = 'xxx/pkl/coco_aspect_ratio.pkl'
-    aug_hyp['batch_size'] = 5
-    aug_hyp['drop_last'] = True
-    aug_hyp['current_work_dir'] = 'xxx/YOLOSeries'
-    sampler = AspectRatioBatchSampler(dataset, aug_hyp)
-    print(f"- Use time {time() - _start:.3f}s")
-    loader = DataLoader(dataset, collate_fn=collector, batch_sampler=sampler)
-    with tqdm(total=len(loader), ncols=50) as t:
-        for b, x in enumerate(loader):
-            for i in range(batch_size):
-                ann = x['ann'][i]
-                title = x['img_id'][i]
-                img = x['img'][i]
-                img = img.permute(1, 2, 0)
-                img = np.clip(img * 255.0, 0.0, 255.0)
-                img_mdy = np.ascontiguousarray(img.numpy().astype('uint8'))
-                h, w, _ = img.shape
-                # 该笔数据中是否有object，ann[:, 4] == -1表示没有object
-                valid_index = torch.nonzero(ann[:, 4] >= 0, as_tuple=False).squeeze(dim=1)
-                # 如果该笔数据有object的话，就plot出来
-                if valid_index.numel() > 0:
-                    ann_mdy = {'bboxes': ann[valid_index][:, :4].numpy(),
-                               'classes': ann[valid_index][:, 4].numpy().astype('uint8')}
-                # 如果该笔数据中没有发现object，则打印出图片的路径
-                else:
-                    ann_mdy = {'bboxes': [], 'classes': []}
-                save_path = current_work_directionary / "result" / "tmp" / f"org_{b*batch_size+i}.png"
-                dataset.cv2_save_fig(img_mdy, ann_mdy['bboxes'], ann_mdy['classes'], str(save_path))
-                # print(f"{b*batch_size+i}\t{len(ann_mdy['bboxes'])}")
-            if b > 10:
-                break
-        t.update(batch_size)
-
-
-if __name__ == '__main__':
-    test()

@@ -5,6 +5,9 @@
 import torch
 
 
+__all__ = ["DataPrefetcher"]
+
+
 class DataPrefetcher:
     """
     DataPrefetcher is inspired by code of following file:
@@ -22,31 +25,38 @@ class DataPrefetcher:
 
     def preload(self):
         try:
-            a = input()
-            # 这里根据自己的dataset的__getitem__()函数的输出来定
-            self.next_input, self.next_target, _, _ = next(self.loader)
+            # 这里根据自己的dataset的__getitem__()函数的输出或者collect_fn函数来定
+            outdict = next(self.loader)
+            self.next_batch_img = outdict['img']
+            self.next_batch_ann = outdict['ann']
+            self.next_batch_img_id = outdict["img_id"]
+            self.next_batch_resize_info = outdict["resize_info"]
         except StopIteration:
-            self.next_input = None
-            self.next_target = None
+            self.next_batch_img = None
+            self.next_batch_ann = None
+            self.next_batch_img_id = None
+            self.next_batch_resize_info = None
             return
 
         with torch.cuda.stream(self.stream):
             self.input_cuda()
-            self.next_target = self.next_target.cuda(non_blocking=True)
+            self.next_batch_ann = self.next_batch_ann.cuda(non_blocking=True)
 
     def next(self):
         torch.cuda.current_stream().wait_stream(self.stream)
-        input = self.next_input
-        target = self.next_target
-        if input is not None:
-            self.record_stream(input)
-        if target is not None:
-            target.record_stream(torch.cuda.current_stream())
+        next_batch_img = self.next_batch_img
+        next_batch_ann = self.next_batch_ann
+        next_batch_img_id = self.next_batch_img_id
+        next_batch_resize_info = self.next_batch_resize_info
+        if next_batch_img is not None:
+            self.record_stream(next_batch_img)
+        if next_batch_ann is not None:
+            next_batch_ann.record_stream(torch.cuda.current_stream())
         self.preload()
-        return input, target
+        return {"img": next_batch_img, "ann": next_batch_ann, "img_id": next_batch_img_id, 'resize_info': next_batch_resize_info}
 
     def _input_cuda_for_image(self):
-        self.next_input = self.next_input.cuda(non_blocking=True)
+        self.next_batch_img = self.next_batch_img.cuda(non_blocking=True)
 
     @staticmethod
     def _record_stream_for_image(input):

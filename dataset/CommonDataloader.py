@@ -208,8 +208,8 @@ class YoloDataset(Dataset, Generator):
             if ann.ndim == 1 and len(ann) == 5:
                 ann = ann[None, :]
             assert ann.ndim == 2 and ann.shape[1] == 5, f"annotation's shape must same as (N, 5) that represent 'class, xmin, ymin, xmax, ymax' for each element, but got {ann.shape}\n {ann}"
-            # 过滤掉一些不合格的bbox
-            whs = ann[:, [2, 3]] - ann[:, [0, 1]]
+            # 过滤掉一些不合格的bbox / [cls, xmin, ymin, xmax, ymax]
+            whs = ann[:, [3, 4]] - ann[:, [1, 2]]
             mask = np.all(whs >= 1, axis=1)
             ann = ann[mask]
         else:
