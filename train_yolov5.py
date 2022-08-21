@@ -664,6 +664,7 @@ class Training:
 
 
 if __name__ == '__main__':
+    from utils import print_config
     config_ = Config()
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
@@ -692,6 +693,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     hyp = config_.get_config(args.cfg, args)
+    formated_config = print_config(hyp)
+    print(formated_config)
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
     train = Training(anchors, hyp)
     train.step()

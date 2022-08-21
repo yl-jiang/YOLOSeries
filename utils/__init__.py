@@ -71,6 +71,6 @@ from .data_aug import YOCO
 from .torch_tools import fixed_imgsize_collector
 from .torch_tools import AspectRatioBatchSampler
 
-from .logger import assemble_hyp
+from .logger import *
 
 from .anchor import GPUAnchor

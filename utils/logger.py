@@ -1,7 +1,11 @@
 import logging
+from tabulate import tabulate
+import pprint
 
 # __name__: 调用logger.py文件的那个脚本的名称
 logger = logging.getLogger(__name__)
+
+__all__ = ["print_config"]
 
 
 def assemble_hyp(hyp_dict):
@@ -23,6 +27,22 @@ def assemble_hyp(hyp_dict):
     print_str += '╘' + "═" * key_max_len + "╧" + '═' * val_max_len + "╛" + "\n"
     return str(print_str)
 
+
+def print_config(args):
+    table_header = ["keys", "values"]
+    if isinstance(args, dict):
+        exp_table = [
+            (str(k), pprint.pformat(v))
+            for k, v in args.items()
+            if not k.startswith("_")
+        ]
+    else:
+        exp_table = [
+            (str(k), pprint.pformat(v))
+            for k, v in vars(args).items()
+            if not k.startswith("_")
+        ]
+    return tabulate(exp_table, headers=table_header, tablefmt="fancy_grid")    
 
 if __name__ == "__main__":
     hyp = {"a": 'xxxxx', 'b': 1, 'cssssss': 'vvvvvvvvv', 'd': False}
