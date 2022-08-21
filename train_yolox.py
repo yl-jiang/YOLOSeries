@@ -675,6 +675,9 @@ if __name__ == '__main__':
     parser.add_argument('--init_lr', default=0.01, type=float, dest='init_lr', help='initialization learning rate')
     args = parser.parse_args()
 
+    from utils import print_config
     hyp = config_.get_config(args.cfg, args)
+    formated_config = print_config(hyp)
+    print(formated_config)
     train = Training(hyp)
     train.step()
