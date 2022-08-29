@@ -47,7 +47,7 @@ train_hyp:
   current_work_dir : null
   calculate_map: true
   calculate_map_every : 300
-  num_anchor : 9
+  num_anchors : 9
   resnet_layers : 
     - 3
     - 4

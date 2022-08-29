@@ -65,7 +65,7 @@ class Train:
         self.cls_meter, self.l1_meter, self.iou_meter, self.tot_meter = AverageValueMeter(), AverageValueMeter(), AverageValueMeter(), AverageValueMeter()
 
         # model, EMA, validater
-        self.model = RetinaNet(self.hyp['num_anchor'], self.hyp["num_class"], self.hyp["resnet_layers"], freeze_bn=self.hyp['freeze_bn'])
+        self.model = RetinaNet(self.hyp['num_anchors'], self.hyp["num_class"], self.hyp["resnet_layers"], freeze_bn=self.hyp['freeze_bn'])
         self.model = self.model.to(self.hyp['device'])
         self.ema_model = ExponentialMovingAverageModel(self.model)
         self.validate = RetinaNetEvaluater(self.ema_model.ema if self.hyp['do_ema'] else self.model, self.hyp)

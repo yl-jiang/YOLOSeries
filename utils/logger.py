@@ -5,7 +5,7 @@ import pprint
 # __name__: 调用logger.py文件的那个脚本的名称
 logger = logging.getLogger(__name__)
 
-__all__ = ["print_config"]
+__all__ = ["print_config", "assemble_hyp"]
 
 
 def assemble_hyp(hyp_dict):
