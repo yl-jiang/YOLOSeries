@@ -146,6 +146,12 @@ class YoloDataset(Dataset, Generator):
     def name_to_label(self, name):
         return self.lab2cls[name]
 
+    def img_path(self, img_index):
+        return self.img_files[img_index]
+
+    def img_aspect_ratio(self, img_index):
+        return self.aspect_ratio(img_index)
+
     def aspect_ratio(self, idx):
         """
 

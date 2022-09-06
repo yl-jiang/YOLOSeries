@@ -18,6 +18,10 @@ from .layer_tools import resnet50
 from .layer_tools import RetinaNetPyramidFeatures
 from .layer_tools import RetinaNetClassification
 from .layer_tools import RetinaNetRegression
+from .layer_tools import CSPCSPP
+from .layer_tools import RepConv
+from .layer_tools import ImplicitAdd
+from .layer_tools import ImplicitMul
 
 
 

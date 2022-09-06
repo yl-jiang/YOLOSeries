@@ -1,5 +1,5 @@
 import math
-import numpy as np
+
 import torch
 import torch.nn as nn
 
@@ -24,7 +24,7 @@ class Concat(nn.Module):
 
     def forward(self, x):
         assert isinstance(x, (list, tuple))
-        return torch.cat(x, dim=self.dim).contiguous()
+        return torch.cat(x, dim=self.dim)
 
 
 def autopad(kernel, padding):
@@ -36,14 +36,17 @@ def autopad(kernel, padding):
 
 class ConvBnAct(nn.Module):
 
-    def __init__(self, in_channel, out_channel, kernel, stride, padding=0, groups=1, bias=False, act=True, inplace=True):
+    def __init__(self, in_channel, out_channel, kernel, stride, padding=0, groups=1, bias=False, act=True):
         super(ConvBnAct, self).__init__()
         self.conv = nn.Conv2d(in_channel, out_channel, kernel, stride, padding=autopad(kernel, padding), groups=groups, bias=bias)
-        self.bn = nn.BatchNorm2d(out_channel, eps=1e-3, momentum=0.03)
-        self.act = nn.SiLU(inplace=inplace) if act else nn.Identity()
+        self.bn = nn.BatchNorm2d(out_channel)
+        self.act = nn.SiLU(inplace=True) if act else nn.Identity()
 
     def forward(self, x):
-        return self.act(self.bn(self.conv(x)))
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.act(x)
+        return x
 
     def forward_fuse(self, x):
         return self.act(self.conv(x))
@@ -198,8 +201,6 @@ class Focus(nn.Module):
         x = self.conv_bn_act(x)
         return x
 
-# region Spatial Pyramid Pooling and it's variants
-
 class SPP(nn.Module):
 
     def __init__(self, in_channel, out_channel, kernels=(5, 9, 13)):
@@ -241,161 +242,6 @@ class FastSPP(nn.Module):
         x4 = self.maxpool(x3)
         x5 = self.cba2(torch.cat((x, x2, x3, x4), dim=1))
         return x5
-
-class CSPCSPP(nn.Module):
-    def __init__(self, in_channel, out_channel, kernels=(5, 9, 13), inplace=True) -> None:
-        super(CSPCSPP, self).__init__()
-        mid_channel = in_channel // 2
-        self.cba1 = ConvBnAct(in_channel, mid_channel, 1, 1, 0, inplace=inplace)
-        self.cba2 = ConvBnAct(in_channel, mid_channel, 1, 1, 0, inplace=inplace)
-        self.cba3 = ConvBnAct(mid_channel, mid_channel, 3, 1, 1, inplace=inplace)
-        self.cba4 = ConvBnAct(mid_channel, mid_channel, 1, 1, 0, inplace=inplace)
-
-        self.maxpool = nn.ModuleList([nn.MaxPool2d(kernel_size=x, stride=1, padding=x//2) for x in kernels])
-        self.cba5 = ConvBnAct(mid_channel * 4, mid_channel, 1, 1, 0, inplace=inplace)
-        self.cba6 = ConvBnAct(mid_channel, mid_channel, 3, 1, 1, inplace=inplace)
-        self.cba7 = ConvBnAct(mid_channel * 2, out_channel, 1, 1, 0, inplace=inplace)
-    
-    def forward(self, x):
-        path_x1 = self.cba4(self.cba3(self.cba1(x)))
-        path_x1 = self.cba6(self.cba5(torch.cat([path_x1] + [m(path_x1) for m in self.maxpool], dim=1)))
-        path_x2 = self.cba2(x)
-        return self.cba7(torch.cat((path_x1, path_x2), dim=1))
-
-        
-# endregion
-
-# region RepVgg
-class RepConv(nn.Module):
-    # Represented convolution
-    # https://arxiv.org/abs/2101.03697
-
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=None, groups=1, act=True, deploy=False):
-        super(RepConv, self).__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.groups = groups
-
-        self.deploy = deploy
-        assert kernel_size == 3
-        assert autopad(kernel_size, padding) == 1
-
-        padding_11 = autopad(kernel_size, padding) - kernel_size // 2
-        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
-
-        if deploy:
-            self.rbr_reparam = nn.Conv2d(in_channels, out_channels, kernel_size, stride, autopad(kernel_size, padding), groups=groups, bias=True)
-        else:
-            self.rbr_identity = (nn.BatchNorm2d(num_features=in_channels, eps=1e-3, momentum=0.03) if in_channels == out_channels and stride == 1 else None)
-            self.rbr_dense = nn.Sequential(nn.Conv2d(in_channels, out_channels, kernel_size, stride, autopad(kernel_size, padding), groups=groups, bias=False), 
-                                           nn.BatchNorm2d(num_features=out_channels, eps=1e-3, momentum=0.03))
-            self.rbr_1x1 = nn.Sequential(nn.Conv2d(in_channels, out_channels, 1, stride, padding_11, groups=groups, bias=False), 
-                                         nn.BatchNorm2d(num_features=out_channels, eps=1e-3, momentum=0.03))
-
-    def forward(self, inputs):
-        if hasattr(self, "rbr_reparam"):
-            return self.act(self.rbr_reparam(inputs))
-
-        if self.rbr_identity is None:
-            id_out = 0
-        else:
-            id_out = self.rbr_identity(inputs)
-
-        return self.act(self.rbr_dense(inputs) + self.rbr_1x1(inputs) + id_out)
-    
-    def get_equivalent_kernel_bias(self):
-        kernel3x3, bias3x3 = self._fuse_bn_tensor(self.rbr_dense)
-        kernel1x1, bias1x1 = self._fuse_bn_tensor(self.rbr_1x1)
-        kernelid, biasid = self._fuse_bn_tensor(self.rbr_identity)
-        return (kernel3x3 + self._pad_1x1_to_3x3_tensor(kernel1x1) + kernelid, bias3x3 + bias1x1 + biasid)
-
-    def _pad_1x1_to_3x3_tensor(self, kernel1x1):
-        if kernel1x1 is None:
-            return 0
-        else:
-            return nn.functional.pad(kernel1x1, [1, 1, 1, 1])
-
-    def _fuse_bn_tensor(self, branch):
-        if branch is None:
-            return 0, 0
-        if isinstance(branch, nn.Sequential):
-            kernel = branch[0].weight
-            running_mean = branch[1].running_mean
-            running_var = branch[1].running_var
-            gamma = branch[1].weight
-            beta = branch[1].bias
-            eps = branch[1].eps
-        else:
-            assert isinstance(branch, nn.BatchNorm2d)
-            if not hasattr(self, "id_tensor"):
-                input_dim = self.in_channels // self.groups
-                kernel_value = np.zeros((self.in_channels, input_dim, 3, 3), dtype=np.float32)
-                for i in range(self.in_channels):
-                    kernel_value[i, i % input_dim, 1, 1] = 1
-                self.id_tensor = torch.from_numpy(kernel_value).to(branch.weight.device)
-            kernel = self.id_tensor
-            running_mean = branch.running_mean
-            running_var = branch.running_var
-            gamma = branch.weight
-            beta = branch.bias
-            eps = branch.eps
-        std = (running_var + eps).sqrt()
-        t = (gamma / std).reshape(-1, 1, 1, 1)
-        return kernel * t, beta - running_mean * gamma / std
-
-    def switch_to_deploy(self):
-        if hasattr(self, "rbr_reparam"):
-            return
-
-        kernel, bias = self.get_equivalent_kernel_bias()
-        self.rbr_reparam = nn.Conv2d(in_channels=self.rbr_dense[0].in_channels, 
-                                     out_channels=self.rbr_dense[0].out_channels, 
-                                     kernel_size=self.rbr_dense[0].kernel_size, 
-                                     padding=self.rbr_dense[0].padding, 
-                                     dilation=self.rbr_dense[0].dilation, 
-                                     groups=self.rbr_dense[0].groups, 
-                                     bias=True)
-        self.rbr_reparam.weight.data = kernel
-        self.rbr_reparam.bias.data = bias
-
-        for para in self.parameters():
-            para.detach_()
-
-        self.__delattr__("rbr_dense")
-        self.__delattr__("rbr_1x1")
-        if hasattr(self, "rbr_identity"):
-            self.__delattr__('rbr_identity')
-        if hasattr(self, 'id_tensor'):
-            self.__delattr__('id_tensor')
-        self.deploy = True
-
-
-
-
-# endregion
-
-# region YOLOR
-class ImplicitAdd(nn.Module):
-    def __init__(self, channel, mean=0., std=0.02) -> None:
-        super(ImplicitAdd, self).__init__()
-        self.params = nn.Parameter(torch.zeros(1, channel, 1, 1))
-        nn.init.normal_(self.params, mean, std)
-    
-    def forward(self, x):
-        return self.params + x
-
-
-class ImplicitMul(nn.Module):
-    def __init__(self, channel, mean=0., std=0.02) -> None:
-        super(ImplicitMul, self).__init__()
-        self.params = nn.Parameter(torch.ones(1, channel, 1, 1))
-        nn.init.normal_(self.params, mean, std)
-    
-    def forward(self, x):
-        return self.params * x
-
-# endregion
 
 
 class Upsample(nn.Module):
