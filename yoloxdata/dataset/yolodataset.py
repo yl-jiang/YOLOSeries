@@ -1,8 +1,6 @@
-from cProfile import label
 import os
 import sys
 import random
-from unicodedata import name
 import warnings
 from time import time
 from pathlib import Path
@@ -102,6 +100,9 @@ class YOLODataset(Dataset, Generator):
     def num_class(self):
         return len(self.classes)
 
+    def has_label(self, label):
+        return label in self.labels
+
     def has_class(self, c):
         return c in self.classes
 
@@ -123,6 +124,9 @@ class YOLODataset(Dataset, Generator):
         h, w = img_arr.shape[0], img_arr.shape[1]
         ratio = w / h
         return ratio
+
+    def img_aspect_ratio(self, img_index):
+        return self.aspect_ratio(img_index)
 
     def __len__(self):
         return len(self.img_files)
@@ -283,6 +287,9 @@ class YOLODataset(Dataset, Generator):
                 ann = self.load_annotations(ix)
         
         return img, ann
+
+    def img_path(self, img_index):
+        return self.get_img_path(img_index)
 
     def get_img_path(self, ix):
         assert 0 <= ix < len(self), f"image index should in the range (0, {len(self)}), but got index {ix}"

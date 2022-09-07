@@ -49,6 +49,12 @@ class MosaicTransformDataset(Dataset):
     def num_class(self):
         return len(self._dataset.classes)
 
+    def cv2_save_fig(self, img, bboxes, classes, save_path):
+        if "cv2_save_fig" in dir(self._dataset):
+            return self._dataset.cv2_save_fig(img, bboxes, classes, save_path)
+        else:
+            raise NotImplementedError
+
     def load_mosaic(self, ix):
         """
         mosaic augumentation

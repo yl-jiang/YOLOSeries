@@ -2,7 +2,7 @@ from numpy import flipud
 from sklearn.preprocessing import scale
 from utils import mosaic, random_perspective, valid_bbox, mixup, cutout
 from utils import RandomHSV, RandomFlipLR, RandomFlipUD, scale_jitting, YOCO
-from .dataset import Dataset
+
 
 import random
 import numpy as np

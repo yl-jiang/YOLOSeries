@@ -134,6 +134,9 @@ class YoloDataset(Dataset, Generator):
     def num_class(self):
         return len(self.classes)
 
+    def has_label(self, label):
+        return label in self.labels
+
     def has_class(self, c):
         return c in self.classes
 
@@ -357,6 +360,9 @@ class YoloDataset(Dataset, Generator):
     def get_img_path(self, ix):
         assert 0 <= ix < len(self), f"image index should in the range (0, {len(self)}), but got index {ix}"
         return self.img_files[ix]
+
+    def img_path(self, img_index):
+        return self.get_img_path(img_index)
 
     def cv2_save_fig(self, img, bboxes, classes, save_path):
         assert isinstance(img, np.ndarray)

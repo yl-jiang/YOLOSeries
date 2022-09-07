@@ -1,5 +1,3 @@
-from email.mime import base
-from traitlets import TraitType
 from yoloxdata.dataset import YOLODataset
 from yoloxdata import Transform, InfiniteSampler, YOLOBatchSampler, YOLODataLoader, worker_init_reset_seed
 from yoloxdata.dataset import MosaicTransformDataset

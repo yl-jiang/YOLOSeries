@@ -97,7 +97,7 @@ class YOLOV5Loss:
             t_cof = torch.zeros_like(preds[..., 4])
             if cur_tar_num > 0:
                 # sigmoid(-5) ≈ 0; sigmoid(0) = 0.5; sigmoid(5) ≈ 1
-                # sigmoid(-5) * 2 - 0.5 = -0.5; sigmoid(0) * 2 - 0.5 = 0.5; sigmoid(5) * 2 - 0.5 = 0.5
+                # sigmoid(-5) * 2 - 0.5 = -0.5; sigmoid(0) * 2 - 0.5 = 0.5; sigmoid(5) * 2 - 0.5 = 1.5
                 pred_xy = cur_preds[:, :2].sigmoid() * 2. - 0.5
                 # (N, 2) & (N, 2) -> (N, 2)
                 pred_wh = (cur_preds[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx]
