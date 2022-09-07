@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, "/home/uih/JYL/Projects/Others/maketest/YOLOSeries/")
+sys.path.insert(0, "xxx/YOLOSeries/")
 
 from yoloxdata.dataset import YOLODataset
 from yoloxdata import Transform, InfiniteSampler, YOLOBatchSampler, YOLODataLoader, worker_init_reset_seed
