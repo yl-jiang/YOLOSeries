@@ -13,7 +13,7 @@ class Generator(abc.ABC):
         :return: int
         """
         # raise NotImplementedError('size method is not implemented.')
-
+    @property
     @abc.abstractmethod
     def num_class(self):
         """
