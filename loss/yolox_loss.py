@@ -107,12 +107,12 @@ class YOLOXLoss:
         origin_pred_box = preds[..., :4].clone()
         # restore predictions to input scale / (N, num_anchors*h*w, 85)
         preds[..., :2] = (preds[..., :2] + grid[None, ...]) * stride
-        preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride  # 这一步可能由于preds[..., 2:4]值过大，进而导致exp计算后溢出得到Nan值
+        preds[..., 2:4] = torch.exp(preds[..., 2:4]) * stride  # 这一步可能由于preds[..., 2:4]值过大, 进而导致exp计算后溢出得到Nan值
 
         for i in range(tars.size(0)):  # each image
             tar = tars[i]  # (num_bbox, 6)
             pred = preds[i]  # (num_anchors*h*w, 85)
-            valid_gt_idx = tar[:, 4] >= 0  # 有效label索引（那些没有bbox的gt对应的class值为-1）
+            valid_gt_idx = tar[:, 4] >= 0  # 有效label索引(那些没有bbox的gt对应的class值为-1)
             tot_num_gt += valid_gt_idx.sum()
             if valid_gt_idx.sum() == 0:
                 tar_cls_i = tar.new_zeros((0, self.num_class))  # (0, 80)
@@ -214,13 +214,13 @@ class YOLOXLoss:
 
     def select_grid(self, tar_box, grid, stride):
         """
-        根据target box选择合适的grid（选择合适的grid即是选择合适的prediction）参与loss的计算
+        根据target box选择合适的grid(选择合适的grid即是选择合适的prediction)参与loss的计算
         Args:
             tar_box: (X, 4) / [x, y, w, h] / X -> 该image包含的有效的gt box个数
             grid: (h*w, 2) / [x, y]
             stride: scalar / downsample scale
         Returns:
-            is_grid_in_gtbox_or_gtctr: (h*w,) / front ground mask / 其中为True的元素个数设为Y，则Y >= N
+            is_grid_in_gtbox_or_gtctr: (h*w,) / front ground mask / 其中为True的元素个数设为Y, 则Y >= N
             is_grid_in_gtbox_and_gtctr: (valid_num_box, N)
         """
         # gt_xywh: (valid_num_box, 4) / [gt_Xctr, gt_Yctr, gt_W, gt_H]
@@ -243,10 +243,10 @@ class YOLOXLoss:
         box_delta = gt_xyxy.unsqueeze(1) + ctr_grid.unsqueeze(0)
         # (valid_num_box, h*w, 4) -> (valid_num_box, h*w)
         is_grid_in_gtbox = box_delta.min(dim=2).values > 0.0
-        # (valid_num_box, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
+        # (valid_num_box, h*w) -> (h*w,) / 对该image, 所有满足该条件grid的并集
         is_grid_in_gtbox_all = is_grid_in_gtbox.sum(0) > 0.0
 
-        # 如果grid的中心点坐标均没有在任何gt box内部，则对每个gt box而言，对每个tar选取距离最近的grid作为匹配的grid
+        # 如果grid的中心点坐标均没有在任何gt box内部, 则对每个gt box而言, 对每个tar选取距离最近的grid作为匹配的grid
         if is_grid_in_gtbox_all.sum() == 0:
             # (valid_num_box, 1, 2) & (1, h*w, 2) -> (valid_num_box, h*w, 2) -> (valid_num_box, h*w)
             ctr_distance = torch.norm(tar_box[:, :2].unsqueeze(1) - ctr_grid[:, :2].unsqueeze(0), dim=2)
@@ -257,7 +257,7 @@ class YOLOXLoss:
             random_idx = dist_argmin[torch.randperm(len(dist_argmin))]
             is_grid_in_gtbox_all[random_idx[:choose_num]] = True
 
-        # ======== 某个gird的中心坐标是否落到以某个gt box的中心点为圆心，center_radius为半径的圆形区域内 =========
+        # ======== 某个gird的中心坐标是否落到以某个gt box的中心点为圆心, center_radius为半径的圆形区域内 =========
         center_radius = 2.5
         ctr_offsets = gt_xywh.new_tensor([-1, -1, 1, 1]) * center_radius
         # (valid_num_box, 2) -> (valid_num_box, 4); [gt_Xctr, gt_Yctr, gt_Xctr, gt_Yctr]
@@ -270,7 +270,7 @@ class YOLOXLoss:
         ctr_delta = ctr_grid.unsqueeze(0) + gt_ctr_offsets.unsqueeze(1)
         # (X, h*w, 4) -> (X, h*w)
         is_grid_in_gtctr = ctr_delta.min(dim=2).values > 0.0
-        # (X, h*w) -> (h*w,) / 对该image，所有满足该条件grid的并集
+        # (X, h*w) -> (h*w,) / 对该image, 所有满足该条件grid的并集
         is_grid_in_gtctr_all = is_grid_in_gtctr.sum(0) > 0.0
 
         if is_grid_in_gtctr_all.sum() == 0:
@@ -285,8 +285,8 @@ class YOLOXLoss:
 
     def simple_ota(self, cost, iou, frontground_mask):
         """
-        每个gt box都可能有好几个满足条件的（位于前景）prediction，这一步需要在其中挑选出最有价值的参与loss的计算.
-        通过传入的cost和iou，对每个gt box选择与之最匹配的若干个prediction，并且使得每个prediction最多只能匹配一个gt box.
+        每个gt box都可能有好几个满足条件的(位于前景)prediction, 这一步需要在其中挑选出最有价值的参与loss的计算.
+        通过传入的cost和iou, 对每个gt box选择与之最匹配的若干个prediction, 并且使得每个prediction最多只能匹配一个gt box.
 
         注意：
             传入的frontground_mask被inplace的修改了。
@@ -295,7 +295,7 @@ class YOLOXLoss:
             cost: (valid_num_box, Y)
             iou: (valid_num_box, Y)
         Returns:
-            num_fg: 选取的prediction个数，假设为M（M的取值位于[0, Y]）
+            num_fg: 选取的prediction个数, 假设为M(M的取值位于[0, Y])
             matched_gt_cls：与每个prediction最匹配的gt class id
             matched_iou：每个prediction与之最匹配的gt box之间额iou值
             matched_gt_idx: 
@@ -303,14 +303,14 @@ class YOLOXLoss:
         assert cost.size(0) == iou.size(0)
 
         matching_matrix = torch.zeros_like(cost, dtype=torch.uint8)
-        # 如果位于前景的prediction个数大于10，则每个gt box最多选择10个最适合的预测作为后续的loss计算
+        # 如果位于前景的prediction个数大于10, 则每个gt box最多选择10个最适合的预测作为后续的loss计算
         k = min(10, iou.size(1))  
         # (valid_num_box, k)
         topk_iou, _ = torch.topk(iou, k, dim=1)
         # (valid_num_box, k) -> (valid_num_box, )
         dynamic_k = torch.clamp(topk_iou.sum(1).int(), min=1, max=cost.size(1)).tolist()
         for i in range(cost.size(0)):  # each valid gt
-            # 选取最小的dynamic_k[i]个值（因为不满足条件的prediction对应的cost加上了1000000）
+            # 选取最小的dynamic_k[i]个值(因为不满足条件的prediction对应的cost加上了1000000)
             _, pos_idx = torch.topk(cost[i], k=dynamic_k[i], largest=False)
             matching_matrix[i][pos_idx] = 1
 
@@ -321,7 +321,7 @@ class YOLOXLoss:
         # 如果存在某个prediction匹配到多个gt box的情况
         if (all_matching_gt > 1).sum() > 0:  
             _, cost_argmin = torch.min(cost[:, all_matching_gt > 1], dim=0)
-            # 处理某些prediction匹配到多个gt box的情况，将这些prediction只分配到与其匹配度最高的gt box
+            # 处理某些prediction匹配到多个gt box的情况, 将这些prediction只分配到与其匹配度最高的gt box
             matching_matrix[:, all_matching_gt > 1] = 0
             matching_matrix[cost_argmin, all_matching_gt > 1] = 1
 
@@ -333,7 +333,7 @@ class YOLOXLoss:
         assert len(frontground_mask[frontground_mask.clone()]) == len(fg_mask)
         frontground_mask[frontground_mask.clone()] = fg_mask
 
-        # (valid_num_box, M) -> (M,) / 假设fg_mask中为True的个数为M，则Y >= M / matched_gt的取值范围为[0, valid_num_box]
+        # (valid_num_box, M) -> (M,) / 假设fg_mask中为True的个数为M, 则Y >= M / matched_gt的取值范围为[0, valid_num_box]
         matched_gt_idx = matching_matrix[:, fg_mask].argmax(0)
         # (valid_num_box, Y) & (valid_num_box, Y) -> (valid_num_box, Y) -> (Y,) -> (M,)
         matched_iou = (matching_matrix * iou).sum(0)[fg_mask]
@@ -341,7 +341,7 @@ class YOLOXLoss:
 
     def _make_grid(self, h, w, dtype):
         ys, xs = torch.meshgrid(torch.arange(h, device=self.device), torch.arange(w, device=self.device))
-        # 排列成(x, y)的形式，是因为模型输出的预测结果的排列是[x, y, w, h, cof, cls1, cls2, ...]
+        # 排列成(x, y)的形式, 是因为模型输出的预测结果的排列是[x, y, w, h, cof, cls1, cls2, ...]
         grid = torch.stack((xs, ys), dim=2).view(1, 1, h, w, 2).contiguous().type(dtype)
         return grid
 
@@ -379,7 +379,7 @@ class YOLOXLoss:
         area_union = area_pred + area_tar - area_inter
         iou = area_inter / (area_union + 1e-16)
 
-        if iou_type == 'iou':  # 使用iou训练，使用sgd作为优化器且lr设置稍大时，训练过程中容易出现Nan
+        if iou_type == 'iou':  # 使用iou训练, 使用sgd作为优化器且lr设置稍大时, 训练过程中容易出现Nan
             return 1 - iou ** 2
         elif iou_type == 'giou': 
             convex_xy_min = torch.min((pred[:, :2] - pred[:, 2:] / 2), (tar_box[:, :2] - tar_box[:, 2:] / 2))
@@ -412,7 +412,7 @@ class YOLOXLoss:
 
     def build_l1_target(self, grid, stride, tar_box, num_fg, fg):
         """
-        将target转换到对应stage的prediction一致的数据格式（及将(ctr_x, ctr_y)转换为相对于对应的grid左上角的偏移量，将(w, h)转换为对应尺度下的长和宽）
+        将target转换到对应stage的prediction一致的数据格式(及将(ctr_x, ctr_y)转换为相对于对应的grid左上角的偏移量, 将(w, h)转换为对应尺度下的长和宽)
         Args:
             grid: (h*w, 2)
             stride: scaler
@@ -446,7 +446,7 @@ class YOLOXLoss:
         # 对那些预测错误程度越大的预测加大惩罚力度
         gamma = self.hyp.get('focal_loss_gamma', 1.5)
         gamma_factor = (1.0 - acc_scale) ** gamma
-        # 当alpha值小于0.5时，意味着更加关注将负类样本预测错误的情况
+        # 当alpha值小于0.5时, 意味着更加关注将负类样本预测错误的情况
         alpha = self.hyp.get('focal_loss_alpha', 0.25)
         alpha_factor = target * alpha + (1.0 - target) * (1.0 - alpha)
         factor = gamma_factor * alpha_factor
