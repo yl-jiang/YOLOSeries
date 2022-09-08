@@ -296,8 +296,8 @@ def gpu_CIoU(bbox1, bbox2):
     assert bbox1.shape[-1] == bbox2.shape[-1] == 4
     assert bbox1.device == bbox2.device
 
-    w1, h1 = (bbox1[:, [2, 3]] - bbox1[:, [0, 1]]).T
-    w2, h2 = (bbox2[:, [2, 3]] - bbox2[:, [0, 1]]).T
+    w1, h1 = (bbox1[:, [2, 3]] - bbox1[:, [0, 1]]).T  # (N, 2)
+    w2, h2 = (bbox2[:, [2, 3]] - bbox2[:, [0, 1]]).T  # (N, 2)
     bbox1_area = w1 * h1  # (N,)
     bbox2_area = w2 * h2  # (N,)
 

@@ -61,6 +61,8 @@ class YOLOV7Loss:
         tot_tar_num = 0
         s = 3 / len(stage_preds)
         for i in range(len(stage_preds)):  # each stage
+
+            # region ============================= yolov5 match targets =============================
             bn, fm_h, fm_w = torch.tensor(stage_preds[i].shape)[[0, 2, 3]]
             ds_scale = self.input_img_size[1] / fm_w  # downsample scale
             # anchor: (3, 2)
@@ -77,6 +79,23 @@ class YOLOV7Loss:
             tot_tar_num += cur_tar_num
             # cur_preds: (N, 85) / [pred_x, pred_y, pred_w, pred_h, confidence, c1, c2, c3, ..., c80]
             cur_preds = preds[img_idx, anc_idx, gy, gx]
+            # endregion ============================= yolov5 match targets =============================
+
+            # region ============================= yolox match targets =============================
+            if cur_tar_num > 0:
+                # sigmoid(-5) ≈ 0; sigmoid(0) = 0.5; sigmoid(5) ≈ 1
+                # sigmoid(-5) * 2 - 0.5 = -0.5; sigmoid(0) * 2 - 0.5 = 0.5; sigmoid(5) * 2 - 0.5 = 1.5
+                pred_xy = cur_preds[:, :2].sigmoid() * 2. - 0.5
+                # (N, 2) & (N, 2) -> (N, 2)
+                pred_wh = (cur_preds[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx]
+                # pred_box: (N, 4) / tar_box: (N, 4)
+                pred_box = torch.cat((pred_xy, pred_wh), dim=1).to(self.device)
+                # because pred_box and tar_box's format is xywh, before compute iou loss we should turn it to xyxy format
+                pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
+                # iou: (N, N)
+                iou = gpu_iou(pred_box, tar_box)
+                iou_loss = -torch.log(iou + 1e-8)
+            # endregion ============================= yolox match targets =============================
 
             # Classification
             # 只有正样本才参与分类损失的计算
@@ -139,9 +158,9 @@ class YOLOV7Loss:
 
     def match(self, targets, anchor_stage, fm_shape):
         """
-        正样本分配策略。
+        正样本分配策略(根据anchor与targets的匹配关系进行过滤)。
 
-        并不是传入的所有target都可以参与最终loss的计算, 只有那些与anchor的width/height ratio满足一定条件的targe才有资格；
+        并不是传入的所有target都可以参与最终loss的计算, 只有那些与anchor的width/height ratio满足一定条件的targe才有资格;
         :param targets: (num_anchor=3, batch_num, bbox_num, 7) / [norm_x, norm_y, norm_w, norm_h, cls, img_id, anchor_id]
         :param anchor_stage: (3, 2) / (w, h)
         :param fm_shape: [w, h] / stage feature map shape
@@ -193,10 +212,10 @@ class YOLOV7Loss:
         # 放宽obj预测的中心坐标精度的限制, 在真实grid_center_xy范围内浮动一格, 均认为是预测正确；tar_grid_coors表示obj所在grid的xy坐标
         tar_grid_coors = (tar_grid_xys - grid_xys_expand).long()  # (N, 2)
         # tar_grid_off:相对于所在grid的偏移量
-        tar_grid_off = tar_grid_xys - tar_grid_coors
+        tar_grid_offset = tar_grid_xys - tar_grid_coors
         tar_grid_whs = t_stage[:, [2, 3]]  # (N, 2)
         # tar_box: (N, 2) & (N, 2) -> (N, 4) / (x, y, w, h)
-        tar_box = torch.cat((tar_grid_off, tar_grid_whs), dim=-1)  # (grid_off_x, grid_off_y, w_stage, h_stage)
+        tar_box = torch.cat((tar_grid_offset, tar_grid_whs), dim=-1)  # (grid_off_x, grid_off_y, w_stage, h_stage)
         # tar_cls: (N, )
         tar_cls = t_stage[:, 4]
         # tar_img_idx: (N, )
@@ -212,6 +231,10 @@ class YOLOV7Loss:
         return tar_box, tar_cls.long(), tar_img_idx.long(), tar_anc_idx.long(), tar_grid_y.long(), tar_grid_x.long()
 
     def simple_ota(self):
+        """
+        正负样本匹配策略(根据prediction与targets之间的匹配关系进行过滤)
+
+        """
         pass
 
     def focal_loss_factor(self, pred, target):

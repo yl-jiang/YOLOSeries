@@ -1,5 +1,6 @@
 import random
 import math
+import numbers
 
 import cv2
 import numpy as np
@@ -594,7 +595,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
     assert len(imgs) == len(bboxes), f"len(imgs) = {len(imgs)} not equal len(bboxes) = {len(bboxes)}!"
     assert len(imgs) == len(labels), f"len(imgs) = {len(imgs)} not equal len(labels) = {len(labels)}!"
 
-    if isinstance(mosaic_shape, int):
+    if isinstance(mosaic_shape, numbers.Integral):
         mosaic_shape = [mosaic_shape, mosaic_shape]
 
     xc, yc = [int(random.uniform(2*x/5, 4*x/5)) for x in (np.array(mosaic_shape))]
@@ -614,11 +615,11 @@ def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
 
         # 截取各子image的中心区域贴到mosaic image上
         xc_i, yc_i, w_i, h_i = w // 2, h // 2,  xmax_o-xmin_o, ymax_o-ymin_o
-        detal_w_i, detal_h_i = w_i // 2, h_i // 2
-        xmin_i = xc_i - detal_w_i
-        ymin_i = yc_i - detal_h_i
-        xmax_i = xc_i + (w_i - detal_w_i)
-        ymax_i = yc_i + (h_i - detal_h_i)
+        delta_w_i, delta_h_i = w_i // 2, h_i // 2
+        xmin_i = xc_i - delta_w_i
+        ymin_i = yc_i - delta_h_i
+        xmax_i = xc_i + (w_i - delta_w_i)
+        ymax_i = yc_i + (h_i - delta_h_i)
         img_out[ymin_o:ymax_o, xmin_o:xmax_o] = img[ymin_i:ymax_i, xmin_i:xmax_i]
 
         # 处理label
@@ -637,7 +638,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
         mdy_box_area = np.prod(box[:, 2:4] - box[:, 0:2], axis=1) + 1e-16
         iou = np.round(mdy_box_area / org_box_area, decimals=3)
         assert np.sum(iou[iou > 1]) == 0
-        valid_idx = iou >= 0.15
+        valid_idx = iou >= 0.1
         bboxes_out.append(box[valid_idx])
         labels_out.extend(np.array(labels[i])[valid_idx])
         # ===============================================================
