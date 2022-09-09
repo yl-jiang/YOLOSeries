@@ -1,3 +1,4 @@
+from tkinter.messagebox import NO
 import torch
 import torch.nn as nn
 from utils import xyxy2xywhn, xyxy2xywh, xywh2xyxy
@@ -227,9 +228,8 @@ class YOLOV7Loss:
         Args:
             batch_size:
             anchor_stage:
-            stage_pred: (N, 85)
-            tar_box: (N, 4)
-            tar_cls: (N,)
+            stage_pred: (bn, anchor_num, h, w, 85)
+            org_targets: (bn, bbox_num, 6)
             img_idx: (N,)
             anc_idx: (N,)
             gy: (N,)
@@ -239,8 +239,15 @@ class YOLOV7Loss:
 
 
         """
+
+        fm_h, fm_w = stage_pred.shape[2, 3]
         targets = org_targets.clone().detach()
-        targets[..., :4] = xyxy2xywhn(targets[..., :4], self.input_img_size)
+        tar_box_norm = xyxy2xywhn(targets[..., :4], self.input_img_size)  # (bn, bbox_num, 4)
+        # (bn, bbox_num, 4) & (1, 1, 4) -> (bn, bbox_num, 4)
+        tar_box = tar_box_norm * torch.tensor([fm_w, fm_h, fm_w, fm_h])[None, None]
+        tar_cls = targets[..., 4]  # (bn, bbox_num)
+        tar_imgidx = targets[..., -1]  # (bn, bbox_num)
+
         # pred: (N, 85) / [pred_x, pred_y, pred_w, pred_h, confidence, c1, c2, c3, ..., c80]
         pred = stage_pred[img_idx, anc_idx, gy, gx]
         # sigmoid(-5) ≈ 0; sigmoid(0) = 0.5; sigmoid(5) ≈ 1
@@ -254,13 +261,16 @@ class YOLOV7Loss:
         pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
 
         for i in range(batch_size):
-            this_img = img_idx == i  # (M,)
-            this_tar_box = tar_box[this_img]  # (M, 4)
-            this_tar_cls = tar_cls[this_img]  # (M,)
-            this_pred_box = pred_box[this_img]  # (M, 4)
+            valid_tar_i = tar_cls[i] >= 0  # (bbox_num,)
+            assert torch.all(tar_cls[i][valid_tar_i] >= 0)
 
-        # iou: (N, N)
-        iou = gpu_iou(pred_box, tar_box)
+            this_tar_box = tar_box[i][valid_tar_i]  # (X, 4)
+            this_tar_cls = tar_cls[i][valid_tar_i]  # (X)
+            this_pred_i = img_idx == i  # (M,)
+            this_pred_box = pred_box[this_pred_i]  # (M, 4)
+
+        # iou: (M, X)
+        iou = gpu_iou(this_pred_box, this_tar_box)
         iou_loss = -torch.log(iou + 1e-8)
 
 
