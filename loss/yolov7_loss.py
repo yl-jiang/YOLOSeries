@@ -32,7 +32,7 @@ class YOLOV7Loss:
         通过对比preds和targets, 找到与pred对应的target。
         注意: 每一个batch的targets中的bbox_num都相同(参见cocodataset.py中fixed_imgsize_collector函数)。
 
-        :param stage_preds: (out_small, out_mid, out_large) / [(bn, 255, 80, 80),(bn, 255, 40, 40),(bn, 255, 20, 20)]
+        :param stage_preds: (out_small, out_mid, out_large) / [(batch_size, num_anchors, H/32, W/32, 85),(batch_size, num_anchors, H/16, W/16, 85),(batch_size, num_anchors, H/8, W/8, 85)]
         :param targets_batch: 最后一个维度上的值, 表示当前batch中该target对应的img index
         :param targets_batch: tensor / (bn, bbox_num, 6) -> [xmin, ymin, xmax, ymax, cls, img_id]
         """
@@ -77,24 +77,11 @@ class YOLOV7Loss:
 
             cur_tar_num = tar_box.shape[0]
             tot_tar_num += cur_tar_num
-            # cur_preds: (N, 85) / [pred_x, pred_y, pred_w, pred_h, confidence, c1, c2, c3, ..., c80]
-            cur_preds = preds[img_idx, anc_idx, gy, gx]
+            
             # endregion ============================= yolov5 match targets =============================
 
             # region ============================= yolox match targets =============================
-            if cur_tar_num > 0:
-                # sigmoid(-5) ≈ 0; sigmoid(0) = 0.5; sigmoid(5) ≈ 1
-                # sigmoid(-5) * 2 - 0.5 = -0.5; sigmoid(0) * 2 - 0.5 = 0.5; sigmoid(5) * 2 - 0.5 = 1.5
-                pred_xy = cur_preds[:, :2].sigmoid() * 2. - 0.5
-                # (N, 2) & (N, 2) -> (N, 2)
-                pred_wh = (cur_preds[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx]
-                # pred_box: (N, 4) / tar_box: (N, 4)
-                pred_box = torch.cat((pred_xy, pred_wh), dim=1).to(self.device)
-                # because pred_box and tar_box's format is xywh, before compute iou loss we should turn it to xyxy format
-                pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
-                # iou: (N, N)
-                iou = gpu_iou(pred_box, tar_box)
-                iou_loss = -torch.log(iou + 1e-8)
+            
             # endregion ============================= yolox match targets =============================
 
             # Classification
@@ -230,12 +217,52 @@ class YOLOV7Loss:
         del g, offset, t_stage
         return tar_box, tar_cls.long(), tar_img_idx.long(), tar_anc_idx.long(), tar_grid_y.long(), tar_grid_x.long()
 
-    def simple_ota(self):
+    def simple_ota(self, batch_size, anchor_stage, stage_pred, org_targets, img_idx, anc_idx, gy, gx):
         """
         正负样本匹配策略(根据prediction与targets之间的匹配关系进行过滤)
 
+        1. 每个prediction与所有target进行计算iou; 
+        2. 
+
+        Args:
+            batch_size:
+            anchor_stage:
+            stage_pred: (N, 85)
+            tar_box: (N, 4)
+            tar_cls: (N,)
+            img_idx: (N,)
+            anc_idx: (N,)
+            gy: (N,)
+            gx: (N,)
+
+        Returns:
+
+
         """
-        pass
+        targets = org_targets.clone().detach()
+        targets[..., :4] = xyxy2xywhn(targets[..., :4], self.input_img_size)
+        # pred: (N, 85) / [pred_x, pred_y, pred_w, pred_h, confidence, c1, c2, c3, ..., c80]
+        pred = stage_pred[img_idx, anc_idx, gy, gx]
+        # sigmoid(-5) ≈ 0; sigmoid(0) = 0.5; sigmoid(5) ≈ 1
+        # sigmoid(-5) * 2 - 0.5 = -0.5; sigmoid(0) * 2 - 0.5 = 0.5; sigmoid(5) * 2 - 0.5 = 1.5
+        pred_xy = pred[:, :2].sigmoid() * 2. - 0.5
+        # (N, 2) & (N, 2) -> (N, 2)
+        pred_wh = (pred[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx]
+        # pred_box: (N, 4) / tar_box: (N, 4)
+        pred_box = torch.cat((pred_xy, pred_wh), dim=1).to(self.device)
+        # because pred_box and tar_box's format is xywh, before compute iou loss we should turn it to xyxy format
+        pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
+
+        for i in range(batch_size):
+            this_img = img_idx == i  # (M,)
+            this_tar_box = tar_box[this_img]  # (M, 4)
+            this_tar_cls = tar_cls[this_img]  # (M,)
+            this_pred_box = pred_box[this_img]  # (M, 4)
+
+        # iou: (N, N)
+        iou = gpu_iou(pred_box, tar_box)
+        iou_loss = -torch.log(iou + 1e-8)
+
 
     def focal_loss_factor(self, pred, target):
         """
