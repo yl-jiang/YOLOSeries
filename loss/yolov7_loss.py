@@ -1,9 +1,16 @@
-from tkinter.messagebox import NO
+from cmath import cos
+from nis import match
 import torch
 import torch.nn as nn
 from utils import xyxy2xywhn, xyxy2xywh, xywh2xyxy
 from utils import gpu_CIoU
 from utils import gpu_iou, gpu_DIoU, gpu_Giou
+import torch.nn.functional as F
+
+def smooth_bce(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
+    # return positive, negative label smoothing BCE targets
+    return 1.0 - 0.5 * eps, 0.5 * eps
+
 
 
 class YOLOV7Loss:
@@ -27,6 +34,8 @@ class YOLOV7Loss:
         self.bce_cof = nn.BCEWithLogitsLoss(pos_weight=cof_pos_weight, reduction='none').to(self.device)
         self.input_img_size = hyp['input_img_size']
         self.balances = [4., 1., 0.4] if stage_num == 3 else [4., 1., 0.4, 0.1]
+        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce()
+        self.use_iou_as_tar_cof = self.hyp["use_iou_as_tar_cof"]
 
     def __call__(self, stage_preds, targets_batch):
         """
@@ -62,7 +71,6 @@ class YOLOV7Loss:
         tot_tar_num = 0
         s = 3 / len(stage_preds)
         for i in range(len(stage_preds)):  # each stage
-
             # region ============================= yolov5 match targets =============================
             bn, fm_h, fm_w = torch.tensor(stage_preds[i].shape)[[0, 2, 3]]
             ds_scale = self.input_img_size[1] / fm_w  # downsample scale
@@ -74,23 +82,26 @@ class YOLOV7Loss:
             preds = stage_preds[i].reshape(bn, anchor_num, -1, fm_h, fm_w).permute(0, 1, 3, 4, 2).contiguous()
             assert preds.size(-1) == self.hyp['num_class'] + 5
             # match anchor(正样本匹配) / box, cls, img_idx, anchor_idx, grid_y, grid_x
-            tar_box, tar_cls, img_idx, anc_idx, gy, gx = self.match(targets, anchor_stage, (fm_w, fm_h))
-
-            cur_tar_num = tar_box.shape[0]
-            tot_tar_num += cur_tar_num
-            
+            tar_box_from_v5, tar_cls_from_v5, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5 = self.match(targets, anchor_stage, (fm_w, fm_h))
             # endregion ============================= yolov5 match targets =============================
 
             # region ============================= yolox match targets =============================
-            
+            tar_box_from_x, tar_cls_from_x, img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x = self.simple_ota(batch_size, anchor_stage, preds, tar_box, tar_box_from_v5, tar_cls_from_v5, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5)
             # endregion ============================= yolox match targets =============================
 
+            cur_tar_num = tar_box_from_x.shape[0]
+            tot_tar_num += cur_tar_num
+
+            # cur_preds: (N, 85) / [pred_x, pred_y, pred_w, pred_h, confidence, c1, c2, c3, ..., c80]
+            cur_preds = preds[img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x]
+
+            # region ====================================== compute loss ======================================
             # Classification
             # 只有正样本才参与分类损失的计算
-            if cur_preds[:, 5:].size(1) > 1:  # if only one class then we don't compute class loss
+            if self.hyp['num_classes'] > 1:  # if only one class then we don't compute class loss
                 # t_cls: (N, 80)
                 t_cls = torch.zeros_like(cur_preds[:, 5:])
-                t_cls[torch.arange(tar_cls.size(0)), tar_cls] = self.hyp['class_smooth_factor']
+                t_cls[torch.arange(tar_cls_from_x.size(0)), tar_cls_from_x] = self.positive_smooth_cls
 
                 if self.hyp['use_focal_loss']:
                     cls_factor = self.focal_loss_factor(cur_preds[:, 5:], t_cls)
@@ -107,7 +118,7 @@ class YOLOV7Loss:
                 # sigmoid(-5) * 2 - 0.5 = -0.5; sigmoid(0) * 2 - 0.5 = 0.5; sigmoid(5) * 2 - 0.5 = 1.5
                 pred_xy = cur_preds[:, :2].sigmoid() * 2. - 0.5
                 # (N, 2) & (N, 2) -> (N, 2)
-                pred_wh = (cur_preds[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx]
+                pred_wh = (cur_preds[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx_from_x]
                 # pred_box: (N, 4)
                 pred_box = torch.cat((pred_xy, pred_wh), dim=1).to(self.device)
                 # because pred_box and tar_box's format is xywh, before compute iou loss we should turn it to xyxy format
@@ -116,12 +127,16 @@ class YOLOV7Loss:
                 iou = gpu_CIoU(pred_box, tar_box)
                 iou_loss += (1.0 - iou).mean()
                 # t_cof: (bn, 3, h, w) / 所有grid均参与confidence loss的计算
-                t_cof[img_idx, anc_idx, gy, gx] = iou.detach().clamp(0).type_as(t_cof)
+                if self.use_iou_as_tar_cof:
+                    t_cof[img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x] = iou.detach().clamp(0).type_as(t_cof)
+                else:
+                    t_cof[img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x] = 1.0
 
             if self.hyp['use_focal_loss']:
                 cof_factor = self.focal_loss_factor(preds[..., 4], t_cof)
             else:
                 cof_factor = torch.ones_like(t_cof)
+            # endregion ====================================== compute loss ======================================
 
             # 所有样本均参与置信度损失的计算 / 在3中loss中confidence loss是最为重要的
             cof_loss_tmp = (self.bce_cof(preds[..., 4], t_cof) * cof_factor).mean()
@@ -169,10 +184,11 @@ class YOLOV7Loss:
         anchor_stage_whs = anchor_stage[:, None, None, :].repeat(1, batch_size, bbox_num, 1).contiguous()
         # ratio: (3, bn, bbox_num, 2)
         ratio = t_stage_whs / anchor_stage_whs + 1e-16
-        # match_index: (3, bn, bbox_num) 为target选取符合条件的anchor
+        # ar_mask: (3, bn, bbox_num) 为target选取符合条件的anchor
         ar_mask = torch.max(ratio, 1/ratio).max(dim=-1)[0] < self.hyp['anchor_match_thr']  # anchor ratio mask
         # targets: (3, bn, bbox_num, 7) -> (X, 7)
         t_stage = t_stage[ar_mask]
+        t_stage = t_stage[t_stage[:, 4] >= 0]
 
         # augmentation by grid
         # t_stage_xys: (X, 2) / (x, y)
@@ -192,12 +208,12 @@ class YOLOV7Loss:
         # t_stage: (X, 7) -> (5, X, 7) & (5, X) -> (N, 7)
         t_stage = t_stage.repeat(5, 1, 1).contiguous()
         t_stage = t_stage[grid_mask]
-        # obj_xy_offset: (1, X, 2) & (5, 1, 2) -> (5, X, 2) & (5, X) -> (N, 2)
+        # grid_xys_expand: (1, X, 2) & (5, 1, 2) -> (5, X, 2) & (5, X) -> (N, 2)
         grid_xys_expand = torch.zeros_like(grid_xys)[None] + offset[:, None, :]
         grid_xys_expand = grid_xys_expand[grid_mask]
         # tar_grid_xys在对应特征图尺寸中的xy
         tar_grid_xys = t_stage[:, [0, 1]]  # (N, 2)
-        # 放宽obj预测的中心坐标精度的限制, 在真实grid_center_xy范围内浮动一格, 均认为是预测正确；tar_grid_coors表示obj所在grid的xy坐标
+        # 放宽obj预测的中心坐标精度的限制, 在真实grid_center_xy范围内浮动一个单位的长度, 均认为是预测正确；tar_grid_coors表示obj所在grid的xy坐标
         tar_grid_coors = (tar_grid_xys - grid_xys_expand).long()  # (N, 2)
         # tar_grid_off:相对于所在grid的偏移量
         tar_grid_offset = tar_grid_xys - tar_grid_coors
@@ -218,38 +234,30 @@ class YOLOV7Loss:
         del g, offset, t_stage
         return tar_box, tar_cls.long(), tar_img_idx.long(), tar_anc_idx.long(), tar_grid_y.long(), tar_grid_x.long()
 
-    def simple_ota(self, batch_size, anchor_stage, stage_pred, org_targets, img_idx, anc_idx, gy, gx):
+    def simple_ota(self, batch_size, anchor_stage, one_stage_pred, tar_box, tar_cls, img_idx, anc_idx, gy, gx):
         """
-        正负样本匹配策略(根据prediction与targets之间的匹配关系进行过滤)
-
-        1. 每个prediction与所有target进行计算iou; 
-        2. 
+        正负样本匹配策略
 
         Args:
             batch_size:
             anchor_stage:
-            stage_pred: (bn, anchor_num, h, w, 85)
-            org_targets: (bn, bbox_num, 6)
+            one_stage_pred: (bn, anchor_num, h, w, 85)
+            tar_box: (N, 4) / tar_box已经scale到对应的stage
+            tar_cls: (N,)
             img_idx: (N,)
             anc_idx: (N,)
             gy: (N,)
             gx: (N,)
 
         Returns:
+            all_matched_pred:
+            all_matched_tar:
 
 
         """
 
-        fm_h, fm_w = stage_pred.shape[2, 3]
-        targets = org_targets.clone().detach()
-        tar_box_norm = xyxy2xywhn(targets[..., :4], self.input_img_size)  # (bn, bbox_num, 4)
-        # (bn, bbox_num, 4) & (1, 1, 4) -> (bn, bbox_num, 4)
-        tar_box = tar_box_norm * torch.tensor([fm_w, fm_h, fm_w, fm_h])[None, None]
-        tar_cls = targets[..., 4]  # (bn, bbox_num)
-        tar_imgidx = targets[..., -1]  # (bn, bbox_num)
-
         # pred: (N, 85) / [pred_x, pred_y, pred_w, pred_h, confidence, c1, c2, c3, ..., c80]
-        pred = stage_pred[img_idx, anc_idx, gy, gx]
+        pred = one_stage_pred[img_idx, anc_idx, gy, gx]
         # sigmoid(-5) ≈ 0; sigmoid(0) = 0.5; sigmoid(5) ≈ 1
         # sigmoid(-5) * 2 - 0.5 = -0.5; sigmoid(0) * 2 - 0.5 = 0.5; sigmoid(5) * 2 - 0.5 = 1.5
         pred_xy = pred[:, :2].sigmoid() * 2. - 0.5
@@ -260,18 +268,81 @@ class YOLOV7Loss:
         # because pred_box and tar_box's format is xywh, before compute iou loss we should turn it to xyxy format
         pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
 
-        for i in range(batch_size):
-            valid_tar_i = tar_cls[i] >= 0  # (bbox_num,)
-            assert torch.all(tar_cls[i][valid_tar_i] >= 0)
+        matched_tar_box, matched_tar_cls, matched_img_idx, matched_anc_idx, matched_gy, matched_gx = [], [], [], [], [], []
+        for b in range(batch_size):  # one image one stage prediction
+            i = img_idx == b  # (X,)
+            matched_img_idx.append(img_idx[i])
+            matched_anc_idx.append(anc_idx[i])
+            matched_gy.append(gy[i])
+            matched_gx.append(gx[i])
 
-            this_tar_box = tar_box[i][valid_tar_i]  # (X, 4)
-            this_tar_cls = tar_cls[i][valid_tar_i]  # (X)
-            this_pred_i = img_idx == i  # (M,)
-            this_pred_box = pred_box[this_pred_i]  # (M, 4)
+            this_tar_box = tar_box[i]  # (Xt, 4)
+            matched_tar_box.append(this_tar_box)
+            this_tar_cls = tar_cls[i]  # (Xt,)
+            matched_tar_cls.append(this_tar_cls)
+            num_tar = len(this_tar_box)
 
-        # iou: (M, X)
-        iou = gpu_iou(this_pred_box, this_tar_box)
-        iou_loss = -torch.log(iou + 1e-8)
+            this_pred_box = pred_box[i]  # (Xp, 4)
+            this_pred_cof = pred[i][:, 4]  # (Xp,)
+            this_pred_cls = pred[i][:, 5:]  # (Xp, class_num)
+
+            pairwise_iou = gpu_iou(this_tar_box, this_pred_box)  # (Xt, Xp)
+            pairwise_neg_iou_loss = -torch.log(pairwise_iou + 1e-8)  # (Xt, Xp)
+            # 一个pred最多可以匹配target的个数
+            topk_iou_loss, _ = torch.topk(pairwise_neg_iou_loss, min(10, pairwise_neg_iou_loss.shape[1]), dim=1)
+            dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1)  # (Xt,) / clamp保证每个prediction至少有一个target与之匹配
+            # (Xt,) -> (Xt, 80) -> (Xt, 1, 80) -> (Xt, Xp, 80)
+            this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_classes']).float().unsqueeze(1).repeat(1, len(i), 1)
+            # (Xp, 80) -> (1, Xp, 80) -> (Xt, Xp, 80)
+            this_pred_pairwise_cls = this_pred_cls.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid_()  # (Xt, Xp, 80)
+            this_pred_pairwise_cls *= this_pred_cof.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid_()  # (Xt, Xp, 80)
+            # sqrt操作会放大预测的confidence值
+            this_pred_pairwise_cls = this_pred_pairwise_cls.sqrt_()  # (Xt, Xp, 80)
+            # torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)): 将小于0.5的预测值进一步缩小，将大于0.5的预测值进一步放大
+            pairwise_cls_loss = F.binary_cross_entropy_with_logits(torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)), this_tar_onehot_cls, reduction='none').sum(dim=-1)  # (X, M)
+            cost = 3 * pairwise_neg_iou_loss + pairwise_cls_loss  # (Xt, Xp)
+
+            matching_matrix = torch.zeros_like(cost)  # (Xt, Xp)
+            for ti in range(num_tar):
+                pos_idx = torch.topk(cost[ti], k=dynamick[ti].item(), largest=False)[1]
+                matching_matrix[ti][pos_idx] = 1.0
+
+            # 当一个prediction有多个target与之匹配时，选择cost最小的那个target(一个target可以有多个prediction与之对应，但一个prediction至多只能有一个target与之对应)
+            select_matching_tar = matching_matrix.sum(dim=0)
+            if (select_matching_tar > 1).sum() > 0:
+                cost_min_idx = torch.min(cost[:, select_matching_tar > 1], dim=0)[1]
+                matching_matrix[:, select_matching_tar > 1] = 0.0
+                matching_matrix[cost_min_idx, select_matching_tar > 1] = 1.0
+                fg_pred_idx = matching_matrix.sum(dim=0) > 0.0  # (Xp,) / 被选为正样本的prediction的index / 假设fg_pred_idx中为True的元素个数为M
+                # assert fg_pred_idx.sum() == len(fg_pred_idx)  # 因为每个prediction有且只有一个target与之对应
+                # (Xt, Xp) -> (Xt, Xp) -> (M,) / M <= Xp, 给每个prediction匹配一个target
+                matched_tar_idx = matching_matrix[:, fg_pred_idx].argmax(dim=0)
+                assert fg_pred_idx.sum() == matched_tar_idx.sum()
+
+                matched_img_idx[b] = matched_img_idx[b][fg_pred_idx]  # (M,)
+                matched_anc_idx[b] = matched_anc_idx[b][fg_pred_idx]  # (M,)
+                matched_tar_box[b] = matched_tar_box[b][matched_tar_idx]  # (M, 4)
+                matched_tar_cls[b] = matched_tar_cls[b][matched_tar_idx]  # (M,)
+                matched_gy[b] = matched_gy[b][fg_pred_idx]  # (M,)
+                matched_gx[b] = matched_gx[b][fg_pred_idx]  # (M,)
+            else:
+                matched_img_idx[b] = torch.tensor([], device=self.hyp['device'], dtype=torch.float)
+                matched_anc_idx[b] = torch.tensor([], device=self.hyp['device'], dtype=torch.float)
+                matched_tar_box[b] = torch.tensor([], device=self.hyp['device'], dtype=torch.float)
+                matched_tar_cls[b] = torch.tensor([], device=self.hyp['device'], dtype=torch.float)
+                matched_gy[b] = torch.tensor([], device=self.hyp['device'], dtype=torch.float)
+                matched_gx[b] = torch.tensor([], device=self.hyp['device'], dtype=torch.float)
+        
+        matched_img_idx_out = torch.cat(matched_img_idx, dim=0)  # (Y,)
+        matched_anc_idx_out = torch.cat(matched_anc_idx, dim=0)  # (Y,)
+        matched_tar_box_out = torch.cat(matched_tar_box, dim=0)  # (Y, 4)
+        matched_tar_cls_out = torch.cat(matched_tar_cls, dim=0)  # (Y,)
+        matched_gy_out = torch.cat(matched_gy, dim=0)  # (Y,)
+        matched_gx_out = torch.cat(matched_gx, dim=0)  # (Y,)
+
+        return matched_tar_box_out, matched_tar_cls_out, matched_img_idx_out, matched_anc_idx_out, matched_gy_out, matched_gx_out
+            
+        
 
 
     def focal_loss_factor(self, pred, target):

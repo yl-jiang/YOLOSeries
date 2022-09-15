@@ -162,7 +162,7 @@ class YOLOV5Loss:
         anchor_stage_whs = anchor_stage[:, None, None, :].repeat(1, batch_size, bbox_num, 1).contiguous()
         # ratio: (3, bn, bbox_num, 2)
         ratio = t_stage_whs / anchor_stage_whs + 1e-16
-        # match_index: (3, bn, bbox_num) 为target选取符合条件的anchor
+        # ar_mask: (3, bn, bbox_num) 为target选取符合条件的anchor
         ar_mask = torch.max(ratio, 1/ratio).max(dim=-1)[0] < self.hyp['anchor_match_thr']  # anchor ratio mask
         # targets: (3, bn, bbox_num, 7) -> (X, 7)
         t_stage = t_stage[ar_mask]
@@ -185,12 +185,12 @@ class YOLOV5Loss:
         # t_stage: (X, 7) -> (5, X, 7) & (5, X) -> (N, 7)
         t_stage = t_stage.repeat(5, 1, 1).contiguous()
         t_stage = t_stage[grid_mask]
-        # obj_xy_offset: (1, X, 2) & (5, 1, 2) -> (5, X, 2) & (5, X) -> (N, 2)
+        # grid_xys_expand: (1, X, 2) & (5, 1, 2) -> (5, X, 2) & (5, X) -> (N, 2)
         grid_xys_expand = torch.zeros_like(grid_xys)[None] + offset[:, None, :]
         grid_xys_expand = grid_xys_expand[grid_mask]
         # tar_grid_xys在对应特征图尺寸中的xy
         tar_grid_xys = t_stage[:, [0, 1]]  # (N, 2)
-        # 放宽obj预测的中心坐标精度的限制，在真实grid_center_xy范围内浮动一格，均认为是预测正确；tar_grid_coors表示obj所在grid的xy坐标
+        # 放宽obj预测的中心坐标精度的限制，在真实grid_center_xy范围内浮动一个单位长度，均认为是预测正确；tar_grid_coors表示obj所在grid的xy坐标
         tar_grid_coors = (tar_grid_xys - grid_xys_expand).long()  # (N, 2)
         # tar_grid_off:相对于所在grid的偏移量
         tar_grid_off = tar_grid_xys - tar_grid_coors
