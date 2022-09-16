@@ -100,7 +100,7 @@ class YOLOV7Loss:
             # 只有正样本才参与分类损失的计算
             if self.hyp['num_classes'] > 1:  # if only one class then we don't compute class loss
                 # t_cls: (N, 80)
-                t_cls = torch.zeros_like(cur_preds[:, 5:])
+                t_cls = torch.full_like(cur_preds[:, 5:], fill_value=self.negative_smooth_cls)
                 t_cls[torch.arange(tar_cls_from_x.size(0)), tar_cls_from_x] = self.positive_smooth_cls
 
                 if self.hyp['use_focal_loss']:
