@@ -71,7 +71,7 @@ class YOLOV7Loss:
         tot_tar_num = 0
         s = 3 / len(stage_preds)
         for i in range(len(stage_preds)):  # each stage
-            # region ============================= yolov5 match targets =============================
+            # region ============================= yolov5 matching =============================
             bn, fm_h, fm_w = torch.tensor(stage_preds[i].shape)[[0, 2, 3]]
             ds_scale = self.input_img_size[1] / fm_w  # downsample scale
             # anchor: (3, 2)
@@ -83,11 +83,11 @@ class YOLOV7Loss:
             assert preds.size(-1) == self.hyp['num_class'] + 5
             # match anchor(正样本匹配) / box, cls, img_idx, anchor_idx, grid_y, grid_x
             tar_box_from_v5, tar_cls_from_v5, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5 = self.match(targets, anchor_stage, (fm_w, fm_h))
-            # endregion ============================= yolov5 match targets =============================
+            # endregion ============================= yolov5 matching =============================
 
-            # region ============================= yolox match targets =============================
-            tar_box_from_x, tar_cls_from_x, img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x = self.simple_ota(batch_size, anchor_stage, preds, tar_box, tar_box_from_v5, tar_cls_from_v5, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5)
-            # endregion ============================= yolox match targets =============================
+            # region ============================= yolox matching =============================
+            tar_box_from_x, tar_cls_from_x, img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x = self.simple_ota(batch_size, anchor_stage, preds, tar_box_from_v5, tar_cls_from_v5, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5)
+            # endregion ============================= yolox matching =============================
 
             cur_tar_num = tar_box_from_x.shape[0]
             tot_tar_num += cur_tar_num
