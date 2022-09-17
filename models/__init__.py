@@ -16,3 +16,5 @@ from .normal import YoloXDarkNet21
 from .normal import YoloXDarkNet53
 
 from .normal import RetinaNet
+
+from .normal import YOLOv7Baseline

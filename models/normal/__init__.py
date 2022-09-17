@@ -11,3 +11,5 @@ from .yolox_m import YoloXMiddle
 from .yolox_l import YoloXLarge
 
 from .retinanet import RetinaNet
+
+from .yolov7 import YOLOv7Baseline

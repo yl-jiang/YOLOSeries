@@ -1,5 +1,3 @@
-from cmath import cos
-from nis import match
 import torch
 import torch.nn as nn
 from utils import xyxy2xywhn, xyxy2xywh, xywh2xyxy
@@ -42,13 +40,14 @@ class YOLOV7Loss:
         通过对比preds和targets, 找到与pred对应的target。
         注意: 每一个batch的targets中的bbox_num都相同(参见cocodataset.py中fixed_imgsize_collector函数)。
 
-        :param stage_preds: (out_small, out_mid, out_large) / [(batch_size, num_anchors, H/32, W/32, 85),(batch_size, num_anchors, H/16, W/16, 85),(batch_size, num_anchors, H/8, W/8, 85)]
+        :param stage_preds: (out_small, out_mid, out_large) / [(batch_size, num_anchors, H/8, W/8, 85),(batch_size, num_anchors, H/16, W/16, 85),(batch_size, num_anchors, H/32, W/32, 85)]
         :param targets_batch: 最后一个维度上的值, 表示当前batch中该target对应的img index
         :param targets_batch: tensor / (bn, bbox_num, 6) -> [xmin, ymin, xmax, ymax, cls, img_id]
         """
-        assert isinstance(stage_preds, (list, tuple))
+        assert isinstance(stage_preds, dict)
+        keys = list(stage_preds.keys())  # [small, middle, large]
         assert isinstance(targets_batch, torch.Tensor), f"targets's type should be torch.Tensor but we got {type(targets_batch)}"
-        assert stage_preds[0].size(0) == targets_batch.size(0), f"the length of predictions and targets should be the same, " \
+        assert stage_preds[keys[0]].size(0) == targets_batch.size(0), f"the length of predictions and targets should be the same, " \
             "but len(predictions)={preds_batch[0].size(0)} and len(targets)={targets_batch.size(0)}"
 
         batch_size = targets_batch.size(0)
@@ -70,17 +69,17 @@ class YOLOV7Loss:
         # balances = [4., 1., 0.4] if len(stage_preds) == 3 else [4., 1., 0.4, 0.1]
         tot_tar_num = 0
         s = 3 / len(stage_preds)
-        for i in range(len(stage_preds)):  # each stage
+        for i in range(len(stage_preds)):  # each stage  [pred_small, pred_middle, pred_large]
             # region ============================= yolov5 matching =============================
-            bn, fm_h, fm_w = torch.tensor(stage_preds[i].shape)[[0, 2, 3]]
+            bn, fm_h, fm_w = torch.tensor(stage_preds[keys[i]].shape)[[0, 2, 3]]
             ds_scale = self.input_img_size[1] / fm_w  # downsample scale
             # anchor: (3, 2)
             anchor = self.anchors[i]
             anchor_stage = anchor / ds_scale
             anchor_num = anchor_stage.shape[0]
-            # preds: (bn, 255, h, w) -> (bn, 3, 85, h, w) -> (bn, 3, h, w, 85)
-            preds = stage_preds[i].reshape(bn, anchor_num, -1, fm_h, fm_w).permute(0, 1, 3, 4, 2).contiguous()
-            assert preds.size(-1) == self.hyp['num_class'] + 5
+            # preds: (bn, 3, h, w, 85)
+            preds = stage_preds[keys[i]]
+            assert preds.size(-1) == self.hyp['num_classes'] + 5
             # match anchor(正样本匹配) / box, cls, img_idx, anchor_idx, grid_y, grid_x
             tar_box_from_v5, tar_cls_from_v5, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5 = self.match(targets, anchor_stage, (fm_w, fm_h))
             # endregion ============================= yolov5 matching =============================
@@ -122,7 +121,7 @@ class YOLOV7Loss:
                 # pred_box: (N, 4)
                 pred_box = torch.cat((pred_xy, pred_wh), dim=1).to(self.device)
                 # because pred_box and tar_box's format is xywh, before compute iou loss we should turn it to xyxy format
-                pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
+                pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box_from_x)
                 # iou: (N,)
                 iou = gpu_CIoU(pred_box, tar_box)
                 iou_loss += (1.0 - iou).mean()
@@ -290,12 +289,13 @@ class YOLOV7Loss:
             pairwise_neg_iou_loss = -torch.log(pairwise_iou + 1e-8)  # (Xt, Xp)
             # 一个pred最多可以匹配target的个数
             topk_iou_loss, _ = torch.topk(pairwise_neg_iou_loss, min(10, pairwise_neg_iou_loss.shape[1]), dim=1)
-            dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1)  # (Xt,) / clamp保证每个prediction至少有一个target与之匹配
+            dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1, max=topk_iou_loss.size(0))  # (Xt,) / clamp保证每个prediction至少有一个target与之匹配
             # (Xt,) -> (Xt, 80) -> (Xt, 1, 80) -> (Xt, Xp, 80)
-            this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_classes']).float().unsqueeze(1).repeat(1, len(i), 1)
+            this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_classes']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
             # (Xp, 80) -> (1, Xp, 80) -> (Xt, Xp, 80)
             this_pred_pairwise_cls = this_pred_cls.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid_()  # (Xt, Xp, 80)
-            this_pred_pairwise_cls *= this_pred_cof.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid_()  # (Xt, Xp, 80)
+            # (Xt, Xp, 80) & (Xt, Xp, 1) -> (Xt, Xp, 80)
+            this_pred_pairwise_cls *= this_pred_cof.float()[None, :, None].repeat(num_tar, 1, 1).sigmoid_()  # (Xt, Xp, 80)
             # sqrt操作会放大预测的confidence值
             this_pred_pairwise_cls = this_pred_pairwise_cls.sqrt_()  # (Xt, Xp, 80)
             # torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)): 将小于0.5的预测值进一步缩小，将大于0.5的预测值进一步放大
@@ -305,19 +305,20 @@ class YOLOV7Loss:
             matching_matrix = torch.zeros_like(cost)  # (Xt, Xp)
             for ti in range(num_tar):
                 pos_idx = torch.topk(cost[ti], k=dynamick[ti].item(), largest=False)[1]
+                # 给每个target匹配若干的prediction(至少一个)
                 matching_matrix[ti][pos_idx] = 1.0
 
             # 当一个prediction有多个target与之匹配时，选择cost最小的那个target(一个target可以有多个prediction与之对应，但一个prediction至多只能有一个target与之对应)
             select_matching_tar = matching_matrix.sum(dim=0)
             if (select_matching_tar > 1).sum() > 0:
                 cost_min_idx = torch.min(cost[:, select_matching_tar > 1], dim=0)[1]
-                matching_matrix[:, select_matching_tar > 1] = 0.0
+                matching_matrix[:, select_matching_tar > 1] *= 0.0
                 matching_matrix[cost_min_idx, select_matching_tar > 1] = 1.0
                 fg_pred_idx = matching_matrix.sum(dim=0) > 0.0  # (Xp,) / 被选为正样本的prediction的index / 假设fg_pred_idx中为True的元素个数为M
                 # assert fg_pred_idx.sum() == len(fg_pred_idx)  # 因为每个prediction有且只有一个target与之对应
                 # (Xt, Xp) -> (Xt, Xp) -> (M,) / M <= Xp, 给每个prediction匹配一个target
                 matched_tar_idx = matching_matrix[:, fg_pred_idx].argmax(dim=0)
-                assert fg_pred_idx.sum() == matched_tar_idx.sum()
+                assert fg_pred_idx.sum() == len(matched_tar_idx)
 
                 matched_img_idx[b] = matched_img_idx[b][fg_pred_idx]  # (M,)
                 matched_anc_idx[b] = matched_anc_idx[b][fg_pred_idx]  # (M,)
@@ -340,10 +341,7 @@ class YOLOV7Loss:
         matched_gy_out = torch.cat(matched_gy, dim=0)  # (Y,)
         matched_gx_out = torch.cat(matched_gx, dim=0)  # (Y,)
 
-        return matched_tar_box_out, matched_tar_cls_out, matched_img_idx_out, matched_anc_idx_out, matched_gy_out, matched_gx_out
-            
-        
-
+        return matched_tar_box_out, matched_tar_cls_out, matched_img_idx_out.long(), matched_anc_idx_out.long(), matched_gy_out.long(), matched_gx_out.long()
 
     def focal_loss_factor(self, pred, target):
         """

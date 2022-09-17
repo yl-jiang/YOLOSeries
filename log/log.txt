@@ -1,6 +1,0 @@
-2022-08-21 12:13:32,815 - SimpleYolov5 - INFO - 
-====================================================================== Model Summary ======================================================================
-Model Summary:	layers 273; parameters 7235389; gradients 7235389; flops 4.1331158GFLOPs
-====================================================================== Training ======================================================================
-
-2022-08-21 12:13:32,815 - SimpleYolov5 - INFO -   all_mem(G)     cac_mem(G)        epoch          step          batchsz       img_shape      tot_loss       reg_loss       cof_loss       cls_loss      use_time(s)      tar_num      model_saved  

@@ -341,7 +341,7 @@ class BaselineHead(nn.Module):
 
 class BaselineDetect(nn.Module):
 
-    def __init__(self, num_anchors=1, in_channels=[256, 512, 1024], num_classes=80, class_frequency=None):
+    def __init__(self, num_anchors=3, in_channels=[256, 512, 1024], num_classes=80, class_frequency=None):
         super(BaselineDetect, self).__init__()
         self.num_anchors = num_anchors
         self.num_classes = num_classes
@@ -363,7 +363,7 @@ class BaselineDetect(nn.Module):
         self.implicitmul_m = ImplicitMul((num_classes + 5) * num_anchors)
         self.implicitmul_l = ImplicitMul((num_classes + 5) * num_anchors)
 
-        self.apply(self._initialize_biases)  
+        # self.apply(self._initialize_biases)  
 
     def _initialize_biases(self, m):
         """
@@ -409,10 +409,10 @@ class BaselineDetect(nn.Module):
 
 
 
-class Baseline(nn.Module):
+class YOLOv7Baseline(nn.Module):
 
     def __init__(self, in_channel=3, num_anchor=3, num_classes=80) -> None:
-        super(Baseline, self).__init__()
+        super(YOLOv7Baseline, self).__init__()
 
         self.backbone = BaselineBackbone(in_channel=in_channel)
         self.head = BaselineHead()
@@ -433,7 +433,7 @@ class Baseline(nn.Module):
 
 if __name__ == "__main__":
     dummy = torch.rand(8, 3, 448, 448).float().contiguous()
-    net = Baseline()
+    net = YOLOv7Baseline()
     net = net.fuseforward()
     out = net(dummy)
     for k, v in out.items():
