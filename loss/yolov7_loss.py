@@ -71,7 +71,7 @@ class YOLOV7Loss:
         s = 3 / len(stage_preds)
         for i in range(len(stage_preds)):  # each stage  [pred_small, pred_middle, pred_large]
             # region ============================= yolov5 matching =============================
-            bn, fm_h, fm_w = torch.tensor(stage_preds[keys[i]].shape)[[0, 2, 3]]
+            fm_h, fm_w = torch.tensor(stage_preds[keys[i]].shape)[[2, 3]]
             ds_scale = self.input_img_size[1] / fm_w  # downsample scale
             # anchor: (3, 2)
             anchor = self.anchors[i]
@@ -293,11 +293,11 @@ class YOLOV7Loss:
             # (Xt,) -> (Xt, 80) -> (Xt, 1, 80) -> (Xt, Xp, 80)
             this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_classes']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
             # (Xp, 80) -> (1, Xp, 80) -> (Xt, Xp, 80)
-            this_pred_pairwise_cls = this_pred_cls.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid_()  # (Xt, Xp, 80)
+            this_pred_pairwise_cls = this_pred_cls.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid()  # (Xt, Xp, 80)
             # (Xt, Xp, 80) & (Xt, Xp, 1) -> (Xt, Xp, 80)
-            this_pred_pairwise_cls *= this_pred_cof.float()[None, :, None].repeat(num_tar, 1, 1).sigmoid_()  # (Xt, Xp, 80)
+            this_pred_pairwise_cls *= this_pred_cof.float()[None, :, None].repeat(num_tar, 1, 1).sigmoid()  # (Xt, Xp, 80)
             # sqrt操作会放大预测的confidence值
-            this_pred_pairwise_cls = this_pred_pairwise_cls.sqrt_()  # (Xt, Xp, 80)
+            this_pred_pairwise_cls = this_pred_pairwise_cls.sqrt()  # (Xt, Xp, 80)
             # torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)): 将小于0.5的预测值进一步缩小，将大于0.5的预测值进一步放大
             pairwise_cls_loss = F.binary_cross_entropy_with_logits(torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)), this_tar_onehot_cls, reduction='none').sum(dim=-1)  # (X, M)
             cost = 3 * pairwise_neg_iou_loss + pairwise_cls_loss  # (Xt, Xp)
