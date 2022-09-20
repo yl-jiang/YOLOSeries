@@ -85,7 +85,7 @@ class YOLOV7Loss:
             # endregion ============================= yolov5 matching =============================
 
             # region ============================= yolox matching =============================
-            tar_box_from_x, tar_cls_from_x, img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x = self.simple_ota(batch_size, anchor_stage, preds, tar_box_from_v5, tar_cls_from_v5, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5)
+            tar_box_from_x, tar_cls_from_x, img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x = self.simple_ota(batch_size, anchor_stage, ds_scale, preds, targets_batch, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5)
             # endregion ============================= yolox matching =============================
 
             cur_tar_num = tar_box_from_x.shape[0]
@@ -233,7 +233,7 @@ class YOLOV7Loss:
         del g, offset, t_stage
         return tar_box, tar_cls.long(), tar_img_idx.long(), tar_anc_idx.long(), tar_grid_y.long(), tar_grid_x.long()
 
-    def simple_ota(self, batch_size, anchor_stage, one_stage_pred, tar_box, tar_cls, img_idx, anc_idx, gy, gx):
+    def simple_ota(self, batch_size, anchor_stage, ds_scale, one_stage_pred, org_tar, img_idx, anc_idx, gy, gx):
         """
         正负样本匹配策略
 
@@ -241,7 +241,7 @@ class YOLOV7Loss:
             batch_size:
             anchor_stage:
             one_stage_pred: (bn, anchor_num, h, w, 85)
-            tar_box: (N, 4) / tar_box已经scale到对应的stage
+            org_tar: (bn, bbox_num, 6); [x, y, w, h, cls, img_id]
             tar_cls: (N,)
             img_idx: (N,)
             anc_idx: (N,)
@@ -255,31 +255,39 @@ class YOLOV7Loss:
 
         """
 
+       # restore xyxyn to xyxy of original image scale
+        tar_box = org_tar[:, :, :4]
+        tar_cls = org_tar[:, :, 4]  # (bn, bbox_num)
         # pred: (N, 85) / [pred_x, pred_y, pred_w, pred_h, confidence, c1, c2, c3, ..., c80]
         pred = one_stage_pred[img_idx, anc_idx, gy, gx]
         # sigmoid(-5) ≈ 0; sigmoid(0) = 0.5; sigmoid(5) ≈ 1
         # sigmoid(-5) * 2 - 0.5 = -0.5; sigmoid(0) * 2 - 0.5 = 0.5; sigmoid(5) * 2 - 0.5 = 1.5
-        pred_xy = pred[:, :2].sigmoid() * 2. - 0.5
-        # (N, 2) & (N, 2) -> (N, 2)
-        pred_wh = (pred[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx]
+        grid_xy = torch.stack((gx, gy), dim=1)  # (N, 2)
+        # restore prediction to original image scale
+        pred_xy = ((pred[:, :2].sigmoid() * 2. - 0.5) + grid_xy) * ds_scale
+        # (N, 2) & (N, 2) -> (N, 2) / restore prediction to original image scale
+        pred_wh = (pred[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx] * ds_scale
         # pred_box: (N, 4) / tar_box: (N, 4)
-        pred_box = torch.cat((pred_xy, pred_wh), dim=1).to(self.device)
+        pred_box = torch.cat((pred_xy.contiguous(), pred_wh.contiguous()), dim=1).to(self.device)
         # because pred_box and tar_box's format is xywh, before compute iou loss we should turn it to xyxy format
-        pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
+        pred_box = xywh2xyxy(pred_box)  # tar_box: (bn, bbox_num, 4)
+        fm_h, fm_w = one_stage_pred.size(2), one_stage_pred.size(3)
 
         matched_tar_box, matched_tar_cls, matched_img_idx, matched_anc_idx, matched_gy, matched_gx = [], [], [], [], [], []
         for b in range(batch_size):  # one image one stage prediction
+            valid_tar_idx = org_tar[b, :, 4] >= 0  # (bbox_num,)
             i = img_idx == b  # (X,)
             matched_img_idx.append(img_idx[i])
             matched_anc_idx.append(anc_idx[i])
             matched_gy.append(gy[i])
             matched_gx.append(gx[i])
 
-            this_tar_box = tar_box[i]  # (Xt, 4)
-            matched_tar_box.append(this_tar_box)
-            this_tar_cls = tar_cls[i]  # (Xt,)
-            matched_tar_cls.append(this_tar_cls)
+            this_tar_box = tar_box[b][valid_tar_idx]  # (Xt, 4)
+            this_tar_cls = tar_cls[b][valid_tar_idx]  # (Xt,)
             num_tar = len(this_tar_box)
+
+            matched_tar_box.append(tar_box[b][valid_tar_idx])
+            matched_tar_cls.append(tar_cls[b][valid_tar_idx])
 
             this_pred_box = pred_box[i]  # (Xp, 4)
             this_pred_cof = pred[i][:, 4]  # (Xp,)
@@ -289,8 +297,8 @@ class YOLOV7Loss:
             pairwise_neg_iou_loss = -torch.log(pairwise_iou + 1e-8)  # (Xt, Xp)
             # 一个pred最多可以匹配target的个数
             topk_iou_loss, _ = torch.topk(pairwise_neg_iou_loss, min(10, pairwise_neg_iou_loss.shape[1]), dim=1)
-            dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1, max=topk_iou_loss.size(0))  # (Xt,) / clamp保证每个prediction至少有一个target与之匹配
-            if self.hyp["num_classes"] > 1:
+            dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1, max=topk_iou_loss.size(1))  # (Xt,) / clamp保证每个prediction至少有一个target与之匹配
+            if self.hyp["num_classes"] > 0:
                 # (Xt,) -> (Xt, 80) -> (Xt, 1, 80) -> (Xt, Xp, 80)
                 this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_classes']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
                 # (Xp, 80) -> (1, Xp, 80) -> (Xt, Xp, 80)
@@ -326,10 +334,16 @@ class YOLOV7Loss:
 
                 matched_img_idx[b] = matched_img_idx[b][fg_pred_idx]  # (M,)
                 matched_anc_idx[b] = matched_anc_idx[b][fg_pred_idx]  # (M,)
-                matched_tar_box[b] = matched_tar_box[b][matched_tar_idx]  # (M, 4)
-                matched_tar_cls[b] = matched_tar_cls[b][matched_tar_idx]  # (M,)
                 matched_gy[b] = matched_gy[b][fg_pred_idx]  # (M,)
                 matched_gx[b] = matched_gx[b][fg_pred_idx]  # (M,)
+                
+                tmp_grid_xy = torch.stack([matched_gx[b], matched_gy[b]], dim=1)  # (M, 2)
+                tmp_tbox = matched_tar_box[b][matched_tar_idx]  # (M, 4)
+                tmp_tbox = xyxy2xywhn(tmp_tbox, self.input_img_size)  # (M, 4)
+                tmp_tbox *= tmp_tbox.new_tensor([[fm_w, fm_h, fm_w, fm_h]])  # to stage scale
+                tmp_tbox[:, :2] = tmp_tbox[:, :2] - tmp_grid_xy 
+                matched_tar_box[b] = tmp_tbox  # (M, 4)
+                matched_tar_cls[b] = matched_tar_cls[b][matched_tar_idx]  # (M,)
             else:
                 matched_img_idx[b] = torch.tensor([], device=self.hyp['device'], dtype=torch.float)
                 matched_anc_idx[b] = torch.tensor([], device=self.hyp['device'], dtype=torch.float)
@@ -345,7 +359,7 @@ class YOLOV7Loss:
         matched_gy_out = torch.cat(matched_gy, dim=0)  # (Y,)
         matched_gx_out = torch.cat(matched_gx, dim=0)  # (Y,)
 
-        return matched_tar_box_out, matched_tar_cls_out, matched_img_idx_out.long(), matched_anc_idx_out.long(), matched_gy_out.long(), matched_gx_out.long()
+        return matched_tar_box_out, matched_tar_cls_out, matched_img_idx_out.long(), matched_anc_idx_out.long(), matched_gy_out.long(), matched_gx_out.long() 
 
     def focal_loss_factor(self, pred, target):
         """
