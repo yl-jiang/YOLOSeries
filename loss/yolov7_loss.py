@@ -290,16 +290,20 @@ class YOLOV7Loss:
             # 一个pred最多可以匹配target的个数
             topk_iou_loss, _ = torch.topk(pairwise_neg_iou_loss, min(10, pairwise_neg_iou_loss.shape[1]), dim=1)
             dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1, max=topk_iou_loss.size(0))  # (Xt,) / clamp保证每个prediction至少有一个target与之匹配
-            # (Xt,) -> (Xt, 80) -> (Xt, 1, 80) -> (Xt, Xp, 80)
-            this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_classes']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
-            # (Xp, 80) -> (1, Xp, 80) -> (Xt, Xp, 80)
-            this_pred_pairwise_cls = this_pred_cls.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid()  # (Xt, Xp, 80)
-            # (Xt, Xp, 80) & (Xt, Xp, 1) -> (Xt, Xp, 80)
-            this_pred_pairwise_cls *= this_pred_cof.float()[None, :, None].repeat(num_tar, 1, 1).sigmoid()  # (Xt, Xp, 80)
-            # sqrt操作会放大预测的confidence值
-            this_pred_pairwise_cls = this_pred_pairwise_cls.sqrt()  # (Xt, Xp, 80)
-            # torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)): 将小于0.5的预测值进一步缩小，将大于0.5的预测值进一步放大
-            pairwise_cls_loss = F.binary_cross_entropy_with_logits(torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)), this_tar_onehot_cls, reduction='none').sum(dim=-1)  # (X, M)
+            if self.hyp["num_classes"] > 1:
+                # (Xt,) -> (Xt, 80) -> (Xt, 1, 80) -> (Xt, Xp, 80)
+                this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_classes']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
+                # (Xp, 80) -> (1, Xp, 80) -> (Xt, Xp, 80)
+                this_pred_pairwise_cls = this_pred_cls.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid()  # (Xt, Xp, 80)
+                # (Xt, Xp, 80) & (Xt, Xp, 1) -> (Xt, Xp, 80)
+                this_pred_pairwise_cls *= this_pred_cof.float()[None, :, None].repeat(num_tar, 1, 1).sigmoid()  # (Xt, Xp, 80)
+                # sqrt操作会放大预测的confidence值
+                this_pred_pairwise_cls = this_pred_pairwise_cls.sqrt()  # (Xt, Xp, 80)
+                # torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)): 将小于0.5的预测值进一步缩小，将大于0.5的预测值进一步放大
+                pairwise_cls_loss = F.binary_cross_entropy_with_logits(torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)), this_tar_onehot_cls, reduction='none').sum(dim=-1)  # (X, M)
+            else:
+                # (Xt, Xp)
+                pairwise_cls_loss = torch.zeros_like(pairwise_neg_iou_loss)
             cost = 3 * pairwise_neg_iou_loss + pairwise_cls_loss  # (Xt, Xp)
 
             matching_matrix = torch.zeros_like(cost)  # (Xt, Xp)
