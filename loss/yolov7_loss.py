@@ -297,8 +297,8 @@ class YOLOV7Loss:
             pairwise_neg_iou_loss = -torch.log(pairwise_iou + 1e-8)  # (Xt, Xp)
             # 一个pred最多可以匹配target的个数
             topk_iou_loss, _ = torch.topk(pairwise_neg_iou_loss, min(10, pairwise_neg_iou_loss.shape[1]), dim=1)
-            dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1, max=topk_iou_loss.size(1))  # (Xt,) / clamp保证每个prediction至少有一个target与之匹配
-            if self.hyp["num_classes"] > 0:
+            dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1, max=topk_iou_loss.size(1))  # (Xt,) / 为每个target分配dynamic个prediction
+            if self.hyp["num_classes"] > 1: 
                 # (Xt,) -> (Xt, 80) -> (Xt, 1, 80) -> (Xt, Xp, 80)
                 this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_classes']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
                 # (Xp, 80) -> (1, Xp, 80) -> (Xt, Xp, 80)
@@ -327,7 +327,7 @@ class YOLOV7Loss:
                 matching_matrix[:, select_matching_tar > 1] *= 0.0
                 matching_matrix[cost_min_idx, select_matching_tar > 1] = 1.0
                 fg_pred_idx = matching_matrix.sum(dim=0) > 0.0  # (Xp,) / 被选为正样本的prediction的index / 假设fg_pred_idx中为True的元素个数为M
-                # assert fg_pred_idx.sum() == len(fg_pred_idx)  # 因为每个prediction有且只有一个target与之对应
+                assert fg_pred_idx.sum() == len(fg_pred_idx)  # 因为每个prediction有且只有一个target与之对应
                 # (Xt, Xp) -> (Xt, Xp) -> (M,) / M <= Xp, 给每个prediction匹配一个target
                 matched_tar_idx = matching_matrix[:, fg_pred_idx].argmax(dim=0)
                 assert fg_pred_idx.sum() == len(matched_tar_idx)
