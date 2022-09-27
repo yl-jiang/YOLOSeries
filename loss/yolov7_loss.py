@@ -327,7 +327,6 @@ class YOLOV7Loss:
                 matching_matrix[:, select_matching_tar > 1] *= 0.0
                 matching_matrix[cost_min_idx, select_matching_tar > 1] = 1.0
                 fg_pred_idx = matching_matrix.sum(dim=0) > 0.0  # (Xp,) / 被选为正样本的prediction的index / 假设fg_pred_idx中为True的元素个数为M
-                assert fg_pred_idx.sum() == len(fg_pred_idx)  # 因为每个prediction有且只有一个target与之对应
                 # (Xt, Xp) -> (Xt, Xp) -> (M,) / M <= Xp, 给每个prediction匹配一个target
                 matched_tar_idx = matching_matrix[:, fg_pred_idx].argmax(dim=0)
                 assert fg_pred_idx.sum() == len(matched_tar_idx)
