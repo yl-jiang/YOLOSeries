@@ -21,6 +21,7 @@ from tqdm import tqdm
 from loguru import logger
 from torch.cuda import amp
 import torch.optim as optim
+from torchinfo import summary as ModelSummary
 import torch.nn.functional as F
 from torchnet.meter import AverageValueMeter
 import torch.optim.lr_scheduler as lr_scheduler
@@ -79,6 +80,7 @@ class Training:
         
         # model, optimizer, loss, lr_scheduler, ema
         self.model = self.select_model(self.hyp["in_channels"], anchor_num_per_stage, self.hyp['num_classes']).to(hyp['device'])
+        ModelSummary(self.model, input_size=(1, 3, self.hyp['input_img_size'], self.hyp['input_img_size']), device=self.hyp['device'])
         self.optimizer = self._init_optimizer()
         self.optim_scheduler = lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=self._lr_lambda)
         self.loss_fcn = YOLOV7Loss(self.anchors, self.hyp)
