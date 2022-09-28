@@ -16,7 +16,7 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 
-__all__ = ["YOLOBatchSampler", "InfiniteSampler", "InfiniteAspectRatioBatchSampler", "InfiniteSampler"]
+__all__ = ["YOLOBatchSampler", "InfiniteSampler", "InfiniteAspectRatioBatchSampler", "RangeSampler"]
 
 class YOLOBatchSampler(torchBatchSampler):
     """
@@ -206,17 +206,7 @@ class RangeItertor:
         return self._size // self._world_size
 
 
-class InfiniteSampler(Sampler):
-    """
-    In training, we only care about the "infinite stream" of training data.
-    So this sampler produces an infinite stream of indices and
-    all workers cooperate to correctly shuffle the indices and sample different indices.
-    The samplers in each worker effectively produces `indices[worker_id::num_workers]`
-    where `indices` is an infinite stream of indices consisting of
-    `shuffle(range(size)) + shuffle(range(size)) + ...` (if shuffle is True)
-    or `range(size) + range(size) + ...` (if shuffle is False)
-    """
-
+class RangeSampler(Sampler):
     def __init__(self, size: int, shuffle: bool = True, seed: Optional[int] = 0, rank=0, world_size=1):
         """
         Args:
@@ -227,9 +217,9 @@ class InfiniteSampler(Sampler):
                 among workers (require synchronization among all workers).
         """
         self._size = size
-        assert size > 0
         self._shuffle = shuffle
         self._seed = int(seed)
+        self._rank = rank
 
         if dist.is_available() and dist.is_initialized():
             self._rank = dist.get_rank()
@@ -239,18 +229,7 @@ class InfiniteSampler(Sampler):
             self._world_size = world_size
 
     def __iter__(self):
-        start = self._rank
-        yield from itertools.islice(self._infinite_indices(), start, None, self._world_size)
-
-    def _infinite_indices(self):
-        g = torch.Generator()
-        g.manual_seed(self._seed)
-        while True:
-            if self._shuffle:
-                yield from torch.randperm(self._size, generator=g)
-            else:
-                yield from torch.arange(self._size)
+        return RangeItertor(self._size, self._shuffle, self._seed, self._rank, self._world_size)
 
     def __len__(self):
         return self._size // self._world_size
-
