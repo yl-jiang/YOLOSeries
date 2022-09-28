@@ -20,6 +20,7 @@ from torch import nn
 from tqdm import tqdm
 from torch import optim
 import torch.nn.functional as F
+from torchinfo import summary as ModelSummary
 from torch.utils.tensorboard import SummaryWriter
 import torch.optim.lr_scheduler as lr_scheduler
 from torchnet.meter import AverageValueMeter
@@ -67,6 +68,7 @@ class Train:
         # model, EMA, validater
         self.model = RetinaNet(self.hyp['num_anchors'], self.hyp["num_class"], self.hyp["resnet_layers"], freeze_bn=self.hyp['freeze_bn'])
         self.model = self.model.to(self.hyp['device'])
+        ModelSummary(self.model, input_size=(1, 3, self.hyp['input_img_size'][0], self.hyp['input_img_size'][1]), device=self.hyp['device'])
         self.ema_model = ExponentialMovingAverageModel(self.model)
         self.validate = RetinaNetEvaluater(self.ema_model.ema if self.hyp['do_ema'] else self.model, self.hyp)
 

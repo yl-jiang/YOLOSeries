@@ -22,6 +22,7 @@ from loguru import logger
 from torch.cuda import amp
 import torch.optim as optim
 import torch.nn.functional as F
+from torchinfo import summary as ModelSummary
 from numpy.lib.arraysetops import isin
 from torchnet.meter import AverageValueMeter
 import torch.optim.lr_scheduler as lr_scheduler
@@ -73,6 +74,7 @@ class Training:
         
         # model, optimizer, loss, lr_scheduler, ema
         self.model = self.select_model(num_anchors=self.hyp['num_anchors'], num_classes=self.traindataset.num_class).to(hyp['device'])
+        ModelSummary(self.model, input_size=(1, 3, self.hyp['input_img_size'][0], self.hyp['input_img_size'][1]), device=self.hyp['device'])
         self.optimizer = self._init_optimizer()
         self.optim_scheduler = lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=self._lr_lambda)
         self.loss_fcn = YOLOXLoss(self.hyp)
