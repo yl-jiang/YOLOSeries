@@ -38,6 +38,13 @@ from dataset import testdataloader, YoloDataloader
 from utils import mAP_v2, catch_warnnings
 from models import YOLOv7Baseline
 
+from yoloxdata.dataset import YOLODataset
+from yoloxdata import Transform, RangeSampler, YOLOBatchSampler, YOLODataLoader, worker_init_reset_seed
+from yoloxdata.dataset import MosaicTransformDataset
+from yoloxdata import FixSizeCollector
+from yoloxdata import InfiniteAspectRatioBatchSampler
+from yoloxdata import DataPrefetcher
+
 
 
 class Training:
@@ -65,8 +72,8 @@ class Training:
         self.hyp['input_img_size'] = self.padding(self.hyp['input_img_size'], 32)
        
         # dataset, scaler, loss_meter
-        self.traindataloader, self.traindataset = self.load_dataset(is_training=True)
-        self.valdataloader, self.valdataset = self.load_dataset(is_training=False)
+        self.traindataloader, self.traindataset, self.trainprefetcher = self.load_dataset(is_training=True)
+        self.valdataloader, self.valdataset, self.valprefetcher = self.load_dataset(is_training=False)
         self.testdataloader, self.testdataset = testdataloader(self.hyp['test_img_dir'], self.hyp['input_img_size'])
         self.hyp['num_classes'] = self.traindataset.num_class
         self.scaler = amp.GradScaler(enabled=self.use_cuda)  # mix precision training
@@ -108,8 +115,27 @@ class Training:
         self.accumulate = self.hyp['accumulate_loss_step'] / self.hyp['batch_size']
 
     def load_dataset(self, is_training):
-        dataloader, dataset = YoloDataloader(self.hyp, is_training)
-        return dataloader, dataset
+        if is_training:
+            preproc = Transform(cutout_p=self.hyp["data_aug_cutout_p"])
+            dataset_tmp = YOLODataset(self.hyp["train_img_dir"], self.hyp["train_lab_dir"], self.hyp["name_path"], self.hyp["input_img_size"], self.hyp["cache_num"], preproc)
+            dataset = MosaicTransformDataset(dataset_tmp, self.hyp["input_img_size"], True)
+            sampler = InfiniteAspectRatioBatchSampler(dataset, self.hyp["drop_last"], self.hyp["aspect_ratio_path"])
+            batch_sampler = YOLOBatchSampler(sampler=sampler, batch_size=self.hyp["batch_size"], drop_last=self.hyp["drop_last"], do_mosaic=True)
+        else:
+            dataset = YOLODataset(self.hyp["val_img_dir"], self.hyp["val_lab_dir"], self.hyp["name_path"], self.hyp["input_img_size"], self.hyp["cache_num"])
+            sampler = RangeSampler(size=len(dataset), shuffle=False)
+            batch_sampler = YOLOBatchSampler(sampler=sampler, batch_size=self.hyp["batch_size"], drop_last=False)
+        
+        dataloader_kwargs = {"batch_sampler": batch_sampler, 
+                             "worker_init_fn": worker_init_reset_seed, 
+                             "collate_fn": FixSizeCollector(self.hyp["input_img_size"]), 
+                             "num_workers": self.hyp["num_workers"], 
+                             "pin_memory":True, 
+                            }
+
+        dataloader = YOLODataLoader(dataset, **dataloader_kwargs)
+        prefector = DataPrefetcher(dataloader) if is_training else None
+        return dataloader, dataset, prefector
 
     @property
     def select_model(self):
@@ -241,8 +267,9 @@ class Training:
             self.model.train()
             epoch_start = time_synchronize()
             with tqdm(total=len(self.traindataloader), file=sys.stdout) as tbar:
-                for i, x in enumerate(self.traindataloader):
+                for i in range(len(self.traindataloader)):
                     start_t = time_synchronize()
+                    x = self.trainprefetcher.next()
                     cur_steps = len(self.traindataloader) * epoch + i + 1
                     ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
                     img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
