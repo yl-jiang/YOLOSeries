@@ -798,3 +798,52 @@ class RetinaNetPyramidFeatures(nn.Module):
         p7 = self.p7(p7)
 
         return p3, p4, p5, p6, p7
+
+
+# -------------------------------------- yolov7 blocks --------------------------------------
+
+class ELANBlock(nn.Module):
+    """
+    """
+    def __init__(self, in_channel, out_channel) -> None:
+        super(ELANBlock, self).__init__()
+        mid_channel = in_channel // 2
+        self.cba1 = ConvBnAct(in_channel, mid_channel, 1, 1, 0, inplace=False)
+        self.cba2 = ConvBnAct(in_channel, mid_channel, 1, 1, 0, inplace=False)
+        self.cba3 = ConvBnAct(mid_channel, mid_channel, 3, 2, 1, inplace=False)
+        self.cat = Concat()
+        self.cba4 = ConvBnAct(in_channel, mid_channel, 1, 1, 0, inplace=False)
+        self.cba5 = ConvBnAct(in_channel, mid_channel, 1, 1, 0, inplace=False)
+        self.cba6 = ConvBnAct(mid_channel, mid_channel, 3, 1, 1, inplace=False)
+        self.cba7 = ConvBnAct(mid_channel, mid_channel, 3, 1, 1, inplace=False)
+        self.cba8 = ConvBnAct(mid_channel, mid_channel, 3, 1, 1, inplace=False)
+        self.cba9 = ConvBnAct(mid_channel, mid_channel, 3, 1, 1, inplace=False)
+        self.cba10 = ConvBnAct(mid_channel * 4, out_channel, 1, 1, 0, inplace=False)
+
+    def fuseforward(self):
+        for m in self.modules():
+            if isinstance(m, ConvBnAct):
+                m.conv = fuse_conv_bn(m.conv, m.bn)
+                delattr(m, 'bn')
+                m.forward = m.forward_fuse
+    
+    def forward(self, inp):
+        feat_list = []
+        x = self.cba1(inp)
+        feat_list.append(x)
+
+        x = self.cba3(self.cba2(inp))
+        feat_list.append(x)
+        y = self.cat(feat_list[::-1])  # 16
+        feat_list.clear()
+
+        x = self.cba4(y)
+        feat_list.append(x)
+        x = self.cba5(y)
+        feat_list.append(x)
+        x = self.cba7(self.cba6(x))
+        feat_list.append(x)
+        x = self.cba9(self.cba8(x))
+        feat_list.append(x)
+        feat = self.cba10(self.cat(feat_list[::-1]))  # 24
+        return feat

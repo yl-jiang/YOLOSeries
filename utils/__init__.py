@@ -22,6 +22,7 @@ from .layer_tools import CSPCSPP
 from .layer_tools import RepConv
 from .layer_tools import ImplicitAdd
 from .layer_tools import ImplicitMul
+from .layer_tools import ELANBlock
 
 
 
