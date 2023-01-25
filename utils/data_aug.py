@@ -10,7 +10,7 @@ from .common import compute_resize_scale
 
 
 __all__ = ['CV2Transform', 'RandomBlur', 'RandomSaturation', 'RandomBrightness', 
-           'RandomScale', 'random_perspective', 'mosaic', 'mixup', 'RandomFlipLR', 
+           'RandomScale', 'RandomPerspective', 'mosaic', 'mixup', 'RandomFlipLR', 
            'RandomFlipUD', 'cutout', 'scale_jitting', 'RandomHSV', 
            'letter_resize_img', 'minmax_img_resize', 'min_scale_resize']
 
@@ -97,12 +97,12 @@ class CV2Transform:
     """
     pass
     """
-    def __init__(self, aug_threshold=None, strict=False, fill_value=128):
+    def __init__(self, p=None, strict=False, fill_value=128):
 
-        if aug_threshold is None:
-            self.aug_threshold = 0.3
+        if p is None:
+            self.p = 0.3
         else:
-            self.aug_threshold = aug_threshold
+            self.p = p
 
         self.strict = strict
         self.fill_value = fill_value
@@ -142,22 +142,22 @@ class CV2Transform:
         return cls(cv_img, bboxes, labels)
 
 
-    def yoco(self, img_org, img_aug, thresh):
+    def yoco(self, img_org, img_aug):
         assert img_org.shape == img_aug.shape
         h, w, c = img_org.shape
         aug_img = img_aug
         if not self.done_yoco:
-            if np.random.random() < thresh:  # 垂直切分并增强后合并
+            if np.random.random() < self.p:  # 垂直切分并增强后合并
                 self.done_yoco = True
                 aug_img = np.concatenate((img_org[:, 0:int(w/2), :], img_aug[:, int(w/2):, :]), axis=1)
-            if not self.done_yoco and np.random.random() < thresh:
+            if not self.done_yoco and np.random.random() < self.p:
                 aug_img = np.concatenate((img_org[0:h//2, :, :], img_aug[h//2:, :, :]), axis=0)
         return aug_img
 
 
     def randomFlip(self):
         # 垂直翻转/y坐标不变,x坐标变化
-        if random.random() < self.aug_threshold:
+        if random.random() < self.p:
             img = np.fliplr(self.img).copy()
             h, w = self.img.shape[:2]
             xmax = w - self.bboxes[:, 0]
@@ -168,7 +168,7 @@ class CV2Transform:
 
     def randomScale(self):
         # 固定住高度,以0.8-1.2伸缩宽度,做图像形变
-        if random.random() < self.aug_threshold:
+        if random.random() < self.p:
             scale = random.uniform(0.8, 1.2)
             # cv2.resize(img, shape)/其中shape->[宽,高]
             self.img = cv2.resize(self.img, None, fx=scale, fy=1)
@@ -176,14 +176,14 @@ class CV2Transform:
 
     def randomBlur(self):
         # 均值滤波平滑图像
-        if random.random() < self.aug_threshold:
+        if random.random() < self.p:
             img_org = self.img.copy()
             img_blur = cv2.blur(self.img, (5, 5))
-            self.img = self.yoco(img_org, img_blur, self.aug_threshold)
+            self.img = self.yoco(img_org, img_blur, self.p)
 
     def randomHue(self, hgain=0.5, sgain=0.5, vgain=0.5):
         # 图片色调
-        if random.random() < self.aug_threshold:
+        if random.random() < self.p:
             r = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain] + 1  # random gains
             hue, sat, val = cv2.split(cv2.cvtColor(self.img, cv2.COLOR_BGR2HSV))
             dtype = self.img.dtype  # uint8
@@ -195,12 +195,12 @@ class CV2Transform:
 
             img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
             hsv_org = cv2.merge((hue, sat, val))
-            img_hsv = self.yoco(hsv_org, img_hsv, self.aug_threshold)
+            img_hsv = self.yoco(hsv_org, img_hsv, self.p)
             cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=self.img)  # no return needed
 
     def RandomSaturation(self):
         # 图片饱和度
-        if random.random() < self.aug_threshold:
+        if random.random() < self.p:
             hsv = cv2.cvtColor(self.img, cv2.COLOR_BGR2HSV)
             hsv_org = hsv.copy()
             h, s, v = cv2.split(hsv)
@@ -209,12 +209,12 @@ class CV2Transform:
             s = s * adjust
             s = np.clip(s, 0, 255).astype(hsv.dtype)
             hsv = cv2.merge((h, s, v))
-            hsv = self.yoco(hsv_org, hsv, self.aug_threshold)
+            hsv = self.yoco(hsv_org, hsv, self.p)
             cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR, dst=self.img)
 
     def RandomBrightness(self):
         # 图片亮度
-        if random.random() < self.aug_threshold:
+        if random.random() < self.p:
             hsv = cv2.cvtColor(self.img, cv2.COLOR_BGR2HSV)
             hsv_org = hsv.copy()
             # hsv分别表示：色调(H),饱和度(S),明度(V)
@@ -224,14 +224,14 @@ class CV2Transform:
             v = v * adjust
             v = np.clip(v, 0, 255).astype(hsv.dtype)
             hsv = cv2.merge((h, s, v))
-            hsv = self.yoco(hsv_org, hsv, self.aug_threshold)
+            hsv = self.yoco(hsv_org, hsv, self.p)
             cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR, dst=self.img)
 
     def randomShift(self):
         # 随机平移
         center_y = (self.bboxes[:, 1] + self.bboxes[:, 3]) / 2
         center_x = (self.bboxes[:, 0] + self.bboxes[:, 2]) / 2
-        if random.random() < self.aug_threshold:
+        if random.random() < self.p:
             h, w, c = self.img.shape
             after_shfit_image = np.zeros((h, w, c), dtype=self.img.dtype)
             # after_shfit_image每行元素都设为[104,117,123]
@@ -270,8 +270,8 @@ class CV2Transform:
 
     def randomCrop(self):
         # 随机裁剪
-        if random.random() < self.aug_threshold:
-            height, width, c = self.img.shape
+        if random.random() < self.p:
+            height, width, _ = self.img.shape
             # x,y代表裁剪后的图像的中心坐标,h,w表示裁剪后的图像的高,宽
             h = random.uniform(0.6 * height, height)
             w = random.uniform(0.6 * width, width)
@@ -314,7 +314,7 @@ class CV2Transform:
                 self.labels = labels_out
 
 
-def RandomBlur(img, thresh):
+def RandomBlur(img, p):
     """
 
     :param img: ndarray
@@ -323,15 +323,15 @@ def RandomBlur(img, thresh):
     """
     assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
     # 均值滤波平滑图像
-    if random.random() < thresh:
+    if random.random() < p:
         img_out = cv2.blur(img, (5, 5))
         return img_out
     return img
 
 
-def RandomSaturation(img, thresh):
+def RandomSaturation(img, p):
     # 图片饱和度
-    if random.random() < thresh:
+    if random.random() < p:
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
         adjust = random.choice([0.5, 1.5])
@@ -344,9 +344,9 @@ def RandomSaturation(img, thresh):
     return img
 
 
-def RandomBrightness(img, thresh):
+def RandomBrightness(img, p):
     # 图片亮度
-    if random.random() < thresh:
+    if random.random() < p:
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         # hsv分别表示：色调(H),饱和度(S),明度(V)
         h, s, v = cv2.split(hsv)
@@ -360,7 +360,7 @@ def RandomBrightness(img, thresh):
     return img
 
 
-def RandomHSV(img, thresh, hgain, sgain, vgain):
+def RandomHSV(img, p, hgain, sgain, vgain):
     """
     将输入的RGB模态的image转换为HSV模态,并随机从对比度,饱和度以及亮度三个维度进行变换。
 
@@ -373,7 +373,7 @@ def RandomHSV(img, thresh, hgain, sgain, vgain):
     """
     assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
     # 图片色调
-    if random.random() < thresh:
+    if random.random() < p:
         r = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain] + 1  # random gains
         hue, sat, val = cv2.split(cv2.cvtColor(img, cv2.COLOR_RGB2HSV))
         dtype = img.dtype  # uint8
@@ -431,7 +431,7 @@ def RandomScale(img, bboxes, p):
     return img, bboxes
 
 
-def RandomFlipLR(img, bboxes, thresh):
+def RandomFlipLR(img, bboxes, p):
     """
     随机左右翻转image。
 
@@ -443,7 +443,7 @@ def RandomFlipLR(img, bboxes, thresh):
     assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
 
     # 水平翻转/y坐标不变,x坐标变化
-    if random.random() < thresh:
+    if random.random() < p:
         img_out = np.fliplr(img).copy()
         _, w = img.shape[:2]
         xmax = w - bboxes[:, 0]
@@ -455,7 +455,7 @@ def RandomFlipLR(img, bboxes, thresh):
     return img, bboxes
 
 
-def RandomFlipUD(img, bboxes, thresh):
+def RandomFlipUD(img, bboxes, p):
     """
     随机上下翻转image。
 
@@ -466,7 +466,7 @@ def RandomFlipUD(img, bboxes, thresh):
     assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
 
     # 竖直翻转/x坐标不变,y坐标变化
-    if random.random() < thresh:
+    if random.random() < p:
         img_out = np.flipud(img).copy()
         h, _ = img.shape[:2]
         ymax = h - bboxes[:, 1]
@@ -479,13 +479,13 @@ def RandomFlipUD(img, bboxes, thresh):
 
 # ===================================== aug for img, bbox, label =====================================
 
-def random_perspective(img, tar_bboxes, tar_labels, degrees=10, translate=.1, scale=.1, shear=10,
+def RandomPerspective(img, tar_bboxes, tar_labels, p,  degrees=10, translate=.1, scale=.1, shear=10,
                        perspective=0.0, dst_size=448, fill_value=128):
     """
     random perspective one image
-    :param img:
-    :param tar_bboxes: [xmin, ymin, xmax, ymax] / ndarray
-    :param tar_labels: [a, b, ...] / ndarray
+    :param img: (h, w, 3) / ndarray with dtypt np.uint8
+    :param tar_bboxes: (n, 4) / [xmin, ymin, xmax, ymax] / ndarray
+    :param tar_labels: (n,) / [a, b, ...] / ndarray
     :param degrees:
     :param translate:
     :param scale:
@@ -495,82 +495,83 @@ def random_perspective(img, tar_bboxes, tar_labels, degrees=10, translate=.1, sc
     :param fill_value:
     :return:
     """
-    assert isinstance(img, np.ndarray)
-    assert img.ndim == 3, "only process one image once for now"
-    assert isinstance(tar_labels, np.ndarray), "tar_label must be ndarray"
-    assert len(tar_labels) == len(tar_bboxes), \
-        f"the length of bboxes and labels should be the same, but len(bboxes)={len(tar_bboxes)} and len(labels)={len(tar_labels)}"
+    if random.random() < p:
+        assert isinstance(img, np.ndarray)
+        assert img.ndim == 3, "only process one image once for now"
+        assert isinstance(tar_labels, np.ndarray), "tar_label must be ndarray"
+        assert len(tar_labels) == len(tar_bboxes), \
+            f"the length of bboxes and labels should be the same, but len(bboxes)={len(tar_bboxes)} and len(labels)={len(tar_labels)}"
 
-    if isinstance(dst_size, int):
-        dst_size = [dst_size, dst_size]
+        if isinstance(dst_size, int):
+            dst_size = [dst_size, dst_size]
 
-    if img.shape[0] != dst_size:
-        height, width = dst_size
+        if img.shape[0] != dst_size:
+            height, width = dst_size
 
-    # Center / Translation / 平移
-    C = np.eye(3)
-    C[0, 2] = -img.shape[1] / 2  # x translation (pixels)
-    C[1, 2] = -img.shape[0] / 2  # y translation (pixels)
+        # Center / Translation / 平移
+        C = np.eye(3)
+        C[0, 2] = -img.shape[1] / 2  # x translation (pixels)
+        C[1, 2] = -img.shape[0] / 2  # y translation (pixels)
 
-    # Perspective
-    P = np.eye(3)
-    P[2, 0] = random.uniform(-perspective, perspective)  # x perspective (about y)
-    P[2, 1] = random.uniform(-perspective, perspective)  # y perspective (about x)
+        # Perspective
+        P = np.eye(3)
+        P[2, 0] = random.uniform(-perspective, perspective)  # x perspective (about y)
+        P[2, 1] = random.uniform(-perspective, perspective)  # y perspective (about x)
 
-    # Rotation and Scale / 旋转,缩放
-    R = np.eye(3)
-    a = random.uniform(-degrees, degrees)
-    s = random.uniform(1 - scale, 1 + scale)
-    R[:2] = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s)
+        # Rotation and Scale / 旋转,缩放
+        R = np.eye(3)
+        a = random.uniform(-degrees, degrees)
+        s = random.uniform(1 - scale, 1 + scale)
+        R[:2] = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s)
 
-    # Shear / 剪切
-    S = np.eye(3)
-    S[0, 1] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # x shear (deg)
-    S[1, 0] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # y shear (deg)
+        # Shear / 剪切
+        S = np.eye(3)
+        S[0, 1] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # x shear (deg)
+        S[1, 0] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # y shear (deg)
 
-    # Translation / 平移
-    T = np.eye(3)
-    T[0, 2] = random.uniform(0.5 - translate, 0.5 + translate) * width  # x translation (pixels)
-    T[1, 2] = random.uniform(0.5 - translate, 0.5 + translate) * height  # y translation (pixels)
+        # Translation / 平移
+        T = np.eye(3)
+        T[0, 2] = random.uniform(0.5 - translate, 0.5 + translate) * width  # x translation (pixels)
+        T[1, 2] = random.uniform(0.5 - translate, 0.5 + translate) * height  # y translation (pixels)
 
-    # Combined rotation matrix
-    M = T @ S @ R @ P @ C  # order of operations (right to left) is IMPORTANT
-    if (dst_size[0] != img.shape[0]) or (M != np.eye(3)).any():  # image changed
-        if isinstance(fill_value, (int, tuple)):
-            fill_value = (fill_value, fill_value, fill_value)
-        if perspective:  # 是否进行透视变换
-            img = cv2.warpPerspective(img, M, dsize=(width, height), borderValue=fill_value)
-        else:  # 只进行仿射变换
-            img = cv2.warpAffine(img, M[:2], dsize=(width, height), borderValue=fill_value)
+        # Combined rotation matrix
+        M = T @ S @ R @ P @ C  # order of operations (right to left) is IMPORTANT
+        if (dst_size[0] != img.shape[0]) or (M != np.eye(3)).any():  # image changed
+            if isinstance(fill_value, (int, tuple)):
+                fill_value = (fill_value, fill_value, fill_value)
+            if perspective:  # 是否进行透视变换
+                img = cv2.warpPerspective(img, M, dsize=(width, height), borderValue=fill_value)
+            else:  # 只进行仿射变换
+                img = cv2.warpAffine(img, M[:2], dsize=(width, height), borderValue=fill_value)
 
-    # Transform label coordinates
-    n = len(tar_bboxes)
-    if n:
-        # warp points
-        xy = np.ones((n * 4, 3))
-        # left-top, right-bottom, left-bottom, right-top
-        xy[:, :2] = tar_bboxes[:, [0, 1, 2, 3, 0, 3, 2, 1]].reshape(n * 4, 2)
-        xy = xy @ M.T  # transform
-        if perspective:
-            xy = (xy[:, :2] / xy[:, 2:3]).reshape(n, 8)  # rescale
-        else:  # affine
-            xy = xy[:, :2].reshape(n, 8)
+        # Transform label coordinates
+        n = len(tar_bboxes)
+        if n:
+            # warp points
+            xy = np.ones((n * 4, 3))
+            # left-top, right-bottom, left-bottom, right-top
+            xy[:, :2] = tar_bboxes[:, [0, 1, 2, 3, 0, 3, 2, 1]].reshape(n * 4, 2)
+            xy = xy @ M.T  # transform
+            if perspective:
+                xy = (xy[:, :2] / xy[:, 2:3]).reshape(n, 8)  # rescale
+            else:  # affine
+                xy = xy[:, :2].reshape(n, 8)
 
-        # create new boxes
-        x = xy[:, [0, 2, 4, 6]]  # x_lt, x_rb, x_lb, x_rt
-        y = xy[:, [1, 3, 5, 7]]  # y_lt, y_rb, y_lb, y_rt
-        # 将变换后的bbox摆正
-        xy = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
+            # create new boxes
+            x = xy[:, [0, 2, 4, 6]]  # x_lt, x_rb, x_lb, x_rt
+            y = xy[:, [1, 3, 5, 7]]  # y_lt, y_rb, y_lb, y_rt
+            # 将变换后的bbox摆正
+            xy = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
 
-        # clip boxes
-        xy[:, [0, 2]] = xy[:, [0, 2]].clip(0, width)
-        xy[:, [1, 3]] = xy[:, [1, 3]].clip(0, height)
+            # clip boxes
+            xy[:, [0, 2]] = xy[:, [0, 2]].clip(0, width)
+            xy[:, [1, 3]] = xy[:, [1, 3]].clip(0, height)
 
-        # filter candidates
-        i = box_candidates(box1=tar_bboxes[:, :4].T * s, box2=xy.T)
-        tar_bboxes = tar_bboxes[i]
-        tar_labels = tar_labels[i]
-        tar_bboxes[:, :4] = xy[i]
+            # filter candidates
+            i = box_candidates(box1=tar_bboxes[:, :4].T * s, box2=xy.T)
+            tar_bboxes = tar_bboxes[i]
+            tar_labels = tar_labels[i]
+            tar_bboxes[:, :4] = xy[i]
 
     return img, tar_bboxes, tar_labels
 

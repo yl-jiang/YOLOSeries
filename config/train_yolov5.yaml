@@ -61,6 +61,7 @@ warm_up:
   warmup_momentum: 0.8
 
 data_hyp:
+  data_aug_prespective_p: 1.0
   data_aug_scale: 0.5
   data_aug_shear: 0.0
   data_aug_translate: 0.1

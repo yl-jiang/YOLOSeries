@@ -87,8 +87,6 @@ def build_dataloader(img_dir, lab_dir, name_path, input_dim, aug_hyp, cache_num,
 
 # -------------------------------------------------------------------------------------------------------------------------
 
-
-
 class TestDataLoader(TorchDataLoader):
     def __init__(self, *args, **kwargs):
         self.__initialized = False
@@ -140,12 +138,3 @@ def build_test_dataloader(img_dir, input_dim, batch_size=1, num_workers=0):
     else:
         prefetcher = None
     return dataset, iter(dataloader), prefetcher
-
-
-
-
-
-
-
-
-

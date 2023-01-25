@@ -12,8 +12,6 @@ from tqdm import tqdm
 
 __all__ = ["BatchSampler", "InfiniteSampler", 'TestBatchSampler', 'AspectRatioBatchSampler']
 
-
-
 class AspectRatioBatchSampler(Sampler):
     """
     按照图片的长宽比对输入网络训练图片进行从小到大的重新排列
@@ -89,7 +87,6 @@ class AspectRatioBatchSampler(Sampler):
         return groups
 
 
-
 class BatchSampler(TorchBatchSampler):
     """
     This batch sampler will generate mini-batches of (mosaic, index) tuples from another sampler.
@@ -163,7 +160,6 @@ class InfiniteSampler(Sampler):
 
 
 # -------------------------------------------------------------------------------------------------------------------------
-
 
 class TestBatchSampler(TorchBatchSampler):
     """

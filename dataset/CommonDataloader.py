@@ -26,7 +26,7 @@ from .base_generator import Generator
 from utils import maybe_mkdir, clear_dir
 from .data_collater import fixed_imgsize_collate_fn
 from .data_sampler import AspectRatioBatchSampler
-from utils import mosaic, random_perspective, valid_bbox, mixup, cutout, RandomHSV, RandomFlipLR, RandomFlipUD, scale_jitting
+from utils import mosaic, RandomPerspective, valid_bbox, mixup, cutout, RandomHSV, RandomFlipLR, RandomFlipUD, scale_jitting
 NUM_THREADS = min(8, os.cpu_count())
 
 
@@ -235,7 +235,7 @@ class YoloDataset(Dataset, Generator):
         img, bboxes, labels = mosaic(imgs, bboxes, labels,
                                      mosaic_shape=[_*2 for _ in self.input_img_size],
                                      fill_value=self.data_aug_param["data_aug_fill_value"])
-        img, bboxes, labels = random_perspective(img, bboxes, labels,
+        img, bboxes, labels = RandomPerspective(img, bboxes, labels, 1.0, 
                                                 self.data_aug_param["data_aug_degree"],
                                                 self.data_aug_param['data_aug_translate'],
                                                 self.data_aug_param['data_aug_scale'],

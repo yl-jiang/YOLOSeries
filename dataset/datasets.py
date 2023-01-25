@@ -1,20 +1,18 @@
-import sys
 import random
 import warnings
 from time import time
 from pathlib import Path
 import cv2
-import h5py
 import numpy as np
 from PIL import Image
-from tqdm import tqdm
-from multiprocessing.pool import ThreadPool
 from .dataset_warpper import *
 from .base_generator import Generator
-from utils import maybe_mkdir, clear_dir
-from utils import mosaic, random_perspective, valid_bbox, mixup
+from utils import mosaic, RandomPerspective, valid_bbox, mixup
 import os
 from loguru import logger
+import torchvision
+from utils import letter_resize_img
+
 NUM_THREADS = min(8, os.cpu_count())
 
 __all__ = ["YOLODataset", "TestDataset"]
@@ -212,14 +210,14 @@ class YOLODataset(Dataset, Generator):
         img, bboxes, labels = mosaic(imgs, bboxes, labels,
                                      mosaic_shape=[_*2 for _ in self.input_img_size],
                                      fill_value=self.data_aug_param["data_aug_fill_value"], img_ids=indices)
-        img, bboxes, labels = random_perspective(img, bboxes, labels,
-                                                self.data_aug_param["data_aug_degree"],
-                                                self.data_aug_param['data_aug_translate'],
-                                                self.data_aug_param['data_aug_scale'],
-                                                self.data_aug_param['data_aug_shear'],
-                                                self.data_aug_param['data_aug_prespective'],
-                                                self.input_img_size,
-                                                self.data_aug_param["data_aug_fill_value"])
+        # img, bboxes, labels = RandomPerspective(img, bboxes, labels, self.data_aug_param["data_aug_perspective_p"],
+        #                                         self.data_aug_param["data_aug_degree"],
+        #                                         self.data_aug_param['data_aug_translate'],
+        #                                         self.data_aug_param['data_aug_scale'],
+        #                                         self.data_aug_param['data_aug_shear'],
+        #                                         self.data_aug_param['data_aug_prespective'],
+        #                                         self.input_img_size,
+        #                                         self.data_aug_param["data_aug_fill_value"])
         return img, bboxes, labels
 
     def _cache_image(self):
@@ -391,8 +389,6 @@ class YOLODataset(Dataset, Generator):
 
 
 # -------------------------------------------------------------------------------------------------------------------------
-import torchvision
-from utils import letter_resize_img
 
 class TestDataset(Dataset):
 

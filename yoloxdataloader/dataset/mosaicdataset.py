@@ -1,4 +1,4 @@
-from utils import mosaic, random_perspective, valid_bbox, mixup, cutout
+from utils import mosaic, RandomPerspective, valid_bbox, mixup, cutout
 from .datasets_wrapper import Dataset
 import random
 import numpy as np
@@ -78,7 +78,7 @@ class MosaicTransformDataset(Dataset):
             imgs.append(img)
 
         img, bboxes, labels = mosaic(imgs, bboxes, labels, mosaic_shape=[_*2 for _ in self.input_dim], fill_value=self.fill_value)
-        img, bboxes, labels = random_perspective(img, bboxes, labels,
+        img, bboxes, labels = RandomPerspective(img, bboxes, labels, 1.0,
                                                  self.degree,
                                                  self.translate,
                                                  self.scale,
