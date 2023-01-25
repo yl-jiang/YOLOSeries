@@ -423,7 +423,7 @@ class Training:
         if self.hyp['do_warmup'] and step_in_total < self.hyp["warmup_steps"]:
             self.accumulate = max(1, np.interp(step_in_total,
                                                [0., self.hyp['warmup_steps']],
-                                               [1, self.hyp['accumulate_loss_step'] / self.hyp['batch_size'] / dist.get_world_size()]).round())
+                                               [1, self.hyp['accumulate_loss_step'] / self.hyp['batch_size'] / get_world_size()]).round())
 
             # optimizer有3各param_group, 分别是parm_other, param_weight, param_bias
             for j, para_g in enumerate(self.optimizer.param_groups):

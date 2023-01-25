@@ -2,9 +2,9 @@ import torch
 import numba
 import numpy as np
 
-from .bbox_tools import gpu_CIoU, gpu_DIoU, gpu_Giou, gpu_iou
+from .bbox_tools import gpu_CIoU, gpu_DIoU, gpu_Giou, gpu_iou, numba_iou
 
-__all__ = ['gpu_nms', 'gpu_linear_soft_nms', 'gpu_exponential_soft_nms']
+__all__ = ['gpu_nms', 'gpu_linear_soft_nms', 'gpu_exponential_soft_nms', 'numba_nms']
 
 
 @numba.njit
