@@ -11,7 +11,7 @@ from numpy.matrixlib import matrix
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
 
-from utils import maybe_mkdir
+from .common import maybe_mkdir
 
 
 def iou(box1, box2):

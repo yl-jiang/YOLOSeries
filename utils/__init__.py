@@ -1,5 +1,6 @@
-from .layer_tools import *
+from .common import *
 from .bbox_tools import *
+from .layer_tools import *
 from .nms import *
 
 from .visualizer import plt_save_img
@@ -16,7 +17,6 @@ from .anchor import GPUAnchor
 from .dist import *
 from .setup_env import *
 from .gpu import *
-from .common import *
 from .meter import *
 from .allreduce_norm import *
 from .model_utils import *

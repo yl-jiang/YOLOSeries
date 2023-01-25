@@ -82,7 +82,7 @@ def build_dataloader(img_dir, lab_dir, name_path, input_dim, aug_hyp, cache_num,
     else:
         prefetcher = None
 
-    return dataset, iter(dataloader), prefetcher
+    return dataset, dataloader, prefetcher
 
 
 # -------------------------------------------------------------------------------------------------------------------------
@@ -137,4 +137,4 @@ def build_test_dataloader(img_dir, input_dim, batch_size=1, num_workers=0):
         prefetcher = TestDataPrefetcher(dataloader)
     else:
         prefetcher = None
-    return dataset, iter(dataloader), prefetcher
+    return dataset, dataloader, prefetcher
