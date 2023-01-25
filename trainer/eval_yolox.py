@@ -1,4 +1,3 @@
-import math
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -6,7 +5,6 @@ from utils import gpu_nms, numba_iou, numba_nms, numba_xywh2xyxy
 from utils import xywh2xyxy
 from collections import defaultdict
 from utils import weighted_fusion_bbox
-import pickle
 from loguru import logger
 
 

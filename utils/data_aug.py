@@ -1,15 +1,98 @@
 import random
 import math
 import numbers
-
 import cv2
 import numpy as np
 from functools import reduce
+from copy import deepcopy
+from .bbox_tools import numba_iou, box_candidates
+from .common import compute_resize_scale
 
-from utils import xywh2xyxy
+
+__all__ = ['CV2Transform', 'RandomBlur', 'RandomSaturation', 'RandomBrightness', 
+           'RandomScale', 'random_perspective', 'mosaic', 'mixup', 'RandomFlipLR', 
+           'RandomFlipUD', 'cutout', 'scale_jitting', 'RandomHSV', 
+           'letter_resize_img', 'minmax_img_resize', 'min_scale_resize']
+
 
 # region
 # ===================================== aug for img =====================================
+
+def letter_resize_img(img, dst_size, stride=64, fill_value=128, only_ds=False, training=True):
+    """
+    only scale down
+    :param only_ds: only downsample
+    :param fill_value:
+    :param training:
+    :param img:
+    :param dst_size: int or [h, w]
+    :param stride:
+    :return:
+    """
+    if isinstance(dst_size, int):
+        dst_size = [dst_size, dst_size]
+
+    # 将dst_size调整到是stride的整数倍
+    dst_del_h, dst_del_w = np.remainder(dst_size[0], stride), np.remainder(dst_size[1], stride)
+    dst_pad_h = stride - dst_del_h if dst_del_h > 0 else 0
+    dst_pad_w = stride - dst_del_w if dst_del_w > 0 else 0
+    dst_size = [dst_size[0] + dst_pad_h, dst_size[1] + dst_pad_w]
+
+    org_h, org_w = img.shape[:2]  # [height, width]
+    scale = float(np.min([dst_size[0] / org_h, dst_size[1] / org_w]))
+    if only_ds:
+        scale = min(scale, 1.0)  # only scale down for good test performance
+    if scale != 1.:
+        resize_h, resize_w = int(org_h * scale), int(org_w * scale)
+        img_resize = cv2.resize(img.copy(), (resize_w, resize_h), interpolation=0)
+    else:
+        resize_h, resize_w = img.shape[:2]
+        img_resize = img.copy()
+
+    # training时需要一个batch保持固定的尺寸，testing时尽可能少的填充像素以加速inference
+    if not training:
+        pad_h, pad_w = dst_size[0] - resize_h, dst_size[1] - resize_w
+        pad_h, pad_w = np.remainder(pad_h, stride), np.remainder(pad_w, stride)
+        top = int(round(pad_h / 2))
+        left = int(round(pad_w / 2))
+        bottom = pad_h - top
+        right = pad_w - left
+        if isinstance(fill_value, int):
+            fill_value = (fill_value, fill_value, fill_value)
+        img_out = cv2.copyMakeBorder(img_resize, top, bottom, left, right, cv2.BORDER_CONSTANT, value=fill_value)
+    else:
+        img_out = np.full(shape=dst_size+[3], fill_value=fill_value)
+        pad_h, pad_w = dst_size[0] - resize_h, dst_size[1] - resize_w
+        top, left = pad_h // 2, pad_w // 2
+        bottom, right = pad_h - top, pad_w - left
+        img_out[top:(top+resize_h), left:(left+resize_w)] = img_resize
+    letter_info = {'scale': scale, 'pad_top': top, 'pad_left': left, "pad_bottom": bottom, "pad_right": right, "org_shape": (org_h, org_w)}
+    return img_out.astype(np.uint8), letter_info
+
+
+def minmax_img_resize(img, min_side=None, max_side=None):
+    scale = compute_resize_scale(img, min_side, max_side)
+    img = cv2.resize(img, dsize=None, fx=scale, fy=scale)
+    return img, scale
+
+
+def min_scale_resize(img, dst_size):
+    """
+
+    :param img: ndarray
+    :param dst_size: [h, w]
+    :returns: resized_img, img_org
+    """
+    assert isinstance(img, np.ndarray)
+    assert img.ndim == 3
+    min_scale = min(np.array(dst_size) / max(img.shape[:2]))
+    h, w = img.shape[:2]
+    if min_scale != 1:
+        img_out = cv2.resize(img, (int(w*min_scale), int(h*min_scale)), interpolation=cv2.INTER_AREA)
+        return img_out, img.shape[:2]
+    return img
+
+
 class CV2Transform:
     """
     pass
@@ -231,7 +314,6 @@ class CV2Transform:
                 self.labels = labels_out
 
 
-
 def RandomBlur(img, thresh):
     """
 
@@ -278,15 +360,15 @@ def RandomBrightness(img, thresh):
     return img
 
 
-def RandomHSV(img, thresh, hgain=0.5, sgain=0.5, vgain=0.5):
+def RandomHSV(img, thresh, hgain, sgain, vgain):
     """
     将输入的RGB模态的image转换为HSV模态,并随机从对比度,饱和度以及亮度三个维度进行变换。
 
     :param img: ndarray / RGB
     :param thresh:
-    :param hgain:
-    :param sgain:
-    :param vgain:
+    :param hgain: 0.5
+    :param sgain: 0.5
+    :param vgain: 0.5
     :return:
     """
     assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
@@ -327,49 +409,8 @@ def YOCO(img, aug_method):
 
 # region
 # ===================================== aug for img and bbox =====================================
-def randomShift(self):
-    # 随机平移
-    center_y = (self.bboxes[:, 1] + self.bboxes[:, 3]) / 2
-    center_x = (self.bboxes[:, 0] + self.bboxes[:, 2]) / 2
-    if random.random() < self.aug_threshold:
-        h, w, c = self.img.shape
-        after_shfit_image = np.zeros((h, w, c), dtype=self.img.dtype)
-        # after_shfit_image每行元素都设为[104,117,123]
-        after_shfit_image[:, :, :] = (self.fill_value, self.fill_value, self.fill_value)  # bgr
-        shift_x = int(random.uniform(-w * 0.2, w * 0.2))
-        shift_y = int(random.uniform(-h * 0.2, h * 0.2))
-        # 图像平移
-        if shift_x >= 0 and shift_y >= 0:  # 向下向右平移
-            after_shfit_image[shift_y:, shift_x:, :] = self.img[:h - shift_y, :w - shift_x, :]
-            min_x, min_y, max_x, max_y = shift_x, shift_y, w, h
-        elif shift_x >= 0 and shift_y < 0:  # 向上向右平移
-            after_shfit_image[:h + shift_y, shift_x:, :] = self.img[-shift_y:, :w - shift_x, :]
-            min_x, min_y, max_x, max_y = shift_x, 0, w, h - shift_y
-        elif shift_x <= 0 and shift_y >= 0:  # 向下向左平移
-            after_shfit_image[shift_y:, :w + shift_x, :] = self.img[:h - shift_y, -shift_x:, :]
-            min_x, min_y, max_x, max_y = 0, shift_y, w, h
-        else:  # 向上向左平移
-            after_shfit_image[:h + shift_y, :w + shift_x, :] = self.img[-shift_y:, -shift_x:, :]
-            min_x, min_y, max_x, max_y = 0, 0, w - shift_x, h - shift_y
 
-        center_shift_y = center_y + shift_y
-        center_shift_x = center_x + shift_x
-        mask1 = (center_shift_x > 0) & (center_shift_x < w)
-        mask2 = (center_shift_y > 0) & (center_shift_y < h)
-        mask = np.logical_and(mask1, mask2)
-        boxes_in = self.bboxes[mask]
-        # 如果做完平移后bbox的中心点被移到了图像外,就撤销平移操作
-        if len(boxes_in) > 0:
-            # bbox平移
-            boxes_in[:, [1, 3]] = np.clip(boxes_in[:, [1, 3]] + shift_y, a_min=min_y, a_max=max_y)
-            boxes_in[:, [0, 2]] = np.clip(boxes_in[:, [0, 2]] + shift_x, a_min=min_x, a_max=max_x)
-            labels_in = self.labels[mask]
-            self.img = after_shfit_image
-            self.bboxes = boxes_in
-            self.labels = labels_in
-
-
-def RandomScale(img, bboxes, thresh):
+def RandomScale(img, bboxes, p):
     """
 
     :param img: ndarray
@@ -380,7 +421,7 @@ def RandomScale(img, bboxes, thresh):
     assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
 
     # 固定住高度,以0.8-1.2伸缩宽度,做图像形变
-    if random.random() < thresh:
+    if random.random() < p:
         scale = random.uniform(0.8, 1.2)
         # cv2.resize(img, shape)/其中shape->[宽,高]
         img_out = cv2.resize(img, None, fx=scale, fy=1)
@@ -390,85 +431,53 @@ def RandomScale(img, bboxes, thresh):
     return img, bboxes
 
 
-def randomCrop(self):
-    # 随机裁剪
-    if random.random() < self.aug_threshold:
-        height, width, c = self.img.shape
-        # x,y代表裁剪后的图像的中心坐标,h,w表示裁剪后的图像的高,宽
-        h = random.uniform(0.6 * height, height)
-        w = random.uniform(0.6 * width, width)
-        x = random.uniform(width / 4, 3 * width / 4)
-        y = random.uniform(height / 4, 3 * height / 4)
-
-        # 左上角
-        crop_xmin = np.clip(x - (w / 2), a_min=0, a_max=width).astype(np.int32)
-        crop_ymin = np.clip(y - (h / 2), a_min=0, a_max=height).astype(np.int32)
-        # 右下角
-        crop_xmax = np.clip(x + (w / 2), a_min=0, a_max=width).astype(np.int32)
-        crop_ymax = np.clip(y + (h / 2), a_min=0, a_max=height).astype(np.int32)
-
-        if self.strict:
-            # 只留下那些bbox的中心点坐标仍在裁剪后区域内的bbox
-            bbox_center_y = (self.bboxes[:, 1] + self.bboxes[:, 3]) / 2
-            bbox_center_x = (self.bboxes[:, 0] + self.bboxes[:, 2]) / 2
-            mask1 = (bbox_center_y < crop_ymax) & (bbox_center_x < crop_xmax)
-            mask2 = (bbox_center_y > crop_ymin) & (bbox_center_x > crop_xmin)
-            mask = mask1 & mask2
-        else:
-            # 只保留那些bbox左上角或者右上角坐标仍在裁剪区域内的bbox
-            cliped_bbox = np.empty_like(self.bboxes)
-            cliped_bbox[:, [0, 2]] = np.clip(self.bboxes[:, [0, 2]], crop_xmin, crop_xmax)
-            cliped_bbox[:, [1, 3]] = np.clip(self.bboxes[:, [1, 3]], crop_ymin, crop_ymax)
-            mask1 = (cliped_bbox[:, 2] - cliped_bbox[:, 0]) > 0
-            mask2 = (cliped_bbox[:, 3] - cliped_bbox[:, 1]) > 0
-            mask = mask1 & mask2
-
-        bbox_out = self.bboxes[mask]
-        labels_out = self.labels[mask]
-        if len(bbox_out) > 0:
-            crop_width = crop_xmax - crop_xmin
-            crop_height = crop_ymax - crop_ymin
-            bbox_out[:, [1, 3]] = np.clip(bbox_out[:, [1, 3]] - crop_ymin, a_min=0, a_max=crop_height)
-            bbox_out[:, [0, 2]] = np.clip(bbox_out[:, [0, 2]] - crop_xmin, a_min=0, a_max=crop_width)
-            new_img = self.img[crop_ymin:crop_ymax, crop_xmin:crop_xmax, :]
-            self.img = new_img
-            self.bboxes = bbox_out
-            self.labels = labels_out
-
-
-def valid_bbox(bboxes, box_type='xyxy', wh_thr=2, ar_thr=10, area_thr=16):
+def RandomFlipLR(img, bboxes, thresh):
     """
-    根据bbox的width阈值,height阈值,width-height ratio阈值以及area阈值,过滤掉不满足限制条件的bbox。
+    随机左右翻转image。
 
-    :param wh_thr:
-    :param area_thr: area threshold
-    :param ar_thr: aspect ratio threshold
-    :param bboxes: ndarray or list; [[a, b, c, d], [e, f, g, h], ...]
-    :param box_type: 'xyxy' or 'xywh'; [xmin, ymin, xmax, ymax] or [center_x, center_y, w, h]
+    :param img: ndarray
+    :param bboxes: [xmin, ymin, xmax, ymax]
+    :param thresh:
     :return:
     """
-    if box_type == 'xywh':
-        labels = xywh2xyxy(np.array(bboxes))
-    elif box_type:
-        labels = np.array(bboxes)
-    else:
-        raise ValueError(f'unknow bbox format: {box_type}')
+    assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
 
-    x = labels[:, 2] > labels[:, 0]  # xmax > xmin
-    y = labels[:, 3] > labels[:, 1]  # ymax > ymin
-    w = labels[:, 2] - labels[:, 0]
-    h = labels[:, 3] - labels[:, 1]
-    w_mask = w > wh_thr
-    h_mask = h > wh_thr
-    area_mask = (w * h) >= area_thr
-    ar_1, ar_2 = w / (h+1e-16), h / (w+1e-16)
-    ar = np.where(ar_1 > ar_2, ar_1, ar_2)
-    ar_mask = ar < ar_thr
-    valid_idx = np.stack([x, y, ar_mask, area_mask, h_mask, w_mask], axis=1)
-    valid_inx = np.all(valid_idx, axis=1)
+    # 水平翻转/y坐标不变,x坐标变化
+    if random.random() < thresh:
+        img_out = np.fliplr(img).copy()
+        _, w = img.shape[:2]
+        xmax = w - bboxes[:, 0]
+        xmin = w - bboxes[:, 2]
+        bboxes_out = bboxes.copy()
+        bboxes_out[:, 0] = xmin
+        bboxes_out[:, 2] = xmax
+        return img_out, bboxes_out
+    return img, bboxes
 
-    return valid_inx
 
+def RandomFlipUD(img, bboxes, thresh):
+    """
+    随机上下翻转image。
+
+    :param img: ndarray
+    :param bboxes: [xmin, ymin, xmax, ymax]
+    :param thresh: 0 ~ 1
+    """
+    assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
+
+    # 竖直翻转/x坐标不变,y坐标变化
+    if random.random() < thresh:
+        img_out = np.flipud(img).copy()
+        h, _ = img.shape[:2]
+        ymax = h - bboxes[:, 1]
+        ymin = h - bboxes[:, 3]
+        bboxes_out = bboxes.copy()
+        bboxes_out[:, 1] = ymin
+        bboxes_out[:, 3] = ymax
+        return img_out, bboxes_out
+    return img, bboxes
+
+# ===================================== aug for img, bbox, label =====================================
 
 def random_perspective(img, tar_bboxes, tar_labels, degrees=10, translate=.1, scale=.1, shear=10,
                        perspective=0.0, dst_size=448, fill_value=128):
@@ -566,23 +575,7 @@ def random_perspective(img, tar_bboxes, tar_labels, degrees=10, translate=.1, sc
     return img, tar_bboxes, tar_labels
 
 
-def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1):  # box1(4,n), box2(4,n)
-    """
-    Compute candidate boxes
-    :param box1: before augment
-    :param box2: after augment
-    :param wh_thr: wh_thr (pixels)
-    :param ar_thr:
-    :param area_thr:
-    :return:
-    """
-    w1, h1 = box1[2] - box1[0], box1[3] - box1[1]
-    w2, h2 = box2[2] - box2[0], box2[3] - box2[1]
-    ar = np.maximum(w2 / (h2 + 1e-16), h2 / (w2 + 1e-16))  # aspect ratio
-    return (w2 > wh_thr) & (h2 > wh_thr) & (w2 * h2 / (w1 * h1 + 1e-16) > area_thr) & (ar < ar_thr)  # candidates
-
-
-def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
+def mosaic(imgs, bboxes, labels, mosaic_shape, fill_value=128, img_ids=[]):
     """
     mosaic four images
     :param fill_value:
@@ -623,37 +616,88 @@ def mosaic(imgs, bboxes, labels, mosaic_shape=640*2, fill_value=128):
         img_out[ymin_o:ymax_o, xmin_o:xmax_o] = img[ymin_i:ymax_i, xmin_i:xmax_i]
 
         # 处理label
-        box = bboxes[i].copy().astype(np.float32)
-        # in small image
-        box[:, [0, 2]] = np.clip(np.round(box[:, [0, 2]], decimals=2), xmin_i+1, xmax_i-1)
-        box[:, [1, 3]] = np.clip(np.round(box[:, [1, 3]], decimals=2), ymin_i+1, ymax_i-1)
-        box[:, [0, 2]] -= xmin_i
-        box[:, [1, 3]] -= ymin_i
+        box = np.round(deepcopy(bboxes[i]).astype(np.float32), decimals=3)  # (n, 4)
+        box_org = np.round(deepcopy(bboxes[i]).astype(np.float32), decimals=3)  # (n, 4)
 
-        # ===============================================================
-        # 对target进行过滤,剔除掉经过裁切后与原bbox重合面积过小的bbox
-        box[:, [0, 2]] += xmin_o  # x
-        box[:, [1, 3]] += ymin_o  # y
-        org_box_area = np.prod(bboxes[i][:, 2:4] - bboxes[i][:, 0:2], axis=1) + 1e-16
-        mdy_box_area = np.prod(box[:, 2:4] - box[:, 0:2], axis=1) + 1e-16
-        iou = np.round(mdy_box_area / org_box_area, decimals=3)
-        assert np.sum(iou[iou > 1]) == 0
-        valid_idx = iou >= 0.1
-        bboxes_out.append(box[valid_idx])
-        labels_out.extend(np.array(labels[i])[valid_idx])
-        # ===============================================================
+        # 留下在[xmin_i, ymin_i, xmax_i, ymax_i]范围内的box(经过裁剪后，有些box可能被遗留在裁剪区域之外)
+        sub_img_box = np.array([[xmin_i, ymin_i, xmax_i, ymax_i]])
+        iou_in_sub = numba_iou(box, sub_img_box).squeeze(axis=1)  # (n)
+        keep_i = iou_in_sub > 0
 
-        # in big image(do not remove any box)
-        # box[:, [0, 2]] += xmin_o  # x
-        # box[:, [1, 3]] += ymin_o  # y
-        # bboxes_out.append(box)
-        # labels_out.extend(labels[i])
+        if keep_i.sum() > 0:
+            box = box[keep_i]
+            box[:, [0, 2]] = np.clip(np.round(box[:, [0, 2]], decimals=2), xmin_i, xmax_i-1)
+            box[:, [1, 3]] = np.clip(np.round(box[:, [1, 3]], decimals=2), ymin_i, ymax_i-1)
+            box[:, [0, 2]] -= xmin_i
+            box[:, [1, 3]] -= ymin_i
+
+            # ===============================================================
+            # 对target进行过滤,剔除掉经过裁切后与原bbox重合面积过小的bbox
+            box[:, [0, 2]] += xmin_o  # x
+            box[:, [1, 3]] += ymin_o  # y
+            org_box_area = np.prod(box_org[keep_i][:, 2:4] - box_org[keep_i][:, 0:2], axis=1)
+            cur_box_area = np.prod(box[:, 2:4] - box[:, 0:2], axis=1)
+            iou = np.round(cur_box_area / org_box_area, decimals=1)
+
+            # if np.sum(iou[iou > 1]) > 0:
+            #     print(img_ids[i])
+            #     debug(img_out, box, np.array(labels[i])[keep_i], iou)
+            #     debug(img, bboxes[i][keep_i], np.array(labels[i])[keep_i], iou)
+
+            assert np.sum(iou[iou > 1]) == 0
+            valid_idx = iou >= 0.3
+
+            # if len(iou) > valid_idx.sum():
+            #     debug(img, bboxes[i][keep_i], np.array(labels[i])[keep_i], iou)
+            #     debug(img_out, box, np.array(labels[i])[keep_i], iou)
+            #     debug(img_out, box[valid_idx], np.array(labels[i])[keep_i][valid_idx], iou[valid_idx])
+
+            bboxes_out.append(box[valid_idx])
+            labels_out.extend(np.array(labels[i])[keep_i][valid_idx])
+            # ===============================================================
+        else:
+            continue
 
     bboxes_out = np.concatenate(bboxes_out, axis=0)
     bboxes_out = np.clip(bboxes_out, 0, mosaic_shape[0])
     labels_out = np.array(labels_out)
 
     return img_out, bboxes_out, labels_out
+
+
+def debug(img, bboxes, labels, iou):
+    import time
+    img = deepcopy(img)
+    for i, box in enumerate(bboxes):
+        # pt1:左上角坐标[xmin, ymin] ; pt2:右下角坐标[xmax, ymax]
+        lt = (int(round(box[0])), int(round(box[1])))
+        rb = (int(round(box[2])), int(round(box[3])))
+        bl = (int(round(box[0])), int(round(box[3])))
+        # cv2.rectangle() parameters:
+        # img: image array
+        # pt1: 左上角
+        # pt2: 右下角
+        # color: color
+        # thickness: 表示矩形边框的厚度，如果为负值，如 CV_FILLED，则表示填充整个矩形
+        if iou[i] > 1:
+            img = cv2.rectangle(img, pt1=lt, pt2=rb, color=[0, 200, 0], thickness=2)
+        else:
+            img = cv2.rectangle(img, pt1=lt, pt2=rb, color=[100, 149, 237], thickness=2)
+        # text:显示的文本
+        # org文本框左下角坐标（只接受元素为int的元组）
+        # fontFace：字体类型
+        # fontScale:字体大小（float）
+        # thickness：int，值为-1时表示填充颜色
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        caption = str(int(labels[i]))
+        img = cv2.putText(img,
+                        text=caption,
+                        org=bl,
+                        fontFace=font, fontScale=0.45,
+                        color=[135, 206, 235],
+                        thickness=1)
+    save_path = f"/home/uih/JYL/GitHub/YOLOSeries/debug/debug_{time.time()}.png"
+    cv2.imwrite(str(save_path), img[:, :, ::-1])
 
 
 def mixup(img1, bbox1, label1, img2, bbox2, label2):
@@ -684,54 +728,7 @@ def mixup(img1, bbox1, label1, img2, bbox2, label2):
     return img_out, bbox_out, label_out
 
 
-def RandomFlipLR(img, bboxes, thresh):
-    """
-    随机左右翻转image。
-
-    :param img: ndarray
-    :param bboxes: [xmin, ymin, xmax, ymax]
-    :param thresh:
-    :return:
-    """
-    assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
-
-    # 水平翻转/y坐标不变,x坐标变化
-    if random.random() < thresh:
-        img_out = np.fliplr(img).copy()
-        _, w = img.shape[:2]
-        xmax = w - bboxes[:, 0]
-        xmin = w - bboxes[:, 2]
-        bboxes_out = bboxes.copy()
-        bboxes_out[:, 0] = xmin
-        bboxes_out[:, 2] = xmax
-        return img_out, bboxes_out
-    return img, bboxes
-
-
-def RandomFlipUD(img, bboxes, thresh):
-    """
-    随机上下翻转image。
-
-    :param img: ndarray
-    :param bboxes: [xmin, ymin, xmax, ymax]
-    :param thresh: 0 ~ 1
-    """
-    assert isinstance(img, np.ndarray), f"Unkown Image Type {type(img)}"
-
-    # 竖直翻转/x坐标不变,y坐标变化
-    if random.random() < thresh:
-        img_out = np.flipud(img).copy()
-        h, _ = img.shape[:2]
-        ymax = h - bboxes[:, 1]
-        ymin = h - bboxes[:, 3]
-        bboxes_out = bboxes.copy()
-        bboxes_out[:, 1] = ymin
-        bboxes_out[:, 3] = ymax
-        return img_out, bboxes_out
-    return img, bboxes
-
-
-def cutout(img, bbox, cls, cutout_iou_thr=0.7):
+def cutout(img, bbox, cls, cutout_iou_thr=0.7, p=0.3):
     """
     在图像中挖孔,并使用随机颜色填充。
 
@@ -741,111 +738,134 @@ def cutout(img, bbox, cls, cutout_iou_thr=0.7):
     :param cutout_p: 使用cutout的概率
     :param cutout_iou_thr: cutout部分图像与target的所有bbox计算iou,iou值小于等于该阈值的mask视为有效的mask(剔除与target重合过多的mask)
     """
-    scales = [0.5] * 1 + [0.25] * 2 + [0.125] * 4 + [0.0625] * 8 + [0.03125] * 16  # image size fraction
-    h, w, _ = img.shape
+    if np.random.rand() < p:
+        scales = [0.5] * 1 + [0.25] * 2 + [0.125] * 4 + [0.0625] * 8 + [0.03125] * 16  # image size fraction
+        h, w, _ = img.shape
 
-    img_cut, bboxes_cut, classes_cut = img.copy(), bbox.copy(), cls.copy()
-    valid_ann_idx = []
+        img_cut, bboxes_cut, classes_cut = img.copy(), bbox.copy(), cls.copy()
+        valid_ann_idx = []
 
-    for s in scales:
-        mask_h = np.random.randint(1, int(h * s))
-        mask_w = np.random.randint(1, int(w * s))
+        for s in scales:
+            mask_h = np.random.randint(1, int(h * s))
+            mask_w = np.random.randint(1, int(w * s))
 
-        mask_xc = np.random.randint(0, w)
-        mask_yc = np.random.randint(0, h)
-        mask_xmin = np.clip(mask_xc - mask_w // 2, 0, w)  # (1,)
-        mask_ymin = np.clip(mask_yc - mask_h // 2, 0, h)  # (1,)
-        mask_xmax = np.clip(mask_xc + mask_w // 2, 0, w)  # (1,)
-        mask_ymax = np.clip(mask_yc + mask_h // 2, 0, h)  # (1,)
+            mask_xc = np.random.randint(0, w)
+            mask_yc = np.random.randint(0, h)
+            mask_xmin = np.clip(mask_xc - mask_w // 2, 0, w)  # (1,)
+            mask_ymin = np.clip(mask_yc - mask_h // 2, 0, h)  # (1,)
+            mask_xmax = np.clip(mask_xc + mask_w // 2, 0, w)  # (1,)
+            mask_ymax = np.clip(mask_yc + mask_h // 2, 0, h)  # (1,)
 
-        mask_w = mask_xmax - mask_xmin
-        mask_h = mask_ymax - mask_ymin
-        mask_area = np.clip(mask_w * mask_h, 0., None)
+            mask_w = mask_xmax - mask_xmin
+            mask_h = mask_ymax - mask_ymin
+            mask_area = np.clip(mask_w * mask_h, 0., None)
 
-        bbox_area = np.clip(np.prod(bbox[:, 2:4] - bbox[:, 0:2], axis=1), 0., None)
+            bbox_area = np.clip(np.prod(bbox[:, 2:4] - bbox[:, 0:2], axis=1), 0., None)
 
-        ints_xmin = np.maximum(bbox[:, 0], mask_xmin)  # (N,)
-        ints_ymin = np.maximum(bbox[:, 1], mask_ymin)  # (N,)
-        ints_xmax = np.minimum(bbox[:, 2], mask_xmax)  # (N,)
-        ints_ymax = np.minimum(bbox[:, 3], mask_ymax)  # (N,)
+            ints_xmin = np.maximum(bbox[:, 0], mask_xmin)  # (N,)
+            ints_ymin = np.maximum(bbox[:, 1], mask_ymin)  # (N,)
+            ints_xmax = np.minimum(bbox[:, 2], mask_xmax)  # (N,)
+            ints_ymax = np.minimum(bbox[:, 3], mask_ymax)  # (N,)
 
-        ints_w = np.clip(ints_xmax - ints_xmin, 0., w)
-        ints_h = np.clip(ints_ymax - ints_ymin, 0., h)
-        ints_area = np.clip(ints_w * ints_h, 0., None)
-        iou = ints_area / (mask_area + bbox_area - ints_area + 1e-16)  # (N,)
-        valid_idx = iou <= cutout_iou_thr
-        valid_ann_idx.append(np.nonzero(valid_idx))
-        illegal_idx = iou > cutout_iou_thr
+            ints_w = np.clip(ints_xmax - ints_xmin, 0., w)
+            ints_h = np.clip(ints_ymax - ints_ymin, 0., h)
+            ints_area = np.clip(ints_w * ints_h, 0., None)
+            iou = ints_area / (mask_area + bbox_area - ints_area + 1e-16)  # (N,)
+            valid_idx = iou <= cutout_iou_thr
+            valid_ann_idx.append(np.nonzero(valid_idx))
+            illegal_idx = iou > cutout_iou_thr
 
-        if np.all(illegal_idx):  # 如果cutout部分图像与target的某个bbox重合面积过大,则跳过这一次的cutout操作(舍弃mask)
-            continue
-        else:  # 如果cutout部分图像与target中的某个bbox重合面积过大,则删除相应的target bbox(舍弃target)
-            mask_color = [np.random.randint(69, 200) for _ in range(3)]
-            img_cut[mask_ymin:mask_ymax, mask_xmin:mask_xmax] = mask_color
+            if np.all(illegal_idx):  # 如果cutout部分图像与target的某个bbox重合面积过大,则跳过这一次的cutout操作(舍弃mask)
+                continue
+            else:  # 如果cutout部分图像与target中的某个bbox重合面积过大,则删除相应的target bbox(舍弃target)
+                mask_color = [np.random.randint(69, 200) for _ in range(3)]
+                img_cut[mask_ymin:mask_ymax, mask_xmin:mask_xmax] = mask_color
 
-    valid_idx = reduce(np.intersect1d, valid_ann_idx)
-    if 0 < len(valid_idx): 
-        bboxes_cut = bboxes_cut[valid_idx]
-        classes_cut = np.array(classes_cut)[valid_idx]
-        return img_cut, bboxes_cut, classes_cut
+        valid_idx = reduce(np.intersect1d, valid_ann_idx)
+        if 0 < len(valid_idx): 
+            bboxes_cut = bboxes_cut[valid_idx]
+            classes_cut = np.array(classes_cut)[valid_idx]
+            return img_cut, bboxes_cut, classes_cut
+        else:
+            return img, bbox, cls
     else:
         return img, bbox, cls
 
 
-def scale_jitting(img, bbox, label, dst_size=None):
+def scale_jitting(img, bbox, label, dst_size=None, p=0.5):
     """
     :param: bbox: (xmin, ymin, xmax, ymax)
     :param: dst_size: (h, w)
     将输入的image进行随机scale的缩放后,再从缩放后的image中裁剪固定尺寸的image
     """
-    FLIP_LR = np.random.rand() > 0.5
+    if np.random.rand() < p:
+        FLIP_LR = np.random.rand() > 0.5
 
-    if dst_size and isinstance(dst_size, int):
-        dst_size = [dst_size, dst_size]
-    else:
-        dst_size = img.shape[:2]
+        if dst_size and isinstance(dst_size, int):
+            dst_size = [dst_size, dst_size]
+        else:
+            dst_size = img.shape[:2]
 
-    # jit_scale = max(img.shape[0]/dst_size[0], img.shape[1]/dst_size[1], dst_size[0]/img.shape[0], dst_size[1]/img.shape[1])
-    scale = min(img.shape[0]/dst_size[0], img.shape[1]/dst_size[1])
-    # 确保输入图片的尺寸大于dst_size,如果不满足则放大输入的image
-    if scale < 1.:
-        jit_scale = max(dst_size[0]/img.shape[0], dst_size[1]/img.shape[1]) + np.random.uniform(0.5, 1.5)
-    else:
-        jit_scale = max(dst_size[0]/img.shape[0], dst_size[1]/img.shape[1]) + np.random.uniform(0., 0.5)
+        # jit_scale = max(img.shape[0]/dst_size[0], img.shape[1]/dst_size[1], dst_size[0]/img.shape[0], dst_size[1]/img.shape[1])
+        scale = min(img.shape[0]/dst_size[0], img.shape[1]/dst_size[1])
+        # 确保输入图片的尺寸大于dst_size,如果不满足则放大输入的image
+        if scale < 1.:
+            jit_scale = max(dst_size[0]/img.shape[0], dst_size[1]/img.shape[1]) + np.random.uniform(0.5, 1.5)
+        else:
+            jit_scale = max(dst_size[0]/img.shape[0], dst_size[1]/img.shape[1]) + np.random.uniform(0., 0.5)
 
-    if jit_scale != 1.:
-        resized_h, resized_w = int(img.shape[0]*jit_scale), int(img.shape[1]*jit_scale)
-        resized_img = cv2.resize(np.ascontiguousarray(img.copy()), (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
-        if FLIP_LR and img.ndim == 3:
-            resized_img = resized_img[:, ::-1, :]
-        if FLIP_LR and img.ndim == 2:
-            resized_img = resized_img[:, ::-1]
-        x_offset, y_offset = 0, 0
-        if resized_h > dst_size[0]:
-            y_offset = np.random.randint(0, resized_h-dst_size[0])
-        if resized_w > dst_size[1]:
-            x_offset = np.random.randint(0, resized_w-dst_size[1])
-        img_out = resized_img[y_offset: y_offset+dst_size[0], x_offset:x_offset+dst_size[1]]
+        if jit_scale != 1.:
+            resized_h, resized_w = int(img.shape[0]*jit_scale), int(img.shape[1]*jit_scale)
+            resized_img = cv2.resize(np.ascontiguousarray(img.copy()), (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
+            if FLIP_LR and img.ndim == 3:
+                resized_img = resized_img[:, ::-1, :]
+            if FLIP_LR and img.ndim == 2:
+                resized_img = resized_img[:, ::-1]
+            x_offset, y_offset = 0, 0
+            if resized_h > dst_size[0]:
+                y_offset = np.random.randint(0, resized_h-dst_size[0])
+            if resized_w > dst_size[1]:
+                x_offset = np.random.randint(0, resized_w-dst_size[1])
+            img_out = resized_img[y_offset: y_offset+dst_size[0], x_offset:x_offset+dst_size[1]]
 
-        # process bbox and label
-        bbox_out = bbox.copy()
-        bbox_out *= jit_scale
-        if FLIP_LR:
-            bbox_out[:, [0, 2]] = resized_w - bbox_out[:, [0, 2]]  # [xmin, ymin, xmax, ymax] -> [xmax, ymin, xmin, ymax]
-            tmp_xmin = bbox_out[:, 2].copy()
-            bbox_out[:, 2] = bbox_out[:, 0]  # [xmax, ymin, xmax, ymax]
-            bbox_out[:, 0] = tmp_xmin  # [xmin, ymin, xmax, ymax]
-        bbox_out[:, [0, 2]] -= x_offset
-        bbox_out[:, [0, 2]] = np.clip(bbox_out[:, [0, 2]], 0, dst_size[1])
-        bbox_out[:, [1, 3]] -= y_offset
-        bbox_out[:, [1, 3]] = np.clip(bbox_out[:, [1, 3]], 0, dst_size[0])
-        resized_hs = bbox_out[:, 2] - bbox_out[:, 0] + 1e-16
-        resized_ws = bbox_out[:, 3] - bbox_out[:, 1] + 1e-16
-        ar = np.maximum(resized_ws/resized_hs, resized_hs/resized_ws)
-        keep = (ar < 20) & (resized_hs >= 3) & (resized_ws >= 3)
-        if np.sum(keep) > 0:
-            return img_out, bbox_out[keep], np.array(label)[keep]
+            # process bbox and label
+            bbox_out = bbox.copy()
+            bbox_out *= jit_scale
+            if FLIP_LR:
+                bbox_out[:, [0, 2]] = resized_w - bbox_out[:, [0, 2]]  # [xmin, ymin, xmax, ymax] -> [xmax, ymin, xmin, ymax]
+                tmp_xmin = bbox_out[:, 2].copy()
+                bbox_out[:, 2] = bbox_out[:, 0]  # [xmax, ymin, xmax, ymax]
+                bbox_out[:, 0] = tmp_xmin  # [xmin, ymin, xmax, ymax]
+            bbox_out[:, [0, 2]] -= x_offset
+            bbox_out[:, [0, 2]] = np.clip(bbox_out[:, [0, 2]], 0, dst_size[1])
+            bbox_out[:, [1, 3]] -= y_offset
+            bbox_out[:, [1, 3]] = np.clip(bbox_out[:, [1, 3]], 0, dst_size[0])
+            resized_hs = bbox_out[:, 2] - bbox_out[:, 0] + 1e-16
+            resized_ws = bbox_out[:, 3] - bbox_out[:, 1] + 1e-16
+            ar = np.maximum(resized_ws/resized_hs, resized_hs/resized_ws)
+            keep = (ar < 20) & (resized_hs >= 3) & (resized_ws >= 3)
+            if np.sum(keep) > 0:
+                return img_out, bbox_out[keep], np.array(label)[keep]
         
     return img, bbox, label
 
 # endregion
+
+
+if __name__ == '__main__':
+    # test CV2Transform
+    from utils import CV2Transform
+    img_path = r''
+    bbox_head = np.array([[96, 374, 143, 413]])
+    cv_img = cv2.imread(img_path)
+    s = cv_img.shape
+    print(cv_img.shape)
+    labels = np.array([1])
+    trans = CV2Transform(cv_img, bbox_head, labels)
+    # img, bbox = trans.randomFlip(cv_img, bbox_head)
+    print(trans.img.shape)
+    # print(trans.bboxes)
+    cv2.rectangle(trans.img, (trans.bboxes[:, 1], trans.bboxes[:, 0]), (trans.bboxes[:, 3], trans.bboxes[:, 2]), (55, 255, 155), 5)
+
+    cv2.imshow('image', trans.img)
+    cv2.waitKey(50000)

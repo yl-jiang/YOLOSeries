@@ -1,11 +1,6 @@
-import sys
-from pathlib import Path
-current_work_dir = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(current_work_dir))
-
 import torch
 from torch import nn
-from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect, SEBottleneckCSP, C3BottleneckCSP, FastSPP
+from utils import ConvBnAct, Upsample, Concat, Detect, C3BottleneckCSP, FastSPP
 from collections import OrderedDict
 
 class MiddleYOLOXBackboneAndNeck(nn.Module):
@@ -166,6 +161,11 @@ class YoloXMiddle(nn.Module):
 
 
 if __name__ == "__main__":
+
+    import sys
+    from pathlib import Path
+    current_work_dir = Path(__file__).resolve().parent.parent.parent
+    sys.path.insert(0, str(current_work_dir))
 
     dummy = torch.rand(1, 3, 224, 224)
     yolox = YoloXMiddle(2)

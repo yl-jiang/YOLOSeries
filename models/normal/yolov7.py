@@ -1,12 +1,7 @@
-import sys    
-from pathlib import Path
-cwd = Path("./").parent.resolve()
-sys.path.insert(0, str(cwd))
 import torch
 from torch import nn
 from utils import ConvBnAct, CSPCSPP, Upsample, Concat, ImplicitMul, ImplicitAdd, RepConv, fuse_conv_bn
 from collections import OrderedDict
-import pickle
 import math
 import numpy as np
 
@@ -408,7 +403,6 @@ class BaselineDetect(nn.Module):
         return pred_out
 
 
-
 class YOLOv7Baseline(nn.Module):
 
     def __init__(self, in_channel=3, num_anchor=3, num_classes=80) -> None:
@@ -432,6 +426,10 @@ class YOLOv7Baseline(nn.Module):
 
 
 if __name__ == "__main__":
+    import sys    
+    from pathlib import Path
+    cwd = Path("./").parent.resolve()
+    sys.path.insert(0, str(cwd))
     dummy = torch.rand(8, 3, 448, 448).float().contiguous()
     net = YOLOv7Baseline()
     net = net.fuseforward()

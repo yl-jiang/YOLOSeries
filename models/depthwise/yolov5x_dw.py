@@ -1,9 +1,3 @@
-
-import sys
-from pathlib import Path
-FILE = Path("__file__").resolve().parent
-sys.path.insert(0, str(FILE))
-
 import torch
 from torch import nn
 from utils import Focus, DepthWiseConvBnAct, SPP, Upsample, Concat, Detect, DepthWiseC3BottleneckCSP
@@ -79,6 +73,11 @@ class Yolov5XLargeDW(nn.Module):
         return self.detect([small_x, mid_x, large_x])
 
 if __name__ == '__main__':
+    import sys
+    from pathlib import Path
+    FILE = Path("__file__").resolve().parent
+    sys.path.insert(0, str(FILE))
+    
     anchors = [[10, 13, 16, 30, 33, 23],
                [30, 61, 62, 45, 59, 119],
                [116, 90, 156, 198, 373, 326]]

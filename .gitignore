@@ -1,0 +1,9 @@
+*.pyc
+*.txt
+*.pth
+log/
+result/predictions/
+*.DS_Store
+distrubuted_training.md
+plot_log.ipynb
+debug.ipynb

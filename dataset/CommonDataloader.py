@@ -19,13 +19,14 @@ from tqdm import tqdm
 from loguru import logger
 import torch.backends.cudnn as cudnn
 from multiprocessing.pool import ThreadPool
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
+from dataset_warpper import Dataset
 
-from dataset import Generator
+from .base_generator import Generator
 from utils import maybe_mkdir, clear_dir
-from utils import fixed_imgsize_collector, AspectRatioBatchSampler
-from utils import mosaic, random_perspective, valid_bbox, mixup, cutout
-from utils import RandomHSV, RandomFlipLR, RandomFlipUD, scale_jitting, YOCO
+from .data_collater import fixed_imgsize_collate_fn
+from .data_sampler import AspectRatioBatchSampler
+from utils import mosaic, random_perspective, valid_bbox, mixup, cutout, RandomHSV, RandomFlipLR, RandomFlipUD, scale_jitting
 NUM_THREADS = min(8, os.cpu_count())
 
 
@@ -39,13 +40,13 @@ def init_random_seed(seed=7):
 
 class YoloDataset(Dataset, Generator):
 
-    def __init__(self, img_dir, lab_dir, name_path, input_img_size, aug_hyp, cache_num=0) -> None:
+    def __init__(self, img_dir, lab_dir, name_path, input_dimension, aug_hyp, cache_num=0, enable_data_aug=False, transforms=None) -> None:
         """
         Args:
             img_dir: 该文件夹下只存放图像文件
-            lab_dir: 该文件夹下只存放label文件（.txt），文件中的每一行存放一个bbox以及对应的class（例如：0 134 256 448 560）
+            lab_dir: 该文件夹下只存放label文件(.txt), 文件中的每一行存放一个bbox以及对应的class(例如: 0 134 256 448 560)
         """
-        super().__init__()
+        super().__init__(input_dimension=input_dimension, enable_data_aug=enable_data_aug)
         
         self.img_dir = Path(img_dir)
         self.lab_dir = Path(lab_dir) if lab_dir is not None else lab_dir
@@ -63,34 +64,16 @@ class YoloDataset(Dataset, Generator):
         self.classes, self.labels, self.cls2lab, self.lab2cls = self.parse_names(name_path)
         print(f"- Use time {time() - _start:.3f}s")
 
-        self.input_img_size = input_img_size
-        self.is_training = aug_hyp is not None
-        if self.is_training:  # training
-            self.data_aug_param = {
-                "scale": aug_hyp['data_aug_scale'],
-                "translate": aug_hyp['data_aug_translate'],
-                "degree": aug_hyp['data_aug_degree'],
-                "shear": aug_hyp['data_aug_shear'],
-                "presepctive": aug_hyp['data_aug_prespective'],
-                "mixup": aug_hyp['data_aug_mixup_p'],
-                "hsv": aug_hyp['data_aug_hsv_p'],
-                "hgain": aug_hyp['data_aug_hsv_hgain'],
-                "sgain": aug_hyp['data_aug_hsv_sgain'],
-                "vgain": aug_hyp['data_aug_hsv_vgain'],
-                "fliplr": aug_hyp['data_aug_fliplr_p'],
-                "flipud": aug_hyp['data_aug_flipud_p'],
-                "mosaic": aug_hyp['data_aug_mosaic_p'], 
-                "cutout": aug_hyp['data_aug_cutout_p'], 
-                "cutout_iou_thr": aug_hyp['data_aug_cutout_iou_thr'], 
-                }
-            self.fill_value = aug_hyp['data_aug_fill_value']
+        self.input_img_size = input_dimension
+        self.data_aug_param = aug_hyp
+        self.transforms = transforms
 
-        if isinstance(input_img_size, (list, tuple)):
-            self.input_img_size = np.array(input_img_size)
-        self.input_img_size = input_img_size
+        if isinstance(input_dimension, (list, tuple)):
+            self.input_img_size = np.array(input_dimension)
+        self.input_img_size = input_dimension
 
         # 在内存中事先缓存一部分数据，方便快速读取（尽量榨干机器的全部性能），这个值根据具体的设备需要手动调整
-        self.cache_num_in_ram = min(cache_num, len(self))  # 缓存到内存（RAM）中的数据量大小（正比于当前机器RAM的大小）
+        self.cache_num_in_ram = min(cache_num, len(self)) if cache_num > 0 else 0  # 缓存到内存（RAM）中的数据量大小（正比于当前机器RAM的大小）
         self.h5_files = []
         self.cached_cls = [None] * self.cache_num_in_ram
         self.cached_box = [None] * self.cache_num_in_ram
@@ -244,22 +227,22 @@ class YoloDataset(Dataset, Generator):
         imgs, bboxes, labels = [], [], []
 
         for i in indices:
-            img, ann = self.load_img_and_ann(i)
+            img, ann = self.pull_item(i)
             bboxes.append(ann['bboxes'])
             labels.append(ann['classes'])
             imgs.append(img)
 
         img, bboxes, labels = mosaic(imgs, bboxes, labels,
-                                    mosaic_shape=[_*2 for _ in self.input_img_size],
-                                    fill_value=self.fill_value)
+                                     mosaic_shape=[_*2 for _ in self.input_img_size],
+                                     fill_value=self.data_aug_param["data_aug_fill_value"])
         img, bboxes, labels = random_perspective(img, bboxes, labels,
-                                                self.data_aug_param["degree"],
-                                                self.data_aug_param['translate'],
-                                                self.data_aug_param['scale'],
-                                                self.data_aug_param['shear'],
-                                                self.data_aug_param['presepctive'],
+                                                self.data_aug_param["data_aug_degree"],
+                                                self.data_aug_param['data_aug_translate'],
+                                                self.data_aug_param['data_aug_scale'],
+                                                self.data_aug_param['data_aug_shear'],
+                                                self.data_aug_param['data_aug_prespective'],
                                                 self.input_img_size,
-                                                self.fill_value)
+                                                self.data_aug_param["data_aug_fill_value"])
         return img, bboxes, labels
 
     def save_cache(self, cache_dir):
@@ -292,7 +275,7 @@ class YoloDataset(Dataset, Generator):
 
     def load_cache(self, cache_filenames):
         """
-        读取已经保存的h5文件名，并缓存指定数量的数据到内存中(使用多进程)
+        读取已经保存的h5文件名, 并缓存指定数量的数据到内存中(使用多进程)
         """
         
         imgnames = []
@@ -335,7 +318,7 @@ class YoloDataset(Dataset, Generator):
         else:
             self.load_cache(tot_files)
 
-    def load_img_and_ann(self, ix):
+    def pull_item(self, ix):
         # 如果ix没在(内存)缓存中
         if ix < self.cache_num_in_ram:
             img = self.cached_img[ix]
@@ -400,7 +383,8 @@ class YoloDataset(Dataset, Generator):
                                 thickness=1)
         cv2.imwrite(str(save_path), img[:, :, ::-1])
 
-    @logger.catch
+
+    @Dataset.aug_getitem
     def __getitem__(self, ix):
         """
         Args:
@@ -417,24 +401,19 @@ class YoloDataset(Dataset, Generator):
             return self.load_img(ix), dummy_ann, str(0)
 
         # traing or validation
-        img, ann = self.load_img_and_ann(ix)
+        img, ann = self.pull_item(ix)
         bboxes, labels = ann['bboxes'], ann['classes']
         
-        if self.is_training:
-            if random.random() < self.data_aug_param.get('mosaic', 0.0):
+        if self.enable_data_aug:
+            if random.random() < self.data_aug_param['data_aug_mosaic_p']:
                 img, bboxes, labels = self.load_mosaic(ix)
-                if random.random() < self.data_aug_param.get('mixup', 0.0):
+                if random.random() < self.data_aug_param['data_aug_mixup_p']:
                     img2, bboxes2, labels2 = self.load_mosaic(random.randint(0, len(self) - 1))
                     img, bboxes, labels = mixup(img, bboxes, labels, img2, bboxes2, labels2)
-            if random.random() < self.data_aug_param.get('cutout', 0.0):
-                img, bboxes, labels = cutout(img, bboxes, labels, cutout_iou_thr=self.data_aug_param['cutout_iou_thr'])
+            
+            if self.transforms is not None:
+                img, bboxes, labels = self.transforms(img, bboxes, labels)
 
-            img = RandomHSV(img, self.data_aug_param['hsv'], self.data_aug_param['hgain'],
-                            self.data_aug_param['sgain'], self.data_aug_param['vgain'])
-            img, bboxes = RandomFlipLR(img, bboxes, self.data_aug_param['fliplr'])
-            img, bboxes = RandomFlipUD(img, bboxes, self.data_aug_param['flipud'])
-            if random.random() < self.data_aug_param.get('scale_jitting_p', 0.0):
-                img, bboxes, labels = scale_jitting(img, bboxes, labels)
             ann.update({'classes': labels, 'bboxes': bboxes})
 
         if len(ann['classes']) > 0:
@@ -445,9 +424,30 @@ class YoloDataset(Dataset, Generator):
         # 如果返回没有bbox的训练数据，会造成计算loss时在匹配target和prediction时出现问题，这里采用的应对策略是再resample一个训练数据，直到满足条件为止
         while np.sum(ann['bboxes']) == 0: 
             i = random.randint(0, len(self)-1)
-            img, ann = self.load_img_and_ann(i)
+            img, ann = self.pull_item(i)
 
         return img, ann, str(Path(self.get_img_path(ix)).stem)
+
+
+class Transforms:
+
+    def __init__(self, data_aug_hyp):
+        self.data_aug_hyp = data_aug_hyp
+
+    def __call__(self, img, box, lab):
+        if self.data_aug_hyp is not None:
+            img, box, lab = cutout(img, box, lab, 
+                                   self.data_aug_hyp['data_aug_cutout_iou_thr'], 
+                                   self.data_aug_hyp['data_aug_cutout_p'])
+            img = RandomHSV(img, 
+                            self.data_aug_hyp['data_aug_hsv_p'], 
+                            self.data_aug_hyp['data_aug_hsv_hgain'], 
+                            self.data_aug_hyp['data_aug_hsv_sgain'], 
+                            self.data_aug_hyp['data_aug_hsv_vgain'])
+            img, box = RandomFlipLR(img, box, self.data_aug_hyp['data_aug_fliplr_p'])
+            img, box = RandomFlipUD(img, box, self.data_aug_hyp['data_aug_flipud_p'])
+            img, box, lab = scale_jitting(img, box, lab, self.data_aug_hyp['data_aug_scale_jitting_p'])
+        return img, box, lab
         
 
 def YoloDataloader(hyp, is_training=True):
@@ -456,7 +456,7 @@ def YoloDataloader(hyp, is_training=True):
     :param kwargs:
     :return:
     """
-    collector_fn = partial(fixed_imgsize_collector, dst_size=hyp['input_img_size'])
+    collector_fn = partial(fixed_imgsize_collate_fn, dst_size=hyp['input_img_size'])
 
     if is_training:
         coco_dataset_kwargs = {
@@ -541,21 +541,22 @@ def test():
               'data_aug_mosaic_p': 1., 
               "data_aug_cutout_p": 1.0, 
               "data_aug_cutout_iou_thr": 0.3, 
+              "data_aug_scale_jitting_p": 0.1, 
     }
 
-    dataset = YoloDataset('xxx/Dataset/COCO2017/train/image/',
-                          "xxx/Dataset/COCO2017/train/label/",
-                          'xxx/Dataset/COCO2017/train/names.txt',
-                          [448, 448], aug_hyp, 0)
-    collector = partial(fixed_imgsize_collector, dst_size=[448, 448])
+    dataset = YoloDataset('../../Dataset/COCO2017/train/image/',
+                          "../../Dataset/COCO2017/train/label/",
+                          '../../Dataset/COCO2017/train/names.txt',
+                          [448, 448], aug_hyp, 0, True, Transforms(aug_hyp))
+    collector = partial(fixed_imgsize_collate_fn, dst_size=[448, 448])
     batch_size = 5
     print(f"Build Aspect Ratio BatchSampler!")
     _start = time()
 
-    aug_hyp['aspect_ratio_path'] = 'xxx/pkl/coco_aspect_ratio.pkl'
+    aug_hyp['aspect_ratio_path'] = '../../dataset/pkl/coco_aspect_ratio.pkl'
     aug_hyp['batch_size'] = 5
     aug_hyp['drop_last'] = True
-    aug_hyp['current_work_dir'] = 'xxx/YOLO/'
+    aug_hyp['current_work_dir'] = '../'
     sampler = AspectRatioBatchSampler(dataset, aug_hyp)
     print(f"- Use time {time() - _start:.3f}s")
     loader = DataLoader(dataset, collate_fn=collector, batch_sampler=sampler)

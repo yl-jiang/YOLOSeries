@@ -9,7 +9,7 @@ class YOLOV5Loss:
 
     def __init__(self, anchors, hyp, stage_num=3):
         """
-        3种loss的重要程度依次为：confidence > classification > regression 
+        3种loss的重要程度依次为: confidence > classification > regression 
 
         :param anchors: tensor / (3, 3, 2)
         :param loss_hyp: dict
@@ -29,11 +29,11 @@ class YOLOV5Loss:
 
     def __call__(self, stage_preds, targets_batch):
         """
-        通过对比preds和targets，找到与pred对应的target。
-        注意：每一个batch的targets中的bbox_num都相同(参见cocodataset.py中fixed_imgsize_collector函数)。
+        通过对比preds和targets, 找到与pred对应的target。
+        注意: 每一个batch的targets中的bbox_num都相同(参见cocodataset.py中fixed_imgsize_collector函数)。
 
         :param stage_preds: (out_small, out_mid, out_large) / [(bn, 255, 80, 80),(bn, 255, 40, 40),(bn, 255, 20, 20)]
-        :param targets_batch: 最后一个维度上的值，表示当前batch中该target对应的img index
+        :param targets_batch: 最后一个维度上的值, 表示当前batch中该target对应的img index
         :param targets_batch: tensor / (bn, bbox_num, 6) -> [xmin, ymin, xmax, ymax, cls, img_id]
         """
         assert isinstance(stage_preds, (list, tuple))
@@ -141,7 +141,7 @@ class YOLOV5Loss:
         """
         正样本分配策略。
 
-        并不是传入的所有target都可以参与最终loss的计算，只有那些与anchor的width/height ratio满足一定条件的targe才有资格；
+        并不是传入的所有target都可以参与最终loss的计算, 只有那些与anchor的width/height ratio满足一定条件的targe才有资格；
         :param targets: (num_anchor=3, batch_num, bbox_num, 7) / [norm_x, norm_y, norm_w, norm_h, cls, img_id, anchor_id]
         :param anchor_stage: (3, 2) / (w, h)
         :param fm_shape: [w, h] / stage feature map shape
@@ -190,7 +190,7 @@ class YOLOV5Loss:
         grid_xys_expand = grid_xys_expand[grid_mask]
         # tar_grid_xys在对应特征图尺寸中的xy
         tar_grid_xys = t_stage[:, [0, 1]]  # (N, 2)
-        # 放宽obj预测的中心坐标精度的限制，在真实grid_center_xy范围内浮动一格，均认为是预测正确；tar_grid_coors表示obj所在grid的xy坐标
+        # 放宽obj预测的中心坐标精度的限制, 在真实grid_center_xy范围内浮动一格, 均认为是预测正确；tar_grid_coors表示obj所在grid的xy坐标
         tar_grid_coors = (tar_grid_xys - grid_xys_expand).long()  # (N, 2)
         # tar_grid_off:相对于所在grid的偏移量
         tar_grid_off = tar_grid_xys - tar_grid_coors
@@ -225,7 +225,7 @@ class YOLOV5Loss:
         # 对那些预测错误程度越大的预测加大惩罚力度
         gamma = self.hyp.get('focal_loss_gamma', 1.5)
         gamma_factor = (1.0 - acc_scale) ** gamma
-        # 当alpha值小于0.5时，意味着更加关注将负类样本预测错误的情况
+        # 当alpha值小于0.5时, 意味着更加关注将负类样本预测错误的情况
         alpha = self.hyp.get('focal_loss_alpha', 0.25)
         alpha_factor = target * alpha + (1.0 - target) * (1.0 - alpha)
         factor = gamma_factor * alpha_factor

@@ -3,6 +3,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+__all__ = ['freeze_bn', 'fuse_conv_bn', 'Concat', 'autopad', 'ConvBnAct', 'BasicBottleneck', 
+           'BottleneckCSP', 'C3BottleneckCSP', 'SEBottleneckCSP', 'SqueezeExacitationBlock', 
+           'Focus', 'SPP', 'FastSPP', 'CSPCSPP', 'RepConv', 'ImplicitAdd', 'ImplicitMul', 
+           'Upsample', 'Detect', 'DepthWiseConvBnAct', 'DepthWiseBasicBottleneck', 'DepthWiseBottleneckCSP', 
+           'DepthWiseC3BottleneckCSP', 'BasicBlock', 'Bottleneck', 'ResNet', 'resnet50', 'RetinaNetRegression', 
+           'RetinaNetClassification', 'RetinaNetPyramidFeatures', 'ELANBlock']
 
 def freeze_bn(m):
     """
@@ -14,6 +20,38 @@ def freeze_bn(m):
         if hasattr(m, 'bias'):
             m.bias.requires_grad_(False)
         m.eval()  # for freeze bn layer's parameters 'running_mean' and 'running_var
+
+
+
+def fuse_conv_bn(conv_layer, bn_layer):
+    """
+    BN层的参数有: alpha(BN层的weight), beta(BN层的bias), running_mean, running_var
+
+    将batch norm层看作卷积核为1x1的卷积层:
+        1. 卷积核的参数为(alpha / (sqrt(running_var) + eps));
+        2. 卷积层的bias为(-(alpha * running_mean) / (sqrt(running_var) + eps) + beta)
+    """
+    fuseconv = nn.Conv2d(in_channels=conv_layer.in_channels, 
+                            out_channels=conv_layer.out_channels, 
+                            kernel_size=conv_layer.kernel_size, 
+                            stride=conv_layer.stride, 
+                            padding=conv_layer.padding, 
+                            groups=conv_layer.groups, 
+                            bias=True).requires_grad_(False).to(conv_layer.weight.device)
+
+    conv_w = conv_layer.weight.clone().view(conv_layer.out_channels, -1)
+    bn_w = torch.diag(bn_layer.weight.div(torch.sqrt(bn_layer.running_var + bn_layer.eps)))  # 为BN层创建卷积核
+    fuseconv.weight.copy_(torch.mm(bn_w, conv_w).view(fuseconv.weight.shape))
+
+    if conv_layer.bias is None:
+        conv_b = torch.zeros(conv_layer.weight.size(0), device=conv_layer.weight.device)
+    else:
+        conv_b = conv_layer.bias
+    bn_b = bn_layer.bias - (bn_layer.weight.mul(bn_layer.running_mean).div(torch.sqrt(bn_layer.eps + bn_layer.running_var)))
+    fuseconv.bias.copy_(torch.mm(bn_w, conv_b.reshape(-1, 1)).reshape(-1) + bn_b)
+
+    return fuseconv
+
 
 
 class Concat(nn.Module):
@@ -265,7 +303,7 @@ class CSPCSPP(nn.Module):
         
 # endregion
 
-# region RepVgg
+# region -----------------------------------------------------------------------------------------------------RepVgg
 class RepConv(nn.Module):
     # Represented convolution
     # https://arxiv.org/abs/2101.03697
@@ -370,12 +408,10 @@ class RepConv(nn.Module):
             self.__delattr__('id_tensor')
         self.deploy = True
 
+# endregion -----------------------------------------------------------------------------------------------------
 
 
-
-# endregion
-
-# region YOLOR
+# region -----------------------------------------------------------------------------------------------------YOLOR
 class ImplicitAdd(nn.Module):
     def __init__(self, channel, mean=0., std=0.02) -> None:
         super(ImplicitAdd, self).__init__()
@@ -395,7 +431,7 @@ class ImplicitMul(nn.Module):
     def forward(self, x):
         return self.params * x
 
-# endregion
+# endregion -----------------------------------------------------------------------------------------------------
 
 
 class Upsample(nn.Module):
@@ -425,36 +461,6 @@ class Detect(nn.Module):
         out_mid = self.detect_mid(x[1])  # n, 255, hmid, wmid
         out_large = self.detect_large(x[2])  # n, 255, hlarge, wlarge
         return out_small, out_mid, out_large
-
-
-def fuse_conv_bn(conv_layer, bn_layer):
-    """
-    BN层的参数有：alpha(BN层的weight), beta(BN层的bias), running_mean, running_var
-
-    将batch norm层看作卷积核为1x1的卷积层:
-        1. 卷积核的参数为(alpha / (sqrt(running_var) + eps));
-        2. 卷积层的bias为(-(alpha * running_mean) / (sqrt(running_var) + eps) + beta)
-    """
-    fuseconv = nn.Conv2d(in_channels=conv_layer.in_channels, 
-                            out_channels=conv_layer.out_channels, 
-                            kernel_size=conv_layer.kernel_size, 
-                            stride=conv_layer.stride, 
-                            padding=conv_layer.padding, 
-                            groups=conv_layer.groups, 
-                            bias=True).requires_grad_(False).to(conv_layer.weight.device)
-
-    conv_w = conv_layer.weight.clone().view(conv_layer.out_channels, -1)
-    bn_w = torch.diag(bn_layer.weight.div(torch.sqrt(bn_layer.running_var + bn_layer.eps)))  # 为BN层创建卷积核
-    fuseconv.weight.copy_(torch.mm(bn_w, conv_w).view(fuseconv.weight.shape))
-
-    if conv_layer.bias is None:
-        conv_b = torch.zeros(conv_layer.weight.size(0), device=conv_layer.weight.device)
-    else:
-        conv_b = conv_layer.bias
-    bn_b = bn_layer.bias - (bn_layer.weight.mul(bn_layer.running_mean).div(torch.sqrt(bn_layer.eps + bn_layer.running_var)))
-    fuseconv.bias.copy_(torch.mm(bn_w, conv_b.reshape(-1, 1)).reshape(-1) + bn_b)
-
-    return fuseconv
 
 
 # ======================================= DepthWise Convolution Layers ===============================================

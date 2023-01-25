@@ -1,8 +1,3 @@
-import sys
-from pathlib import Path
-current_work_dir = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(current_work_dir))
-
 from torch import nn
 from utils import ConvBnAct, BasicBottleneck, Upsample, Concat, maybe_mkdir, SPP
 from pathlib import Path
@@ -163,8 +158,12 @@ class YoloXDarkNet21(nn.Module):
 
         return preds
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    current_work_dir = Path(__file__).resolve().parent.parent.parent
+    sys.path.insert(0, str(current_work_dir))
     dummy = torch.rand(1, 3, 224, 224)
     yolox = YoloXDarkNet21(2)
     out = yolox(dummy)

@@ -1,7 +1,7 @@
 import sys
 import torch
 from torch import nn
-from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect, SEBottleneckCSP, C3BottleneckCSP, FastSPP
+from utils import ConvBnAct, Upsample, Concat, Detect, C3BottleneckCSP, FastSPP
 
 class Yolov5Large(nn.Module):
 

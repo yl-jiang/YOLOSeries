@@ -38,12 +38,12 @@ from dataset import testdataloader, YoloDataloader
 from utils import mAP_v2, catch_warnnings
 from models import YOLOv7Baseline
 
-from yoloxdata.dataset import YOLODataset
-from yoloxdata import Transform, RangeSampler, YOLOBatchSampler, YOLODataLoader, worker_init_reset_seed
-from yoloxdata.dataset import MosaicTransformDataset
-from yoloxdata import FixSizeCollector
-from yoloxdata import InfiniteAspectRatioBatchSampler
-from yoloxdata import DataPrefetcher
+from yoloxdataloader.dataset import YOLODataset
+from yoloxdataloader import Transform, RangeSampler, YOLOBatchSampler, YOLODataLoader, worker_init_reset_seed
+from yoloxdataloader.dataset import MosaicTransformDataset
+from yoloxdataloader import FixSizeCollector
+from yoloxdataloader import InfiniteAspectRatioBatchSampler
+from yoloxdataloader import DataPrefetcher
 
 
 

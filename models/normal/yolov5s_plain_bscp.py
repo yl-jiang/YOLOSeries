@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect, SEBottleneckCSP
+from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect
 
 class Yolov5SmallWithPlainBscp(nn.Module):
 

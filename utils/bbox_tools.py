@@ -2,6 +2,11 @@ import torch
 import numba
 import numpy as np
 
+__all__ = ['letter_resize_bbox', 'minmax_bbox_resize', 
+           'cpu_iou', 'xyxy2xywh', 'xyxy2xywhn', 'xywh2xyxy', 'numba_xywh2xyxy', 
+           'gpu_iou', 'gpu_Giou', 'gpu_CIoU', 'gpu_DIoU', 'box_candidates', 
+           'valid_bbox', 'numba_iou']
+
 
 @numba.njit
 def numba_iou(bbox1, bbox2):
@@ -27,26 +32,6 @@ def numba_iou(bbox1, bbox2):
     iou_out = intersection_area / (np.expand_dims(bbox1_area, 1) + bbox2_area - intersection_area)
 
     return iou_out
-
-
-@numba.njit
-def numba_nms(boxes, scores, iou_threshold):
-    assert boxes.shape[0] == scores.shape[0]
-    box_copy = boxes.copy()
-    score_copy = scores.copy()
-    keep_index = []
-    while score_copy.sum() > 0.:
-        max_score_index = np.argmax(score_copy)
-        box1 = np.expand_dims(box_copy[max_score_index], 0)
-        keep_index.append(max_score_index)
-        score_copy[max_score_index] = 0.
-        ious = numba_iou(box1, box_copy)
-        ignore_index = ious >= iou_threshold
-        for i, x in enumerate(ignore_index[0]):
-            if x:
-                score_copy[i] = 0.
-
-    return keep_index
 
 
 def letter_resize_bbox(bboxes, letter_info):
@@ -338,115 +323,52 @@ def gpu_CIoU(bbox1, bbox2):
     return ciou
 
 
-def gpu_nms(boxes, scores, iou_type, iou_threshold):
+def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1):  # box1(4,n), box2(4,n)
     """
-    :param boxes: [M, 4]
-    :param scores: [M, 1]
-    :param iou_threshold:
-    :param iou_type: str / must be one of ['iou', 'giou', 'diou', 'ciou']
+    Compute candidate boxes
+    :param box1: before augment
+    :param box2: after augment
+    :param wh_thr: wh_thr (pixels)
+    :param ar_thr:
+    :param area_thr:
     :return:
     """
-    assert isinstance(boxes, torch.Tensor) and isinstance(scores, torch.Tensor)
-    assert boxes.shape[0] == scores.shape[0]
-
-    box_copy = boxes.detach().clone()
-    score_copy = scores.detach().clone()
-    keep_index = []
-    if iou_type.lower() == 'iou':
-        iou = gpu_iou
-    elif iou_type.lower() == 'giou':
-        iou = gpu_Giou
-    elif iou_type.lower() == 'diou':
-        iou = gpu_DIoU
-    elif iou_type.lower() == 'ciou':
-        iou = gpu_CIoU
-    else:
-        raise ValueError(f'Uknown paramemter: <{iou_type}>')
-
-    while score_copy.sum() > 0.:
-        # mark reserved box
-        max_score_index = torch.argmax(score_copy).item()
-        box1 = box_copy[[max_score_index]]
-        keep_index.append(max_score_index)
-        score_copy[max_score_index] = 0.
-        ious = iou(box1, box_copy)
-        ignore_index = ious.gt(iou_threshold)
-        score_copy[ignore_index] = 0.
-        # print(score_copy.sum())
-    return keep_index
+    w1, h1 = box1[2] - box1[0], box1[3] - box1[1]
+    w2, h2 = box2[2] - box2[0], box2[3] - box2[1]
+    ar = np.maximum(w2 / (h2 + 1e-16), h2 / (w2 + 1e-16))  # aspect ratio
+    return (w2 > wh_thr) & (h2 > wh_thr) & (w2 * h2 / (w1 * h1 + 1e-16) > area_thr) & (ar < ar_thr)  # candidates
 
 
-def gpu_linear_soft_nms(boxes, scores, iou_type, iou_threshold=0.3, thresh=0.001):
+def valid_bbox(bboxes, box_type='xyxy', wh_thr=2, ar_thr=10, area_thr=16):
     """
-    :param boxes: [M, 4]
-    :param scores: [M, 1]
-    :param iou_threshold:
-    :param iou_type: str / must be one of ['iou', 'giou', 'diou', 'ciou']
+    根据bbox的width阈值,height阈值,width-height ratio阈值以及area阈值,过滤掉不满足限制条件的bbox。
+
+    :param wh_thr:
+    :param area_thr: area threshold
+    :param ar_thr: aspect ratio threshold
+    :param bboxes: ndarray or list; [[a, b, c, d], [e, f, g, h], ...]
+    :param box_type: 'xyxy' or 'xywh'; [xmin, ymin, xmax, ymax] or [center_x, center_y, w, h]
     :return:
     """
-    assert isinstance(boxes, torch.Tensor) and isinstance(scores, torch.Tensor)
-    assert boxes.shape[0] == scores.shape[0]
-
-    box_copy = boxes.detach().clone()
-    score_copy = scores.detach().clone()
-    processed = torch.zeros_like(score_copy)
-    if iou_type == 'iou':
-        iou = gpu_iou
-    elif iou_type == 'giou':
-        iou = gpu_Giou
-    elif iou_type == 'diou':
-        iou = gpu_DIoU
-    elif iou_type == 'ciou':
-        iou = gpu_CIoU
+    if box_type == 'xywh':
+        labels = xywh2xyxy(np.array(bboxes))
+    elif box_type:
+        labels = np.array(bboxes)
     else:
-        raise ValueError(f'Uknown paramemter: <{iou_type}>')
-    while score_copy.sum() > 0.:
-        max_score_index = torch.argmax(score_copy).item()
-        box1 = box_copy[[max_score_index]]
-        processed[max_score_index] = score_copy[max_score_index]
-        ious = iou(box1, box_copy)  # [1, M]
-        sele_index = ious.gt(iou_threshold)
-        # soft score
-        score_copy[sele_index] *= torch.unsqueeze(1. - ious[sele_index], dim=1)
+        raise ValueError(f'unknow bbox format: {box_type}')
 
-    keep_index = processed > thresh
-    return keep_index.squeeze_()
+    x = labels[:, 2] > labels[:, 0]  # xmax > xmin
+    y = labels[:, 3] > labels[:, 1]  # ymax > ymin
+    w = labels[:, 2] - labels[:, 0]
+    h = labels[:, 3] - labels[:, 1]
+    w_mask = w > wh_thr
+    h_mask = h > wh_thr
+    area_mask = (w * h) >= area_thr
+    ar_1, ar_2 = w / (h+1e-16), h / (w+1e-16)
+    ar = np.where(ar_1 > ar_2, ar_1, ar_2)
+    ar_mask = ar < ar_thr
+    valid_idx = np.stack([x, y, ar_mask, area_mask, h_mask, w_mask], axis=1)
+    valid_inx = np.all(valid_idx, axis=1)
 
-
-def gpu_exponential_soft_nms(boxes, scores, iou_type, iou_threshold, sigmma=0.5, thresh=0.001):
-    """
-    :param boxes: [M, 4]
-    :param scores: [M, 1]
-    :param iou_threshold:
-    :param iou_type: str / must be one of ['iou', 'giou', 'diou', 'ciou']
-    :return:
-    """
-    assert isinstance(boxes, torch.Tensor) and isinstance(scores, torch.Tensor)
-    assert boxes.shape[0] == scores.shape[0]
-
-    box_copy = boxes.detach().clone()
-    score_copy = scores.detach().clone()
-    processed = torch.zeros_like(score_copy)
-    if iou_type == 'iou':
-        iou = gpu_iou
-    elif iou_type == 'giou':
-        iou = gpu_Giou
-    elif iou_type == 'diou':
-        iou = gpu_DIoU
-    elif iou_type == 'ciou':
-        iou = gpu_CIoU
-    else:
-        raise ValueError(f'Uknown paramemter: <{iou_type}>')
-    while score_copy.sum() > 0.:
-        # mark reserved box
-        max_score_index = torch.argmax(score_copy).item()
-        box1 = box_copy[[max_score_index]]
-        processed[max_score_index] = score_copy[max_score_index]
-        ious = iou(box1, box_copy)
-        sele_index = ious.gt(iou_threshold)
-        # soft score
-        score_copy[sele_index] *= torch.unsqueeze(torch.exp(-(torch.pow(ious[sele_index], 2)) / sigmma), dim=1)
-
-    keep_index = processed > thresh
-    return keep_index.squeeze_()
+    return valid_inx
 

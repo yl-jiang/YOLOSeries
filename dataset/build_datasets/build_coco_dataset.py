@@ -73,6 +73,8 @@ class COCOGenerator(ABC):
         ann_ids = self.coco.getAnnIds(imgIds=self.img_ids[idx], iscrowd=self.use_crowd)
         img_info = self.coco.imgs[self.img_ids[idx]]
         annotations = {'classes': np.empty((0,), dtype=np.uint16), 'bboxes': np.empty((0, 4), dtype=np.float32)}
+        annotations['width'] = img_info['width']
+        annotations['height'] = img_info['height']
         # 有些img没有annotations
         if len(ann_ids) == 0:
             return annotations
@@ -99,7 +101,7 @@ class COCOGenerator(ABC):
 if __name__ == "__main__":
     import shutil
 
-    coco = COCOGenerator("xxx/Dataset/COCO2017/", "train2017", False)
+    coco = COCOGenerator("../../../../Dataset/COCO/", "val2017", False)
     for i in tqdm(range(len(coco)), total=len(coco)):
         ann = coco.load_annotations(i)
         img_id = coco.img_ids[i]
@@ -107,12 +109,14 @@ if __name__ == "__main__":
         cls_ = ann['classes']
         img_src = coco.get_img_path(i)
         assert Path(img_src).exists()
-        img_dst = Path("xxx/Dataset/COCO2017/image/") / f"{img_id}.jpg"
+        img_dst = Path("../../../../Dataset/COCO/val/img/") / f"{img_id}.jpg"
         shutil.copy(str(img_src), str(img_dst))
-        with open("xxx/Dataset/COCO2017/label/" + f"{img_id}.txt", 'w') as f:
+
+        with open("../../../../Dataset/COCO/val/lab/" + f"{img_id}.txt", 'w') as f:
+            f.write(f"{ann['width']} {ann['height']}\n")
             for c, b in zip(cls_, box):
                 f.write(f"{c} {b[0]} {b[1]} {b[2]} {b[3]}\n")
 
-    with open("xxx/Dataset/COCO2017/train/names.txt", 'w') as f:
+    with open("../../../../Dataset/COCO/val/names.txt", 'w') as f:
         for k, v in coco.class2label.items():
             f.write(f"{k} {v}\n")

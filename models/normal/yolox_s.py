@@ -1,11 +1,6 @@
-import sys
-from pathlib import Path
-current_work_dir = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(current_work_dir))
-
 import torch
 from torch import nn
-from utils import Focus, BottleneckCSP, ConvBnAct, SPP, Upsample, Concat, Detect, SEBottleneckCSP, C3BottleneckCSP, FastSPP
+from utils import ConvBnAct, Upsample, Concat, Detect, C3BottleneckCSP, FastSPP
 from collections import OrderedDict
 
 class SmallYOLOXBackboneAndNeck(nn.Module):
@@ -91,7 +86,7 @@ class Detect(nn.Module):
         self.pred_middle = self._make_layers(int(in_channels[1] * wid_mul), int(mid_channel * wid_mul))
         self.pred_large = self._make_layers(int(in_channels[2] * wid_mul), int(mid_channel * wid_mul))
 
-    # region
+    # region -------------------------------------------------------------------------------------------dev
     # def _make_layers(self, in_c, mid_c):
     #     stem = ConvBnAct(in_c, mid_c, 1, 1, act=True)
     #     cls = nn.Sequential(
@@ -187,6 +182,10 @@ class YoloXSmall(nn.Module):
 
 
 if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    current_work_dir = Path(__file__).resolve().parent.parent.parent
+    sys.path.insert(0, str(current_work_dir))
 
     dummy = torch.rand(1, 3, 224, 224)
     yolox = YoloXSmall(2)
