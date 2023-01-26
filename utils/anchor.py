@@ -3,6 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 
+
+__all__ = ['CPUAnchor', 'GPUAnchor']
+
 def show_result(class_list, raw_data, center_coordinate):
     print('Showing... ...')
     colors = [

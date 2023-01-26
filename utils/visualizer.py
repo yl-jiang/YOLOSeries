@@ -7,6 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
+__all__ = ['cv2_save_img_plot_pred_gt', 'cv2_save_img', 'plt_plot_img']
+
 VOC_BBOX_LABEL_NAMES = ['aeroplane', 'bicycle', 'bird', 'boat',
                         'bottle', 'bus', 'car', 'cat',
                         'chair', 'cow', 'diningtable', 'dog',

@@ -697,7 +697,7 @@ def debug(img, bboxes, labels, iou):
                         fontFace=font, fontScale=0.45,
                         color=[135, 206, 235],
                         thickness=1)
-    save_path = f"/home/uih/JYL/GitHub/YOLOSeries/debug/debug_{time.time()}.png"
+    save_path = f"./debug/debug_{time.time()}.png"
     cv2.imwrite(str(save_path), img[:, :, ::-1])
 
 

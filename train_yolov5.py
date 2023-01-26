@@ -385,7 +385,7 @@ class Training:
                 self.lr_scheduler.step()
             gc.collect()
             epoch_time = time_synchronize() - start_epoch_t
-            self.logger.info(f'\n{"-" * 100}\n')
+            self.logger.info(f'\n\n{"-" * 600}\n')
 
 
     def update_logger(self, step_in_total):
