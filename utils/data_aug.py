@@ -576,7 +576,7 @@ def RandomPerspective(img, tar_bboxes, tar_labels, p,  degrees=10, translate=.1,
     return img, tar_bboxes, tar_labels
 
 
-def mosaic(imgs, bboxes, labels, mosaic_shape, fill_value=128, img_ids=[]):
+def mosaic(imgs, bboxes, labels, mosaic_shape, fill_value=128, img_ids=None):
     """
     mosaic four images
     :param fill_value:
