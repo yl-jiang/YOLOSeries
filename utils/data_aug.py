@@ -513,7 +513,7 @@ def RandomPerspective(img, tar_bboxes, tar_labels, p,  degrees=10, translate=.1,
         C[0, 2] = -img.shape[1] / 2  # x translation (pixels)
         C[1, 2] = -img.shape[0] / 2  # y translation (pixels)
 
-        # Perspective
+        # Perspective / 透视
         P = np.eye(3)
         P[2, 0] = random.uniform(-perspective, perspective)  # x perspective (about y)
         P[2, 1] = random.uniform(-perspective, perspective)  # y perspective (about x)
