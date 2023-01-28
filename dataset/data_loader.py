@@ -73,8 +73,11 @@ def build_dataloader(img_dir, lab_dir, name_path, input_dim, aug_hyp, cache_num,
     sampler = InfiniteSampler(size=len(dataset), shuffle=shuffle, seed=seed if seed else 7)
     batch_sampler = BatchSampler(sampler=sampler, batch_size=batch_size, drop_last=drop_last, enable_data_aug=enable_data_aug)
     collate_fn = partial(fixed_imgsize_collate_fn, dst_size=input_dim)
-    dataloader_kwargs = {'num_workers': num_workers, 'pin_memory': pin_memory, 'batch_sampler': batch_sampler, 
-                         'worker_init_fn': worker_init_reset_seed, 'collate_fn':collate_fn}
+    dataloader_kwargs = {'num_workers': num_workers, 
+                         'pin_memory': pin_memory, 
+                         'batch_sampler': batch_sampler, 
+                         'worker_init_fn': worker_init_reset_seed, 
+                         'collate_fn':collate_fn}
 
     dataloader = DataLoader(dataset, **dataloader_kwargs)
     if torch.cuda.is_available():

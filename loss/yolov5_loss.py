@@ -102,6 +102,7 @@ class YOLOV5Loss:
                 # (N, 2) & (N, 2) -> (N, 2)
                 pred_wh = (cur_preds[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx]
                 # pred_box: (N, 4)
+                # TODO: maybe add L1 loss like yolox
                 pred_box = torch.cat((pred_xy, pred_wh), dim=1).to(self.device)
                 # because pred_box and tar_box's format is xywh, before compute iou loss we should turn it to xyxy format
                 pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)

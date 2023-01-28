@@ -94,9 +94,9 @@ class YOLOXLoss:
     def calculate_loss_of_each_stage(self, tars, preds, grid, stride):
         """
         Args:
-            preds: 某个stage的预测输出 (N, num_anchors*h*w, 85)：(N, num_anchors*28*28, 85)或(N, num_anchors*14*14, 85)或(N, num_anchors*7*7, 85) / [x, y, w, h, cof, cls1, cls2, ...]
+            preds: 某个stage的预测输出 (N, num_anchors*h*w, 85): (N, num_anchors*28*28, 85)或(N, num_anchors*14*14, 85)或(N, num_anchors*7*7, 85) / [x, y, w, h, cof, cls1, cls2, ...]
             tars: tensor; (N, num_bbox, 6) / [x_ctr, y_ctr, w, h, class_id, img_id]
-            stride: a scalar / 下采样尺度 / 取值：8 or 16 or 32
+            stride: a scalar / 下采样尺度 / 取值: 8 or 16 or 32
             grid: (num_anchors*h*w, 2)
         Return:
 
@@ -288,7 +288,7 @@ class YOLOXLoss:
         每个gt box都可能有好几个满足条件的(位于前景)prediction, 这一步需要在其中挑选出最有价值的参与loss的计算.
         通过传入的cost和iou, 对每个gt box选择与之最匹配的若干个prediction, 并且使得每个prediction最多只能匹配一个gt box.
 
-        注意：
+        注意: 
             传入的frontground_mask被inplace的修改了。
         Args:
             frontground_mask: (h*w,) / bool / 其中为True的元素个数等于Y
@@ -296,8 +296,8 @@ class YOLOXLoss:
             iou: (valid_num_box, Y)
         Returns:
             num_fg: 选取的prediction个数, 假设为M(M的取值位于[0, Y])
-            matched_gt_cls：与每个prediction最匹配的gt class id
-            matched_iou：每个prediction与之最匹配的gt box之间额iou值
+            matched_gt_cls: 与每个prediction最匹配的gt class id
+            matched_iou: 每个prediction与之最匹配的gt box之间额iou值
             matched_gt_idx: 
         """
         assert cost.size(0) == iou.size(0)
@@ -412,7 +412,7 @@ class YOLOXLoss:
 
     def build_l1_target(self, grid, stride, tar_box, num_fg, fg):
         """
-        将target转换到对应stage的prediction一致的数据格式(及将(ctr_x, ctr_y)转换为相对于对应的grid左上角的偏移量, 将(w, h)转换为对应尺度下的长和宽)
+        将target转换到对应stage的prediction一致的数据格式(即: 将(ctr_x, ctr_y)转换为相对于对应的grid左上角的偏移量, 将(w, h)转换为对应尺度下的长和宽)
         Args:
             grid: (h*w, 2)
             stride: scaler
@@ -441,7 +441,7 @@ class YOLOXLoss:
             focal loss factor: (N, 80)
         """
         prob = torch.sigmoid(pred)
-        # target * prob：将正样本预测正确的概率； (1.0 - target) * (1.0 - prob)：将负样本预测正确的概率
+        # target * prob: 将正样本预测正确的概率； (1.0 - target) * (1.0 - prob): 将负样本预测正确的概率
         acc_scale = target * prob + (1.0 - target) * (1.0 - prob)
         # 对那些预测错误程度越大的预测加大惩罚力度
         gamma = self.hyp.get('focal_loss_gamma', 1.5)

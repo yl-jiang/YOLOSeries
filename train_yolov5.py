@@ -168,6 +168,7 @@ class Training:
 
         # input_dim
         self.hyp['input_img_size'] = padding(self.hyp['input_img_size'], 32)
+        self.no_data_aug = not self.hyp['enable_data_aug']
 
         # cudnn
         if not self.hyp['mutil_scale_training']:
@@ -312,8 +313,13 @@ class Training:
         del stage_outputs
 
     def before_epoch(self, cur_epoch):
-        # TODO: close data augumentation when training the lastest epochs
-        pass
+        torch.cuda.empty_cache()
+        gc.collect()
+        if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
+            self.train_dataloader.close_data_aug()
+            self.logger.info("--->No mosaic aug now!")
+            self.save_model(cur_epoch, filename="last_mosaic_epoch")
+            self.no_data_aug = True
 
     @logger.catch
     @catch_warnnings
@@ -322,8 +328,8 @@ class Training:
         tot_loss_before = float('inf')
         one_epoch_iters = len(self.train_dataloader)
         for cur_epoch in range(self.hyp['total_epoch']):
-            torch.cuda.empty_cache()
             self.model.train()
+            self.before_epoch(cur_epoch+1)
             start_epoch_t = time_synchronize()
             for i in range(one_epoch_iters):
                 start_iter = time_synchronize()
@@ -375,7 +381,7 @@ class Training:
                 self.update_meter(cur_epoch, step_in_epoch, step_in_total, img.size(2), img.size(0), iter_time, data_time, loss_dict, is_best)
                 self.update_summarywriter()
                 self.update_logger(step_in_total)
-                self.save_model(cur_epoch, step_in_epoch, loss_dict, True)
+                self.save_model(cur_epoch, step=step_in_epoch, loss_dict=loss_dict)
                 self.test(step_in_total)
                 self.calculate_metric(step_in_total)
 
@@ -387,7 +393,6 @@ class Training:
             # 其余scheduler在epoch尺度update
             if self.hyp['scheduler_type'].lower() != "onecycle":
                 self.lr_scheduler.step()
-            gc.collect()
             epoch_time = time_synchronize() - start_epoch_t
             self.logger.info(f'\n\n{"-" * 600}\n')
 
@@ -570,9 +575,12 @@ class Training:
         else:
             print('training from stratch!')
 
-    def save_model(self, epoch, step, loss_dict, save_optimizer):
+    def save_model(self, epoch, filename=None, step=None, loss_dict=None, save_optimizer=True):
         if self.rank == 0 and step % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
-            save_path = str(self.cwd / 'checkpoints' / f'every_{self.hyp["model_type"]}.pth')            
+            if filename is None:
+                save_path = str(self.cwd / 'checkpoints' / f'every_{self.hyp["model_type"]}.pth')  
+            else:
+                save_path = str(self.cwd / 'checkpoints' / f'{filename}.pth')          
             if not Path(save_path).exists():
                 maybe_mkdir(Path(save_path).parent)
 

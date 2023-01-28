@@ -34,17 +34,18 @@ train_hyp:
   total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
   accumulate_loss_step: 48  # 累积梯度下降
-  do_ema: true  # 是否维持一个Everage Moving Model
+  do_ema: true
   validation_every: 1  # 每隔多少个epoch validate一次
   use_tta: true  # validation时是否使用TTA
-  mutil_scale_training: false  # 是否使用多尺度训练
+  mutil_scale_training: false 
   calculate_map_every: 299  # 每个多少个epoch计算一次map
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
-  model_type: 'small'  # 使用模型类型
-  use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
+  model_type: 'small'
+  use_auxiliary_classifier: false 
   enable_tensorboard: true
   log_identifier: 'debug'
   save_log_every: 2
+  no_data_aug_epoch: 10
 
 optimizer_hyp:
   scheduler_type: 'linear'
