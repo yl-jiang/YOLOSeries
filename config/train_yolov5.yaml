@@ -31,6 +31,7 @@ train_hyp:
   random_seed: 7
   shuffle: true  # DataLoader
   num_workers: 0  # DataLoader
+  start_epoch: 0
   total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
   accumulate_loss_step: 48  # 累积梯度下降

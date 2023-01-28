@@ -211,9 +211,6 @@ class Training:
 
         model = model.to(self.device)
 
-        # maybe load pretrained model
-        self.load_model(False, 'cpu')
-
         # ddp
         if self.is_distributed:
             model = DDP(model, device_ids=[self.local_rank], broadcast_buffers=False)
@@ -224,18 +221,25 @@ class Training:
         # EMA
         if self.hyp['do_ema']:
             self.ema_model = ExponentialMovingAverageModel(model)
+        else:
+            self.ema_model = None
 
         self.model = model
+
+        # logger
+        self.logger = self._init_logger()
 
         # optimizer
         self.optimizer = self._init_optimizer()
 
         # lr_scheduler
-        # self.lr_scheduler = lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=self._lr_lambda)
         self.lr_scheduler = self._init_scheduler()
 
-        # logger
-        self.logger = self._init_logger()
+        # start epoch
+        self.start_epoch = self.hyp['start_epoch']
+
+        # load pretrained model
+        self.load_model()
 
         # meters
         self.meter = MeterBuffer()
@@ -246,6 +250,7 @@ class Training:
 
         # accumulate step
         self.accumulate = self.hyp['accumulate_loss_step'] / self.hyp['batch_size']
+
         
 
     def _init_optimizer(self):
@@ -327,7 +332,7 @@ class Training:
         self.model.zero_grad()
         tot_loss_before = float('inf')
         one_epoch_iters = len(self.train_dataloader)
-        for cur_epoch in range(self.hyp['total_epoch']):
+        for cur_epoch in range(self.start_epoch, self.hyp['total_epoch']):
             self.model.train()
             self.before_epoch(cur_epoch+1)
             start_epoch_t = time_synchronize()
@@ -408,7 +413,8 @@ class Training:
                 log_msg = ''
                 for tag, fmt in zip(tags, fmts):
                     log_msg += tag + '=' + '{' + tag +  ':' + fmt + '}' + ", "
-                self.logger.info(log_msg.format(**show_dict))
+                cur_epoch = self.meter.get_filtered_meter('cur_epoch')['cur_epoch'].latest
+                self.logger.info(f"[{cur_epoch:>03d}/{self.hyp['total_epoch']:>03d}]" + " " + log_msg.format(**show_dict))
 
     def update_meter(self, cur_epoch, step_in_epoch, step_in_total, input_dim, batch_size, iter_time, data_time, loss_dict, is_best):
         self.meter.update(iter_time  = float(iter_time), 
@@ -537,7 +543,7 @@ class Training:
                 targets[:, :, :4] *= scale
         return imgs, targets
 
-    def load_model(self, load_optimizer, map_location):
+    def load_model(self, map_location='cpu'):
         """
         load pretrained model, EMA model, optimizer(注意: __init_weights()方法并不适用于所有数据集)
         """
@@ -552,19 +558,27 @@ class Training:
     
                     else:  # load pretrained model
                         self.model.load_state_dict(state_dict["model_state_dict"])
+                        self.logger.info(f"load pretraned model -> model: {model_path}")
                         print(f"use pretrained model {model_path}")
 
-                    if load_optimizer and "optim_state_dict" in state_dict and state_dict.get("optim_type", None) == self.hyp['optimizer']:  # load optimizer
+                    if "optim_state_dict" in state_dict and state_dict.get("optim_type", None) == self.hyp['optimizer']:  # load optimizer
                         self.optimizer.load_state_dict(state_dict['optim_state_dict'])
+                        self.logger.info(f"load pretraned model -> optimizer: {model_path}")
                         print(f"use pretrained optimizer {model_path}")
 
-                    if "ema" in state_dict:  # load EMA model
+                    if self.ema_model is not None and "ema" in state_dict:  # load EMA model
+                        self.logger.info(f"load pretraned model -> ema: {model_path}")
                         self.ema_model.ema.load_state_dict(state_dict['ema'])
                         print(f"use pretrained EMA model from {model_path}")
                     else:
                         print(f"can't load EMA model from {model_path}")
+
                     if 'ema_update_num' in state_dict:
                         self.ema_model.update_num = state_dict['ema_update_num']
+
+                    if self.start_epoch is None and 'epoch' in state_dict:
+                        self.start_epoch = state_dict['epoch'] + 1
+                        self.logger.info(f'traing start epoch: {self.start_epoch}')
 
                     del state_dict
 
@@ -572,8 +586,12 @@ class Training:
                     print(err)
             else:
                 print('training from stratch!')
+                self.logger.info(f'training from stratch ...')
         else:
             print('training from stratch!')
+            self.logger.info(f'training from stratch ...')
+        
+        self.logger.info(f"\n{'-' * 300}\n")
 
     def save_model(self, epoch, filename=None, step=None, loss_dict=None, save_optimizer=True):
         if self.rank == 0 and step % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
