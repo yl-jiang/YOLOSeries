@@ -20,7 +20,7 @@ from loguru import logger
 import torch.backends.cudnn as cudnn
 from multiprocessing.pool import ThreadPool
 from torch.utils.data import DataLoader
-from dataset_warpper import Dataset
+from dataset.dataset_wrapper import Dataset
 
 from .base_generator import Generator
 from utils import maybe_mkdir, clear_dir

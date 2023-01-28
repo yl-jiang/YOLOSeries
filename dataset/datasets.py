@@ -5,7 +5,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PIL import Image
-from .dataset_warpper import *
+from .dataset_wrapper import *
 from .base_generator import Generator
 from utils import mosaic, RandomPerspective, valid_bbox, mixup
 import os
