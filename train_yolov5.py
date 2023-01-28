@@ -311,6 +311,10 @@ class Training:
                 m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
         del stage_outputs
 
+    def before_epoch(self, cur_epoch):
+        # TODO: close data augumentation when training the lastest epochs
+        pass
+
     @logger.catch
     @catch_warnnings
     def step(self):
