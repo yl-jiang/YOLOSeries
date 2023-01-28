@@ -20,7 +20,7 @@ __all__ = ["YOLODataset", "TestDataset"]
 
 class YOLODataset(Dataset, Generator):
 
-    def __init__(self, img_dir, lab_dir, name_path, input_dim, aug_hyp, cache_num=0, enable_data_aug=False, transforms=None) -> None:
+    def __init__(self, img_dir, lab_dir, name_path, input_dim, aug_hyp, cache_num=0, enable_data_aug=False, preproc=None) -> None:
         """
         Args:
             img_dir: 该文件夹下只存放图像文件
@@ -46,7 +46,7 @@ class YOLODataset(Dataset, Generator):
 
         self.input_img_size = input_dim
         self.data_aug_param = aug_hyp
-        self.transforms = transforms
+        self.preproc = preproc
 
         if isinstance(input_dim, (list, tuple)):
             self.input_img_size = np.array(input_dim)
@@ -220,6 +220,60 @@ class YOLODataset(Dataset, Generator):
         #                                         self.data_aug_param["data_aug_fill_value"])
         return img, bboxes, labels
 
+    def powerful_mixup(self, org_img, org_bboxes, org_classes):
+        if random.random() < 0.5:
+            img2, bboxes2, classes2 = self.mosaic(random.randint(0, len(self._dataset) - 1))
+            img, bboxes, classes = mixup(org_img, org_bboxes, org_classes, img2, bboxes2, classes2)
+        else:
+            mixup_scale = [0.5, 1.5]
+            jit_factor = random.uniform(*mixup_scale)
+            FLIP = random.uniform(0, 1) > 0.5  # flip left and right
+            classes2 = []
+            while len(classes2) == 0:
+                rnd_idx = random.randint(0, len(self) - 1)
+                mixin_img, mixin_ann = self.pull_item(rnd_idx)
+                mixin_bboxes = mixin_ann["bboxes"]
+                classes2 = mixin_ann['classes']
+
+            cp_img = np.ones((self.input_dim[0], self.input_dim[1], 3), dtype=np.uint8) * self.data_aug_param["data_aug_fill_value"]
+            cp_scale_ratio = min(self.input_dim[0] / mixin_img.shape[0], self.input_dim[1] / mixin_img.shape[1])
+            resized_img = cv2.resize(np.ascontiguousarray(mixin_img), 
+                                     (int(mixin_img.shape[1] * cp_scale_ratio), int(mixin_img.shape[0] * cp_scale_ratio)), 
+                                     interpolation=cv2.INTER_LINEAR)
+            cp_img[:int(mixin_img.shape[0]*cp_scale_ratio), :int(mixin_img.shape[1]*cp_scale_ratio)] = resized_img
+            cp_img = cv2.resize(np.ascontiguousarray(cp_img), 
+                                (int(cp_img.shape[1] * jit_factor), int(cp_img.shape[0] * jit_factor)), 
+                                interpolation=cv2.INTER_LINEAR)
+            cp_scale_ratio *= jit_factor
+
+            if FLIP:
+                cp_img = cp_img[:, ::-1, :]
+            
+            cp_h, cp_w = cp_img.shape[:2]
+            tar_h, tar_w = org_img.shape[:2]
+            padded_img = np.zeros((max(cp_h, tar_h), max(cp_w, tar_w), 3), dtype=np.uint8) 
+            padded_img[:cp_h, :cp_w] = cp_img
+            x_offset, y_offset = 0, 0
+            if padded_img.shape[0] > tar_h:
+                y_offset = random.randint(0, padded_img.shape[0] - tar_h - 1)
+            if padded_img.shape[1] > tar_w:
+                x_offset = random.randint(0, padded_img.shape[1] - tar_w - 1)
+
+            img2 = padded_img[y_offset:y_offset+tar_h, x_offset:x_offset+tar_w, :]
+            mixin_bboxes_copy = mixin_bboxes.copy()
+            mixin_bboxes[:, 0::2] = np.clip(mixin_bboxes_copy[:, 0::2] * cp_scale_ratio, 0, cp_w)
+            mixin_bboxes[:, 1::2] = np.clip(mixin_bboxes_copy[:, 1::2] * cp_scale_ratio, 0, cp_h)
+            if FLIP:
+                mixin_bboxes[:, 0::2] = (cp_w - mixin_bboxes[:, 0::2][:, ::-1])
+            bboxes2 = mixin_bboxes.copy()
+            bboxes2[:, 0::2] = np.clip(mixin_bboxes[:, 0::2] - x_offset, 0, tar_w)
+            bboxes2[:, 1::2] = np.clip(mixin_bboxes[:, 1::2] - y_offset, 0, tar_h)
+
+        bboxes = np.vstack((org_bboxes, bboxes2))
+        classes = np.hstack((org_classes, classes2))
+        img = org_img.astype(np.float32) * 0.5 + img2.astype(np.float32) * 0.5
+        return img.astype(np.uint8), bboxes, classes
+        
     def _cache_image(self):
         logger.warning(
             "\n********************************************************************************\n"
@@ -347,7 +401,6 @@ class YOLODataset(Dataset, Generator):
                                 thickness=1)
         cv2.imwrite(str(save_path), img[:, :, ::-1])
 
-
     @Dataset.aug_getitem
     def __getitem__(self, ix):
         """
@@ -370,8 +423,8 @@ class YOLODataset(Dataset, Generator):
                     img2, bboxes2, labels2 = self.mosaic(random.randint(0, len(self) - 1))
                     img, bboxes, labels = mixup(img, bboxes, labels, img2, bboxes2, labels2)
             
-            if self.transforms is not None:
-                img, bboxes, labels = self.transforms(img, bboxes, labels)
+            if self.preproc is not None:
+                img, bboxes, labels = self.preproc(img, bboxes, labels)
 
             ann.update({'classes': labels, 'bboxes': bboxes})
 

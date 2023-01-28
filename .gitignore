@@ -7,3 +7,4 @@ result/predictions/
 distrubuted_training.md
 plot_log.ipynb
 **/.ipynb_checkpoints
+**/.vscode
