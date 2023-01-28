@@ -67,7 +67,7 @@ data_hyp:
   data_aug_shear: 0.0
   data_aug_translate: 0.1
   data_aug_degree: 0.0
-  data_aug_prespective: 0.0
+  data_aug_prespective: 0.0005  # should not big
   data_aug_hsv_p: 1.0
   data_aug_hsv_hgain: 0.015
   data_aug_hsv_sgain: 0.7
