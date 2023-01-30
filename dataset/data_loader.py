@@ -11,7 +11,7 @@ import torch
 import random
 import numpy as np
 
-__all__ = ['build_dataloader', 'build_test_dataloader']
+__all__ = ['build_dataloader', 'build_test_dataloader', 'build_val_dataloader']
 
 
 
@@ -71,6 +71,42 @@ def build_dataloader(img_dir, lab_dir, name_path, input_dim, aug_hyp, cache_num,
         dataset = YOLODataset(img_dir, lab_dir, name_path, input_dim, aug_hyp, cache_num, enable_data_aug, transforms)
         
     sampler = InfiniteSampler(size=len(dataset), shuffle=shuffle, seed=seed if seed else 7)
+    batch_sampler = BatchSampler(sampler=sampler, batch_size=batch_size, drop_last=drop_last, enable_data_aug=enable_data_aug)
+    collate_fn = partial(fixed_imgsize_collate_fn, dst_size=input_dim)
+    dataloader_kwargs = {'num_workers': num_workers, 
+                         'pin_memory': pin_memory, 
+                         'batch_sampler': batch_sampler, 
+                         'worker_init_fn': worker_init_reset_seed, 
+                         'collate_fn':collate_fn}
+
+    dataloader = DataLoader(dataset, **dataloader_kwargs)
+    if torch.cuda.is_available():
+        prefetcher = DataPrefetcher(dataloader)
+    else:
+        prefetcher = None
+
+    return dataset, dataloader, prefetcher
+
+
+# -------------------------------------------------------------------------------------------------------------------------
+
+def build_val_dataloader(img_dir, lab_dir, name_path, input_dim, aug_hyp, cache_num, enable_data_aug, 
+                         seed, batch_size, num_workers, pin_memory, shuffle, drop_last):
+    """
+    pytorch dataloader for cocodataset.
+    :param kwargs:
+    :return:
+    """
+
+    if enable_data_aug:
+        transforms = Transforms(aug_hyp)
+    else:
+        transforms = None
+
+    with wait_for_the_master():
+        dataset = YOLODataset(img_dir, lab_dir, name_path, input_dim, aug_hyp, cache_num, enable_data_aug, transforms)
+        
+    sampler = SequentialSampler(size=len(dataset), shuffle=shuffle, seed=seed if seed else 7)
     batch_sampler = BatchSampler(sampler=sampler, batch_size=batch_size, drop_last=drop_last, enable_data_aug=enable_data_aug)
     collate_fn = partial(fixed_imgsize_collate_fn, dst_size=input_dim)
     dataloader_kwargs = {'num_workers': num_workers, 

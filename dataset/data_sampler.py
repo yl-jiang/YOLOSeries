@@ -10,7 +10,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 
-__all__ = ["BatchSampler", "InfiniteSampler", 'TestBatchSampler', 'AspectRatioBatchSampler']
+__all__ = ["BatchSampler", "InfiniteSampler", 'TestBatchSampler', 'AspectRatioBatchSampler', 'SequentialSampler']
 
 class AspectRatioBatchSampler(Sampler):
     """
@@ -158,6 +158,38 @@ class InfiniteSampler(Sampler):
     def __len__(self):
         return self._size // self._world_size
 
+
+class SequentialSampler(Sampler):
+    """
+    SequentialSampler是一个可迭代对象
+    """
+    def __init__(self, 
+        size, 
+        shuffle: bool = True,
+        seed = 0,
+        rank=0,
+        world_size=1,):
+
+        self._size = size
+        assert size > 0
+        self._shuffle = shuffle
+        self._seed = int(seed)
+
+        if dist.is_available() and dist.is_initialized():
+            self._rank = dist.get_rank()
+            self._world_size = dist.get_world_size()
+        else:
+            self._rank = rank
+            self._world_size = world_size
+ 
+    def __iter__(self):
+        if not self._shuffle:
+            return iter(range(self._size))
+        else:
+            return iter(np.random.permutation(self._size))
+ 
+    def __len__(self):
+        return self._size // self._world_size
 
 # -------------------------------------------------------------------------------------------------------------------------
 

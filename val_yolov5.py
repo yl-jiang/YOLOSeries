@@ -1,4 +1,5 @@
 import sys
+import pickle
 import argparse
 from pathlib import Path
 from datetime import datetime
@@ -9,73 +10,71 @@ sys.path.insert(0, str(current_work_directionary))
 
 import cv2
 import emoji
-import pickle
 import torch.cuda
 import numpy as np
-from tqdm import tqdm
 from loguru import logger
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from config import Config
 from trainer import Evaluate
-from utils import maybe_mkdir
-from utils import cv2_save_img
-from utils import time_synchronize
-from dataset import YoloDataloader
 from trainer import ExponentialMovingAverageModel
-from utils import cv2_save_img_plot_pred_gt, ConvBnAct, fuse_conv_bn, summary_model, mAP_v2
-from models import Yolov5Small, Yolov5SmallWithPlainBscp, Yolov5Large, Yolov5Middle, Yolov5XLarge
+from utils import cv2_save_img, cv2_save_img_plot_pred_gt
+from utils import clear_dir
+from utils import time_synchronize
+from dataset import build_val_dataloader
+from utils import mAP_v2, catch_warnnings
+from models import Yolov5Small, Yolov5Middle, Yolov5Large, Yolov5SmallWithPlainBscp, Yolov5XLarge
 from models import Yolov5SmallDW, Yolov5MiddleDW, Yolov5LargeDW, Yolov5XLargeDW
 
-class Validation:
+from utils import (configure_nccl, configure_omp, get_local_rank,
+                   get_rank, get_world_size, occupy_mem, padding, 
+                   is_parallel, adjust_status, synchronize, 
+                   configure_module, launch)
+import torch.distributed as dist
+import gc
+
+
+class Training:
 
     def __init__(self, anchors, hyp):
-        self.hyp = hyp
+        configure_omp()
+        configure_nccl()
+
         # parameters
-        self.select_device()
-        self.use_cuda = self.hyp['device'] == 'cuda'
         self.anchors = anchors
+        self.hyp = hyp
+        self.select_device()
 
-        if isinstance(anchors, (list, tuple)):
-            self.anchors = torch.tensor(anchors)  # (3, 3, 2)
-        self.anchors = self.anchors.to(self.hyp['device'])
-        anchor_num_per_stage = self.anchors.size(0)  # 3
+        # rank, device
+        self.local_rank = get_local_rank()
+        self.device = "cuda:{}".format(self.local_rank)
+        self.hyp['device'] = self.device
+        self.rank = get_rank()
+        self.use_cuda = True if torch.cuda.is_available() else False
+        self.is_distributed = get_world_size() > 1
 
-        # 确保输入图片的shape必须能够被32整除（对yolov5s而言），如果不满足条件则对设置的输入shape进行调整
-        self.hyp['input_img_size'] = self.padding(self.hyp['input_img_size'], 32)
-    
-        self.testdataset, self.testdataloader = self.load_dataset(False)
-        if self.hyp['current_work_dir'] is None:
-            self.cwd = Path('./').absolute()
-        else:
-            self.cwd = Path(self.hyp['current_work_dir'])
+        # current work directory
+        self.cwd = Path('./').absolute()
+        self.hyp['current_work_dir'] = str(self.cwd)
 
-        if self.testdataset.num_class == 0:
-            num_class = int(input("Please input class num of this dataset: "))
-            self.testdataset.num_class = num_class
-            self.testdataset.cls2lab = ['lab' for _ in range(num_class)]
+        self.before_validation()
 
-        self.hyp['num_class'] = self.testdataset.num_class
-        # model, optimizer, loss, lr_scheduler, ema
-        self.model = self.select_model(anchor_num_per_stage, self.testdataset.num_class).to(self.hyp['device'])
-        self.ema_model = ExponentialMovingAverageModel(self.model)
+    def load_dataset(self):
+        dataset, dataloader, prefetcher = build_val_dataloader(img_dir=self.hyp['val_img_dir'], 
+                                                            lab_dir=self.hyp['val_lab_dir'], 
+                                                            name_path=self.hyp['name_path'], 
+                                                            input_dim=self.hyp['input_img_size'], 
+                                                            aug_hyp=None, 
+                                                            cache_num=self.hyp['cache_num'], 
+                                                            enable_data_aug=False, 
+                                                            seed=self.hyp['random_seed'], 
+                                                            batch_size=self.hyp['batch_size'], 
+                                                            num_workers=self.hyp['num_workers'], 
+                                                            pin_memory=self.hyp['pin_memory'],
+                                                            shuffle=False, 
+                                                            drop_last=False)
 
-        self.load_model('cpu')
-        if self.hyp['ema_model']:
-            del self.model
-            self.fuse_conv_bn(self.ema_model.ema)
-            if self.hyp['half'] and self.hyp['device'] == 'cuda':
-                self.ema_model.ema = self.ema_model.ema.half()    
-            self.validate = Evaluate(self.ema_model.ema,  self.anchors, self.hyp)
-        else:
-            del self.ema_model
-            self.fuse_conv_bn(self.model)
-            if self.hyp['half'] and self.hyp['device'] == 'cuda':
-                self.model = self.model.half()
-            self.validate = Evaluate(self.model,  self.anchors, self.hyp)
-        
-    def load_dataset(self, is_training):
-        dataloader, dataset = YoloDataloader(self.hyp, is_training=is_training)
-        return dataset, dataloader
+        return dataset, dataloader, prefetcher
 
     @property
     def select_model(self):
@@ -95,30 +94,49 @@ class Validation:
             return Yolov5LargeDW
         elif self.hyp['model_type'].lower() == "xlargedw":
             return Yolov5XLargeDW
-        elif self.hyp['model_type'].lower() == "small":
-            return Yolov5Small
         else:
-            raise ValueError(f'unknown model type "{self.hyp["model_type"]}"')
+            return Yolov5Small
 
-    def fuse_conv_bn(self, model):
-        summary_model(model, verbose=True, prefix="Before Fuse Conv and Bn\t")
-        for m in model.modules():
-            if isinstance(m, ConvBnAct) and hasattr(m, 'bn'):
-                m.conv = fuse_conv_bn(m.conv, m.bn)
-                delattr(m, 'bn')
-                m.forward = m.forward_fuse
-        summary_model(model, verbose=True, prefix="After Fuse Conv and Bn\t")
-        
-    @staticmethod
-    def padding(hw, factor=32):
-        h, w = hw
-        h_mod = h % factor
-        w_mod = w % factor
-        if h_mod > 0:
-            h = (h // factor + 1) * factor
-        if w_mod > 0:
-            w = (w // factor + 1) * factor
-        return h, w
+    def before_validation(self):
+        occupy_mem(self.local_rank)
+
+        # input_dim
+        self.hyp['input_img_size'] = padding(self.hyp['input_img_size'], 32)
+
+        # batch_size
+        if dist.is_available() and dist.is_initialized():
+            self.hyp['batch_size'] = self.hyp['batch_size'] // dist.get_world_size()
+
+        # dataset
+        self.val_dataset, self.val_dataloader, self.val_prefetcher = self.load_dataset()
+
+        # update hyper parameters
+        self.hyp['num_class'] = self.val_dataset.num_class
+
+        # anchor
+        if isinstance(self.anchors, (list, tuple)):
+            self.anchors = torch.tensor(self.anchors)  # (3, 3, 2)
+        self.anchors = self.anchors.to(self.device)
+        anchor_num_per_stage = self.anchors.size(0)  # 3
+
+        # model
+        torch.cuda.set_device(self.local_rank)
+        model = self.select_model(anchor_num_per_stage, self.val_dataset.num_class)
+        model = model.to(self.device)
+
+        # EMA
+        if self.hyp['do_ema']:
+            self.ema_model = ExponentialMovingAverageModel(model)
+        else:
+            self.ema_model = None
+
+        # ddp
+        if self.is_distributed:
+            model = DDP(model, device_ids=[self.local_rank], broadcast_buffers=False)
+        self.model = model
+
+        # load pretrained model
+        self.load_model()
 
     def preds_postprocess(self, inp, outputs, info):
         """
@@ -133,67 +151,91 @@ class Validation:
         for i in range(len(outputs)):
             scale, pad_top, pad_left = info[i]['scale'], info[i]['pad_top'], info[i]['pad_left']
             pad_bot, pad_right = info[i]['pad_bottom'], info[i]['pad_right']
-            pred = outputs[i]
             org_h, org_w = info[i]['org_shape']
             cur_h, cur_w = inp[i].size(1), inp[i].size(2)
 
             img = inp[i].permute(1, 2, 0)
             img *= 255.0
+            img = np.clip(img, 0, 255.0)
             img = img.numpy().astype(np.uint8)
             img = img[pad_top:(cur_h - pad_bot), pad_left:(cur_w - pad_right), :]
             img = cv2.resize(img, (org_w, org_h), interpolation=0)
+            processed_inp.append(img)
 
-            if pred is not None and pred.size(0) > 0:
+            if outputs[i] is None:
+                processed_preds.append(None)
+                continue
+            else:
+                pred = outputs[i]
                 pred[:, [0, 2]] -= pad_left
                 pred[:, [1, 3]] -= pad_top
                 pred[:, [0, 1, 2, 3]] /= scale
                 pred[:, [0, 2]] = pred[:, [0, 2]].clamp(1, org_w - 1)
                 pred[:, [1, 3]] = pred[:, [1, 3]].clamp(1, org_h - 1)
                 if self.hyp['use_auxiliary_classifier']:
-                    # 将每个预测框中的物体抠出来，放到一个额外的分类器再进行预测一次是否存在对象
+                    # 将每个预测框中的物体抠出来, 放到一个额外的分类器再进行预测一次是否存在对象
                     pass
                 processed_preds.append(pred.cpu().numpy())
-            else:
-                processed_preds.append(np.ones((1, 6)) * -1.)
-            processed_inp.append(img)
+            
         return processed_inp, processed_preds
 
     def select_device(self):
         if self.hyp['device'].lower() != 'cpu':
             if torch.cuda.is_available():
                 self.hyp['device'] = 'cuda'
+                # region (GPU Tags)
+                # 获取当前使用的GPU的属性并打印出来
+                gpu_num = torch.cuda.device_count()
+                cur_gpu_id = torch.cuda.current_device()
+                cur_gpu_name = torch.cuda.get_device_name()
+                cur_gpu_properties = torch.cuda.get_device_properties(cur_gpu_id)
+                gpu_total_memory = cur_gpu_properties.total_memory
+                gpu_major = cur_gpu_properties.major
+                gpu_minor = cur_gpu_properties.minor
+                gpu_multi_processor_count = cur_gpu_properties.multi_processor_count
+                # endregion
+                msg = f"Use Nvidia GPU {cur_gpu_name}, find {gpu_num} GPU devices, current device id: {cur_gpu_id}, "
+                msg += f"total memory={gpu_total_memory/(2**20):.1f}MB, major={gpu_major}, minor={gpu_minor}, multi_processor_count={gpu_multi_processor_count}"
+                print(msg)
             else:
                 self.hyp['device'] = 'cpu'
 
-    def load_model(self, map_location):
+    def load_model(self, map_location='cpu'):
         """
-        尝试load pretrained模型，如果失败则退出程序
+        load pretrained model, EMA model, optimizer(注意: __init_weights()方法并不适用于所有数据集)
         """
-        if self.hyp["pretrained_model_path"] is not None:
-            model_path = Path(self.hyp["pretrained_model_path"]).resolve()
+        # self._init_bias()
+        if self.hyp.get("pretrained_model_path", None):
+            model_path = self.hyp["pretrained_model_path"]
             if Path(model_path).exists():
                 try:
                     state_dict = torch.load(model_path, map_location=map_location)
                     if "model_state_dict" not in state_dict:
-                        raise ValueError("not found model's state_dict in this file, load model failed!")
-                    else:  # load training model
-                        self.model.load_state_dict(state_dict["model_state_dict"])
-                        print(f"successful load pretrained model {model_path}")
-
-                    if "ema" in state_dict:  # load EMA model
-                        self.ema_model.ema.load_state_dict(state_dict['ema'])
-                        print(f"successful load pretrained EMA model {model_path}")
-                    else:
-                        self.hyp['ema_model'] = False
-                        print(f"load EMA model falied, use plain model instead!")
-                    del state_dict
-                except Exception as err:
-                    print(f"Error\t➡️ {err}")
+                        print(f"can't load pretrained model from {model_path}")
     
+                    else:  # load pretrained model
+                        self.model.load_state_dict(state_dict["model_state_dict"])
+                        print(f"use pretrained model {model_path}")
+
+                    if self.ema_model is not None and "ema" in state_dict:  # load EMA model
+                        self.ema_model.ema.load_state_dict(state_dict['ema'])
+                        print(f"use pretrained EMA model from {model_path}")
+                    else:
+                        print(f"can't load EMA model from {model_path}")
+
+                    if 'ema_update_num' in state_dict:
+                        self.ema_model.update_num = state_dict['ema_update_num']
+
+                    del state_dict
+
+                except Exception as err:
+                    print(err)
+        else:
+            print('training from stratch!')
+        
     def gt_bbox_postprocess(self, anns, infoes):
         """
-        testdataloader出来的gt bboxes经过了letter resize，这里将其还原到原始的bboxes
-
+        valdataloader出来的gt bboxes经过了letter resize, 这里将其还原为原始的bboxes
         :param: anns: dict
         """
         ppb = []  # post processed bboxes
@@ -208,38 +250,6 @@ class Validation:
             ppb.append(ann_valid[:, :4].cpu().numpy())
             ppc.append(ann_valid[:, 4].cpu().numpy().astype('uint16'))
         return ppb, ppc
-
-    @logger.catch
-    def predtict(self):
-        """
-        测试testdataloader中的所有图片并将结果保存到磁盘
-        """
-        for i, x in enumerate(self.testdataloader):
-            imgs = x['imgs']  # (bn, 3, h, w)
-            infoes = x['resize_infoes']
-            try:
-                gt_bbox, gt_cls = self.gt_bbox_postprocess(x['anns'], infoes)
-            except Exception as err:
-                gt_bbox, gt_cls = None, None
-            imgs = imgs.to(self.hyp['device'])
-            if self.hyp['half'] and self.hyp['device'] == 'cuda':
-                imgs = imgs.half()
-            outputs = self.validate(imgs)
-            imgs, preds = self.preds_postprocess(imgs.cpu(), outputs, infoes)
-            pred_cls = [preds[j][:, 5] for j in range(len(imgs))]
-
-            if self.hyp['save_img']:
-                for k in range(len(imgs)):
-                    save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
-                    maybe_mkdir(Path(save_path).parent)
-                    pred_lab = [self.testdataset.cls2lab[int(c)] for c in pred_cls[k]]
-                    if gt_cls is not None:
-                        gt_lab = [self.testdataset.cls2lab[int(c)] for c in gt_cls[k]]
-                    if self.hyp['show_gt_bbox'] and gt_bbox is not None:
-                        cv2_save_img_plot_pred_gt(imgs[k], preds[k][:, :4], pred_lab, preds[k][:, 4], gt_bbox[k], gt_lab, save_path)
-                    else:
-                        cv2_save_img(imgs[k], preds[k][:, :4], pred_lab, preds[k][:, 4], save_path)
-            del imgs, preds
 
     def count_object(self, pred_lab):
         """
@@ -258,9 +268,9 @@ class Validation:
             ascending_numbers = [numbers[i] for i in sort_index]
             ascending_names = [names[i] for i in sort_index]
             if len(numbers) > 0:
-                if (self.cwd / "result" / 'pkl' / "emoji_names.pkl").exists():
-                    coco_emoji = pickle.load(open(str(self.cwd / "result" / 'pkl' / "emoji_names.pkl"), 'rb'))
-                    msg_ls = [" ".join([number, coco_emoji[name]]) for name, number in zip(ascending_names, ascending_numbers)]
+                if (self.cwd / "result" / 'pkl' / "voc_emoji_names.pkl").exists():
+                    emoji_names = pickle.load(open(str(self.cwd / "result" / 'pkl' / "voc_emoji_names.pkl"), 'rb'))
+                    msg_ls = [" ".join([number, emoji_names[name]]) for name, number in zip(ascending_names, ascending_numbers)]
                 else:
                     msg_ls = [" ".join([number, name]) for name, number in zip(ascending_names, ascending_numbers)]
             else:
@@ -268,108 +278,149 @@ class Validation:
             msg.append(emoji.emojize("; ".join(msg_ls)))
         return msg
 
-    def calculate_mAP(self):
+    def step(self):
         """
-        计算testdataloader中所有数据的map
+        计算dataloader中所有数据的map
         """
+        torch.cuda.empty_cache()
+        gc.collect()
+
         start_t = time_synchronize()
         pred_bboxes, pred_classes, pred_confidences, pred_labels, gt_bboxes, gt_classes = [], [], [], [], [], []
-        for i, x in enumerate(self.testdataloader):
-            imgs = x['img']  # (bn, 3, h, w)
-            infoes = x['resize_info']
+        iters_num = len(self.val_dataloader)
 
-            # gt_bbox: [(M, 4), (N, 4), (P, 4), ...]; gt_cls: [(M,), (N, ), (P, ), ...]
-            # coco val2017 dataset中存在有些图片没有对应的gt bboxes的情况
-            gt_bbox, gt_cls = self.gt_bbox_postprocess(x['ann'], infoes)
-            gt_bboxes.extend(gt_bbox)
-            gt_classes.extend(gt_cls)
+        if self.hyp['do_ema']:
+            eval_model = self.ema_model.ema
+        else:
+            eval_model = self.model
+            if is_parallel(eval_model):
+                eval_model = eval_model.module
 
-            # 统计预测一个batch需要花费的时间
-            t1 = time_synchronize()
-            imgs = imgs.to(self.hyp['device'])
-            if self.hyp['half'] and self.hyp['device'] == 'cuda':
-                imgs = imgs.half()
-            outputs = self.validate(imgs)
-            # preds: [(X, 6), (Y, 6), (Z, 6), ...]
-            imgs, preds = self.preds_postprocess(imgs.cpu(), outputs, infoes)
-            t = time_synchronize() - t1
+        with adjust_status(eval_model, training=False) as m:
+            # validater
+            validater = Evaluate(m, self.anchors, self.hyp, compute_metric=True)
 
-            batch_pred_box, batch_pred_cof, batch_pred_cls, batch_pred_lab = [], [], [], []
-            for j in range(len(imgs)):
-                valid_idx = preds[j][:, 5] >= 0
-                if valid_idx.sum() == 0:
-                    pred_box, pred_cls, pred_cof, pred_lab = [], [], [], []
+            for i in range(iters_num):
+                t1 = time_synchronize()
+                if self.use_cuda:
+                    x = self.val_prefetcher.next()
                 else:
-                    pred_box = preds[j][valid_idx, :4]
-                    pred_cof = preds[j][valid_idx, 4]
-                    pred_cls = preds[j][valid_idx, 5]
-                    pred_lab = [self.testdataset.cls2lab[int(c)] for c in pred_cls]
+                    x = next(self.val_dataloader)
 
-                batch_pred_box.append(pred_box)
-                batch_pred_cls.append(pred_cls)
-                batch_pred_cof.append(pred_cof)
-                batch_pred_lab.append(pred_lab)
+                imgs = x['img']  # (bn, 3, h, w)
+                infoes = x['resize_info']
 
-            pred_bboxes.extend(batch_pred_box)
-            pred_classes.extend(batch_pred_cls)
-            pred_confidences.extend(batch_pred_cof)
-            pred_labels.extend(batch_pred_lab)
+                # gt_bbox: [(M, 4), (N, 4), (P, 4), ...]; gt_cls: [(M,), (N, ), (P, ), ...]
+                # coco val2017 dataset中存在有些图片没有对应的gt bboxes的情况
+                gt_bbox, gt_cls = self.gt_bbox_postprocess(x['ann'], infoes)
+                gt_bboxes.extend(gt_bbox)
+                gt_classes.extend(gt_cls)
+
+                imgs = imgs.to(self.hyp['device'])
+                if self.hyp['half'] and 'cuda' in self.hyp['device']:
+                    imgs = imgs.half()
+                
+                outputs = validater(imgs)
+                # preds: [(X, 6), (Y, 6), (Z, 6), ...]
+                imgs, preds = self.preds_postprocess(imgs.cpu(), outputs, infoes)
+                t = time_synchronize() - t1
+
+                batch_pred_box, batch_pred_cof, batch_pred_cls, batch_pred_lab = [], [], [], []
+                for j in range(len(imgs)):
+                    pred_box, pred_cls, pred_cof, pred_lab = [], [], [], []
+                    if preds[j] is not None:
+                        valid_idx = preds[j][:, 5] >= 0
+                        if valid_idx.sum() > 0:
+                            pred_box = preds[j][valid_idx, :4]
+                            pred_cof = preds[j][valid_idx,  4]
+                            pred_cls = preds[j][valid_idx,  5]
+                            pred_lab = [self.val_dataset.cls2lab[int(c)] for c in pred_cls]
+
+                    batch_pred_box.append(pred_box)
+                    batch_pred_cls.append(pred_cls)
+                    batch_pred_cof.append(pred_cof)
+                    batch_pred_lab.append(pred_lab)
+
+                obj_msg = self.count_object(batch_pred_lab)
+                for k in range(len(imgs)):
+                    count = i * self.hyp['batch_size'] + k + 1
+                    print(f"[{count:>05} / {len(self.val_dataset)}] ➡️  " + obj_msg[k] + f" ({(t/len(imgs)):.2f}s)")
+                    if self.hyp['save_img']:
+                        save_path = str(self.cwd / 'result' / 'tmp' / f"{count} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
+                        if self.hyp['show_gt_bbox']:
+                            gt_lab = [self.val_dataset.cls2lab[int(c)] for c in gt_cls[k]]
+                            cv2_save_img_plot_pred_gt(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], gt_bbox[k], gt_lab, save_path)
+                        else:
+                            cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
+
+                del x, imgs, preds, outputs, infoes
+                pred_bboxes.extend(batch_pred_box)
+                pred_classes.extend(batch_pred_cls)
+                pred_confidences.extend(batch_pred_cof)
+                pred_labels.extend(batch_pred_lab)
+
+            total_use_time = time_synchronize() - start_t
+
+            all_preds = []
+            for pred_box, pred_cof, pred_cls in zip(pred_bboxes, pred_confidences, pred_classes):
+                if len(pred_box) == 0:
+                    all_preds.append(np.zeros((0, 6)))
+                else:
+                    all_preds.append(np.concatenate((pred_box, pred_cof[:, None], pred_cls[:, None]), axis=1))
             
-            obj_msg = self.count_object(batch_pred_lab)
-            
-            for k in range(len(imgs)):
-                count = i * len(imgs) + k + 1
-                print(f"[{count:>05}/{len(self.testdataset)}] ➡️ " + obj_msg[k] + f" ({(t/len(imgs)):.2f}s)")
-                if self.hyp['save_img']:
-                    save_path = str(self.cwd / 'result' / 'tmp' / f"{i * self.hyp['batch_size'] + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
-                    if self.hyp['show_gt_bbox']:
-                        gt_lab = [self.testdataset.cls2lab[int(c)] for c in gt_cls[k]]
-                        cv2_save_img_plot_pred_gt(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], gt_bbox[k], gt_lab, save_path)
-                    else:
-                        cv2_save_img(imgs[k], batch_pred_box[k], batch_pred_lab[k], batch_pred_cof[k], save_path)
-            del imgs, preds
+            all_gts = []
+            for gt_box, gt_cls in zip(gt_bboxes, gt_classes):
+                all_gts.append(np.concatenate((gt_box, gt_cls[:, None]), axis=1))
 
-        total_use_time = time_synchronize() - start_t
+            # 如果测试的数据较多, 计算一次mAP需花费较多时间, 这里将结果保存以便后续统计
+            if self.hyp['save_pred_bbox']:
+                save_path = self.cwd / "result" / "pkl" / f"pred_bbox_{self.hyp['input_img_size'][0]}_{self.hyp['model_type']}.pkl"
+                pickle.dump(all_preds, open(str(save_path), 'wb'))
+            if self.hyp['save_gt_bbox']:
+                pickle.dump(all_gts, open(self.cwd / "result" / "pkl" / "gt_bbox.pkl", "wb"))
 
-        all_preds = []
-        for pred_box, pred_cof, pred_cls in zip(pred_bboxes, pred_confidences, pred_classes):
-            if len(pred_box) == 0:
-                all_preds.append(np.zeros((0, 6)))
-            else:
-                all_preds.append(np.concatenate((pred_box, pred_cof[:, None], pred_cls[:, None]), axis=1))
+            mapv2 = mAP_v2(all_gts, all_preds, self.cwd / "result" / "curve")
+            map, map50, mp, mr = mapv2.get_mean_metrics()
+            print(f"map={map}, map50={map50}, mp={mp}, mr={mr}")
+
+        del validater, all_preds, all_gts, pred_bboxes, pred_classes, pred_confidences, pred_labels
         
-        all_gts = []
-        for gt_box, gt_cls in zip(gt_bboxes, gt_classes):
-            all_gts.append(np.concatenate((gt_box, gt_cls[:, None]), axis=1))
+            
+@logger.catch
+@catch_warnnings
+def main(x):
+    configure_module()
+    
+    config_ = Config()
+    class Args:
+        def __init__(self) -> None:
+            self.cfg = "./config/train_yolov5.yaml"
+    args = Args()
 
-        # 如果测试的数据较多，计算一次mAP需花费较多时间，这里将结果保存以便后续统计
-        if self.hyp['save_pred_bbox']:
-            save_path = self.cwd / "result" / "pkl" / f"pred_bbox_{self.hyp['input_img_size'][0]}_{self.hyp['model_type']}.pkl"
-            pickle.dump(all_preds, open(str(save_path), 'wb'))
-            pickle.dump(all_gts, open(self.cwd / "result" / "pkl" / "gt_bbox.pkl", "wb"))
-
-        mapv2 = mAP_v2(all_gts, all_preds, self.cwd / "result" / "curve")
-        map, map50, mp, mr = mapv2.get_mean_metrics()
-        print(f"use time: {total_use_time:.2f}s")
-        print(f'mAP = {map * 100:.3f}')
-        print(f'mAP@0.5 = {map50 * 100:.1f}')
-        print(f'mp = {mp * 100:.1f}')
-        print(f'mr = {mr * 100:.1f}')
+    anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
+    hyp = config_.get_config(args.cfg, args)
+    train = Training(anchors, hyp)
+    train.step()
 
 
 if __name__ == '__main__':
-    config_ = Config()
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, required=True, dest='cfg', help='path to config file')
-    parser.add_argument('--val_img_dir', required=True, dest='val_img_dir', type=str)
-    parser.add_argument('--val_lab_dir', required=True, dest='val_lab_dir', type=str)
-    parser.add_argument('--pretrained_model_path', required=True, dest='pretrained_model_path', type=str)
-    parser.add_argument('--model_type', required=True, dest='model_type', type=str)
-    parser.add_argument('--name_path', required=True, dest='name_path', type=str)
-    parser.add_argument('--batch_size', default=8, dest='name_path', type=str)
-    args = parser.parse_args()
+    import os
     
-    hyp = config_.get_config(args.cfg, args)
-    anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
-    val = Validation(anchors, hyp)
-    val.calculate_mAP()
+    config_ = Config()
+
+    from utils import launch, get_num_devices
+    import os
+    # os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+    num_gpu = get_num_devices()
+    clear_dir(str(current_work_directionary / 'result' / 'tmp'))
+    launch(
+        main, 
+        num_gpus_per_machine= num_gpu, 
+        num_machines= 1, 
+        machine_rank= 0, 
+        backend= "nccl", 
+        dist_url= "auto", 
+        args=(None,),
+    )
+
+    

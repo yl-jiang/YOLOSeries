@@ -36,8 +36,7 @@ from trainer import ExponentialMovingAverageModel
 from utils import time_synchronize, summary_model
 from dataset import build_dataloader, build_test_dataloader
 from utils import mAP_v2, catch_warnnings
-from models import Yolov5Small, Yolov5Middle, Yolov5Large, Yolov5SmallWithPlainBscp, Yolov5XLarge
-from models import Yolov5SmallDW, Yolov5MiddleDW, Yolov5LargeDW, Yolov5XLargeDW
+from models import *
 
 from utils import (configure_nccl, configure_omp, get_local_rank, print_config, 
                    get_rank, get_world_size, occupy_mem, padding, MeterBuffer, 

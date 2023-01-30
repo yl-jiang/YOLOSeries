@@ -18,3 +18,9 @@ from .normal import YoloXDarkNet53
 from .normal import RetinaNet
 
 from .normal import YOLOv7Baseline
+
+__all__ = ['Yolov5Middle', 'Yolov5Small', 'Yolov5Large', 'Yolov5SmallWithPlainBscp', 'Yolov5XLarge', 
+           'Yolov5MiddleDW', 'Yolov5SmallDW', 'Yolov5LargeDW', 'Yolov5XLargeDW', 
+           'YoloXSmall', 'YoloXMiddle', 'YoloXLarge', 'YoloXDarkNet21', 'YoloXDarkNet53', 
+           'RetinaNet', 
+           'YOLOv7Baseline']
