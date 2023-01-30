@@ -324,7 +324,7 @@ class Training:
     def before_epoch(self, cur_epoch):
         torch.cuda.empty_cache()
         gc.collect()
-        self.update_tbar(None, True)
+        self.update_tbar()
         if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
             self.train_dataloader.close_data_aug()
             self.logger.info("--->No mosaic aug now!")
@@ -426,16 +426,15 @@ class Training:
                 else:
                     msg += '{' + tag +  ':' + fmt + '}'
 
-                if i < len(tags) - 1:
+                if with_tag_name and i < len(tags) - 1:
                     msg += ', '
 
         return msg, show_dict
         
-
-    def update_tbar(self, tbar, is_init=False):
+    def update_tbar(self, tbar=None):
         tags = ("epoch", "tot_loss", "iou_loss", "cof_loss", "cls_loss", "tar_nums", "input_dim", "lr"     , "map50"  , "iter_time")
         fmts = (":^10d", ":^10.3f" , ":^10.3f" , ":^10.3f" , ":^10.3f" , ":^10d"   , ":^10d"    , ":^10.3e", ":^10.1f", ":^10.1f"  )
-        if is_init:
+        if tbar is None:
             head_fmt = ("%10s", "%11s", "%11s", "%12s", "%12s", "%13s", "%12s", "%9s", "%13s", "%13s")
             head_msg = ''.join(head_fmt)
             print(head_msg % tags)
@@ -443,7 +442,6 @@ class Training:
             tbar_msg, tbar_dct = self.tag2msg(tags, fmts)
             if tbar_msg is not None:
                 tbar.set_description_str(tbar_msg.format(**tbar_dct))
-
 
     def update_logger(self, step_in_total):
         tags = ('percentage', "tot_loss", "iou_loss", 'cof_loss'  , 'cls_loss'  , "accumulate", "iter_time", 'data_time', "lr"  , "cur_epoch", "step_in_epoch", "batch_size", "input_dim", "allo_mem", "cach_mem")
@@ -453,7 +451,6 @@ class Training:
             if log_msg is not None:
                 cur_epoch = self.meter.get_filtered_meter('cur_epoch')['cur_epoch'].latest
                 self.logger.info(f"[{cur_epoch:>03d}/{self.hyp['total_epoch']:>03d}]" + " " + log_msg.format(**show_dict))
-
 
     def update_meter(self, cur_epoch, step_in_epoch, step_in_total, input_dim, batch_size, iter_time, data_time, loss_dict, is_best):
         self.meter.update(iter_time  = float(iter_time), 
