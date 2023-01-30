@@ -203,7 +203,11 @@ class Training:
         # model
         torch.cuda.set_device(self.local_rank)
         model = self.select_model(anchor_num_per_stage, self.train_dataset.num_class)
-        ModelSummary(model, input_size=(1, 3, self.hyp['input_img_size'][0], self.hyp['input_img_size'][1]), device=next(model.parameters()).device)
+        ModelSummary(model, 
+                     input_size=(1, 3, self.hyp['input_img_size'][0], 
+                     self.hyp['input_img_size'][1]), 
+                     device=next(model.parameters()).device, 
+                     verbose=0)
 
         # summarywriter
         if self.rank == 0:
@@ -320,6 +324,7 @@ class Training:
     def before_epoch(self, cur_epoch):
         torch.cuda.empty_cache()
         gc.collect()
+        self.update_tbar(None, True)
         if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
             self.train_dataloader.close_data_aug()
             self.logger.info("--->No mosaic aug now!")
@@ -336,85 +341,119 @@ class Training:
             self.model.train()
             self.before_epoch(cur_epoch+1)
             start_epoch_t = time_synchronize()
-            for i in range(one_epoch_iters):
-                start_iter = time_synchronize()
-                if self.use_cuda:
-                    x = self.train_prefetcher.next()
+            with tqdm(total=one_epoch_iters, file=sys.stdout) as tbar:
+                for i in range(one_epoch_iters):
+                    start_iter = time_synchronize()
+                    if self.use_cuda:
+                        x = self.train_prefetcher.next()
+                    else:
+                        x = next(self.train_dataloader)
+                    end_data_t = time_synchronize()
+                    step_in_epoch = i + 1
+                    step_in_total = one_epoch_iters * cur_epoch + i + 1
+                    ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
+                    img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
+                    img, ann = self.mutil_scale_training(img, ann)
+
+                    # warmup
+                    self.warmup(step_in_total)
+
+                    # forward
+                    my_context = self.model.no_sync if self.is_distributed and step_in_epoch % self.accumulate != 0 else nullcontext
+                    with my_context():
+                        with amp.autocast(enabled=self.use_cuda):
+                            stage_preds = self.model(img)
+                            loss_dict = self.loss_fcn(stage_preds, ann)
+                            loss_dict['tot_loss'] *= get_world_size()
+
+                    tot_loss = loss_dict['tot_loss']
+
+                    # backward
+                    self.scaler.scale(tot_loss).backward()
+                    end_iter_t = time_synchronize()
+                    loss_dict.update({'tot_loss': tot_loss.detach().item()})
+
+                    # optimize
+                    if step_in_epoch % self.accumulate == 0:
+                        # self.scaler.unscale_(self.optimizer)
+                        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                        self.optimizer.zero_grad()
+                        # maintain a model and update it every time, but it only using for inference
+                        if self.hyp['do_ema']:
+                            self.ema_model.update(self.model)
+
+                    data_time = end_data_t - start_iter
+                    iter_time = end_iter_t - start_iter
+                    is_best = tot_loss < tot_loss_before
+                    tot_loss_before = tot_loss.item()
+
+                    self.update_meter(cur_epoch, step_in_epoch, step_in_total, img.size(2), img.size(0), iter_time, data_time, loss_dict, is_best)
+                    self.update_tbar(tbar)
+                    self.update_summarywriter()
+                    self.update_logger(step_in_total)
+                    self.save_model(cur_epoch, step_in_epoch=step_in_epoch, loss_dict=loss_dict)
+                    self.test(step_in_total)
+                    self.calculate_metric(step_in_total)
+
+                    # onecycle scheduler需要在iter尺度update
+                    if self.hyp['scheduler_type'].lower() == "onecycle":
+                        self.lr_scheduler.step()  # 因为self.accumulate会从1开始增长, 因此第一次执行训练时self.optimizer.step()一定会在self.lr_scheduler.step()之前被执行
+                    
+                    del x, img, ann, tot_loss, stage_preds, loss_dict
+                    tbar.update()
+
+                # 其余scheduler在epoch尺度update
+                if self.hyp['scheduler_type'].lower() != "onecycle":
+                    self.lr_scheduler.step()
+                epoch_time = time_synchronize() - start_epoch_t
+                self.logger.info(f'\n\n{"-" * 600}\n')
+                tbar.close()
+
+    def tag2msg(self, tags, fmts, with_tag_name=False):
+        assert len(tags) == len(fmts), f"length of tags and fmts should be the same, but got len(tags)={len(tags)} and len(fmts)={len(fmts)}"
+        show_dict = {}
+        for tag in tags:
+            show_dict[tag] = self.meter.get_filtered_meter(tag)[tag].latest
+
+        msg = None
+        if 'tot_loss' in show_dict and not math.isnan(show_dict['tot_loss']):
+            msg = ''
+            for i, (tag, fmt) in enumerate(zip(tags, fmts)):
+                if with_tag_name:
+                    msg += tag + '=' + '{' + tag +  ':' + fmt + '}'
                 else:
-                    x = next(self.train_dataloader)
-                end_data_t = time_synchronize()
-                step_in_epoch = i + 1
-                step_in_total = one_epoch_iters * cur_epoch + i + 1
-                ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
-                img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
-                img, ann = self.mutil_scale_training(img, ann)
+                    msg += '{' + tag +  ':' + fmt + '}'
 
-                # warmup
-                self.warmup(step_in_total)
+                if i < len(tags) - 1:
+                    msg += ', '
 
-                # forward
-                my_context = self.model.no_sync if self.is_distributed and step_in_epoch % self.accumulate != 0 else nullcontext
-                with my_context():
-                    with amp.autocast(enabled=self.use_cuda):
-                        stage_preds = self.model(img)
-                        loss_dict = self.loss_fcn(stage_preds, ann)
-                        loss_dict['tot_loss'] *= get_world_size()
+        return msg, show_dict
+        
 
-                tot_loss = loss_dict['tot_loss']
-
-                # backward
-                self.scaler.scale(tot_loss).backward()
-                end_iter_t = time_synchronize()
-                loss_dict.update({'tot_loss': tot_loss.detach().item()})
-
-                # optimize
-                if step_in_epoch % self.accumulate == 0:
-                    # self.scaler.unscale_(self.optimizer)
-                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                    self.optimizer.zero_grad()
-                    # maintain a model and update it every time, but it only using for inference
-                    if self.hyp['do_ema']:
-                        self.ema_model.update(self.model)
-
-                data_time = end_data_t - start_iter
-                iter_time = end_iter_t - start_iter
-                is_best = tot_loss < tot_loss_before
-                tot_loss_before = tot_loss.item()
-
-                self.update_meter(cur_epoch, step_in_epoch, step_in_total, img.size(2), img.size(0), iter_time, data_time, loss_dict, is_best)
-                self.update_summarywriter()
-                self.update_logger(step_in_total)
-                self.save_model(cur_epoch, step_in_epoch=step_in_epoch, loss_dict=loss_dict)
-                self.test(step_in_total)
-                self.calculate_metric(step_in_total)
-
-                # onecycle scheduler需要在iter尺度update
-                if self.hyp['scheduler_type'].lower() == "onecycle":
-                    self.lr_scheduler.step()  # 因为self.accumulate会从1开始增长, 因此第一次执行训练时self.optimizer.step()一定会在self.lr_scheduler.step()之前被执行
-                
-                del x, img, ann, tot_loss, stage_preds, loss_dict
-            # 其余scheduler在epoch尺度update
-            if self.hyp['scheduler_type'].lower() != "onecycle":
-                self.lr_scheduler.step()
-            epoch_time = time_synchronize() - start_epoch_t
-            self.logger.info(f'\n\n{"-" * 600}\n')
+    def update_tbar(self, tbar, is_init=False):
+        tags = ("epoch", "tot_loss", "iou_loss", "cof_loss", "cls_loss", "tar_nums", "input_dim", "lr"     , "map50"  , "iter_time")
+        fmts = (":^10d", ":^10.3f" , ":^10.3f" , ":^10.3f" , ":^10.3f" , ":^10d"   , ":^10d"    , ":^10.3e", ":^10.1f", ":^10.1f"  )
+        if is_init:
+            head_fmt = ("%10s", "%11s", "%11s", "%12s", "%12s", "%13s", "%12s", "%9s", "%13s", "%13s")
+            head_msg = ''.join(head_fmt)
+            print(head_msg % tags)
+        else:
+            tbar_msg, tbar_dct = self.tag2msg(tags, fmts)
+            if tbar_msg is not None:
+                tbar.set_description_str(tbar_msg.format(**tbar_dct))
 
 
     def update_logger(self, step_in_total):
         tags = ('percentage', "tot_loss", "iou_loss", 'cof_loss'  , 'cls_loss'  , "accumulate", "iter_time", 'data_time', "lr"  , "cur_epoch", "step_in_epoch", "batch_size", "input_dim", "allo_mem", "cach_mem")
         fmts = ('3.2%'      , '5.3f'    , '5.3f'    , '>5.3f'     , '>5.3f'     , '>02d'      , '5.3f'     , '5.3f'     , '5.3e', '>04d'     , '>05d'    , '>02d'      , '>03d'     , '5.3f'    ,  '5.3f')
         if step_in_total % self.hyp['save_log_every'] == 0:
-            show_dict = {}
-            for tag in tags:
-                show_dict[tag] = self.meter.get_filtered_meter(tag)[tag].latest
-            if not math.isnan(show_dict['tot_loss']):
-                log_msg = ''
-                for tag, fmt in zip(tags, fmts):
-                    log_msg += tag + '=' + '{' + tag +  ':' + fmt + '}' + ", "
+            log_msg, show_dict = self.tag2msg(tags, fmts, True)
+            if log_msg is not None:
                 cur_epoch = self.meter.get_filtered_meter('cur_epoch')['cur_epoch'].latest
                 self.logger.info(f"[{cur_epoch:>03d}/{self.hyp['total_epoch']:>03d}]" + " " + log_msg.format(**show_dict))
+
 
     def update_meter(self, cur_epoch, step_in_epoch, step_in_total, input_dim, batch_size, iter_time, data_time, loss_dict, is_best):
         self.meter.update(iter_time  = float(iter_time), 
