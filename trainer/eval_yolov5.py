@@ -22,8 +22,9 @@ class Evaluate:
         self.inp_h, self.inp_w = hyp['input_img_size']
         self.use_tta = hyp['use_tta']
         self.grid_coords = [self.make_grid(self.inp_h//s, self.inp_w//s).float() for s in self.ds_scales]
-        self.iou_threshold = self.hyp['compute_metric_iou_thresh'] if compute_metric else self.hyp['iou_threshold']
-        self.conf_threshold = self.hyp['compute_metric_conf_thresh'] if compute_metric else self.hyp['conf_threshold']
+        self.iou_threshold = self.hyp['compute_metric_iou_threshold'] if compute_metric else self.hyp['iou_threshold']
+        self.cls_threshold = self.hyp['compute_metric_cls_threshold'] if compute_metric else self.hyp['cls_threshold']
+        self.conf_threshold = self.hyp['compute_metric_conf_threshold'] if compute_metric else self.hyp['conf_threshold']
 
     @torch.no_grad()
     def __call__(self, inputs):
@@ -109,14 +110,14 @@ class Evaluate:
             # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
             box = xywh2xyxy(x[:, :4])
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] > self.hyp['cls_threshold']).nonzero(as_tuple=True)
+                row_idx, col_idx = (x[:, 5:] > self.cls_threshold).nonzero(as_tuple=True)
                 # x: [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = torch.cat((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].float()), dim=1)
             else:
                 cls_conf, col_idx = x[:, 5:].max(dim=1, keepdim=True)
                 # [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = torch.cat((box, cls_conf, col_idx.float()), dim=1)
-                cls_conf_mask = cls_conf.view(-1).contiguous() > self.hyp['cls_threshold']
+                cls_conf_mask = cls_conf.view(-1).contiguous() > self.cls_threshold
                 x = x[cls_conf_mask]
 
             bbox_num = x.size(0)
@@ -275,7 +276,7 @@ class Evaluate:
             # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
             box = numba_xywh2xyxy(x[:, :4])
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] > self.hyp['cls_threshold']).nonzero()
+                row_idx, col_idx = (x[:, 5:] > self.cls_threshold).nonzero()
                 # x: [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = np.concatenate((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].astype(np.float32)), axis=1)
             else:
@@ -283,7 +284,7 @@ class Evaluate:
                 col_idx = x[:, 5:].argmax(axis=1)[:, None]
                 # [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = np.concatenate((box, cls_conf, col_idx.astype(np.float32)), axis=1)
-                cls_conf_mask = np.ascontiguousarray(cls_conf.reshape(-1)) > self.hyp['cls_threshold']
+                cls_conf_mask = np.ascontiguousarray(cls_conf.reshape(-1)) > self.cls_threshold
                 x = x[cls_conf_mask]
 
             bbox_num = x.shape[0]

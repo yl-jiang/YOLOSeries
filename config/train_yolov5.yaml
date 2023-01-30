@@ -106,6 +106,7 @@ val_hyp:
   save_gt_bbox: false  # 计算map后，是否保存gt
   save_pred_bbox: false  # 计算map后，是否将预测结果保存
   half: false  # 是否使用半精度（float16）进行预测
-  compute_metric_conf_thresh: 0.001
-  compute_metric_iou_thresh: 0.65
+  compute_metric_conf_threshold: 0.001
+  compute_metric_iou_threshold: 0.65
+  compute_metric_cls_threshold: 0.001 
 
