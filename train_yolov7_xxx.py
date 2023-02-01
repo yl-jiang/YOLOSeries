@@ -28,7 +28,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from contextlib import nullcontext
 
 from config import Config
-from loss import YOLOV5Loss as loss_fnc
+from loss import YOLOV7Loss as loss_fnc
 from trainer import Evaluate
 from utils import cv2_save_img
 from utils import maybe_mkdir, clear_dir
@@ -110,24 +110,7 @@ class Training:
 
     @property
     def select_model(self):
-        if self.hyp['model_type'].lower() == "plainsmall":
-            return Yolov5SmallWithPlainBscp
-        elif self.hyp['model_type'].lower() == "middle":
-            return Yolov5Middle
-        elif self.hyp['model_type'].lower() == "large":
-            return Yolov5Large
-        elif self.hyp['model_type'].lower() == "xlarge":
-            return Yolov5XLarge
-        elif self.hyp['model_type'].lower() == "smalldw":
-            return Yolov5SmallDW
-        elif self.hyp['model_type'].lower() == "middledw":
-            return Yolov5MiddleDW
-        elif self.hyp['model_type'].lower() == "largedw":
-            return Yolov5LargeDW
-        elif self.hyp['model_type'].lower() == "xlargedw":
-            return Yolov5XLargeDW
-        else:
-            return Yolov5Small
+        return YOLOv7Baseline
 
     def _init_logger(self):
         # clear_dir(str(self.cwd / 'log'))  # 再写入log文件前先清空log文件夹
@@ -253,8 +236,6 @@ class Training:
 
         # accumulate step
         self.accumulate = self.hyp['accumulate_loss_step'] / self.hyp['batch_size']
-
-        
 
     def _init_optimizer(self):
         param_group_weight, param_group_bias, param_group_other = [], [], []
@@ -842,7 +823,7 @@ def main(x):
     config_ = Config()
     class Args:
         def __init__(self) -> None:
-            self.cfg = "./config/train_yolov5.yaml"
+            self.cfg = "./config/train_yolov7.yaml"
     args = Args()
 
     anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])

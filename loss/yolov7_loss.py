@@ -79,7 +79,7 @@ class YOLOV7Loss:
             anchor_num = anchor_stage.shape[0]
             # preds: (bn, 3, h, w, 85)
             preds = stage_preds[keys[i]]
-            assert preds.size(-1) == self.hyp['num_classes'] + 5
+            assert preds.size(-1) == self.hyp['num_class'] + 5
             # match anchor(正样本匹配) / box, cls, img_idx, anchor_idx, grid_y, grid_x
             tar_box_from_v5, tar_cls_from_v5, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5 = self.match(targets, anchor_stage, (fm_w, fm_h))
             # endregion ============================= yolov5 matching =============================
@@ -97,10 +97,10 @@ class YOLOV7Loss:
             # region ====================================== compute loss ======================================
             # Classification
             # 只有正样本才参与分类损失的计算
-            if self.hyp['num_classes'] > 1:  # if only one class then we don't compute class loss
+            if self.hyp['num_class'] > 1:  # if only one class then we don't compute class loss
                 # t_cls: (N, 80)
                 t_cls = torch.full_like(cur_preds[:, 5:], fill_value=self.negative_smooth_cls)
-                t_cls[torch.arange(tar_cls_from_x.size(0)), tar_cls_from_x] = self.positive_smooth_cls
+                t_cls[torch.arange(tar_cls_from_x.size(0)), tar_cls_from_x.long()] = self.positive_smooth_cls
 
                 if self.hyp['use_focal_loss']:
                     cls_factor = self.focal_loss_factor(cur_preds[:, 5:], t_cls)
@@ -298,9 +298,9 @@ class YOLOV7Loss:
             # 一个pred最多可以匹配target的个数
             topk_iou_loss, _ = torch.topk(pairwise_neg_iou_loss, min(10, pairwise_neg_iou_loss.shape[1]), dim=1)
             dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1, max=topk_iou_loss.size(1))  # (Xt,) / 为每个target分配dynamic个prediction
-            if self.hyp["num_classes"] > 1: 
+            if self.hyp["num_class"] > 1: 
                 # (Xt,) -> (Xt, 80) -> (Xt, 1, 80) -> (Xt, Xp, 80)
-                this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_classes']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
+                this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_class']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
                 # (Xp, 80) -> (1, Xp, 80) -> (Xt, Xp, 80)
                 this_pred_pairwise_cls = this_pred_cls.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid()  # (Xt, Xp, 80)
                 # (Xt, Xp, 80) & (Xt, Xp, 1) -> (Xt, Xp, 80)

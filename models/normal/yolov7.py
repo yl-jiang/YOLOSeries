@@ -405,7 +405,7 @@ class BaselineDetect(nn.Module):
 
 class YOLOv7Baseline(nn.Module):
 
-    def __init__(self, in_channel=3, num_anchor=3, num_classes=80) -> None:
+    def __init__(self, num_anchor=3, num_classes=80, in_channel=3) -> None:
         super(YOLOv7Baseline, self).__init__()
 
         self.backbone = BaselineBackbone(in_channel=in_channel)
