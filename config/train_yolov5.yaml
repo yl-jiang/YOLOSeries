@@ -36,7 +36,7 @@ train_hyp:
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
   accumulate_loss_step: 96  # 累积梯度下降
   do_ema: true
-  validation_every: 1  # 每隔多少个epoch validate一次
+  validation_every: 0.001  # 每隔多少个epoch validate一次
   use_tta: true  # validation时是否使用TTA
   mutil_scale_training: false 
   calculate_map_every: 299  # 每个多少个epoch计算一次map

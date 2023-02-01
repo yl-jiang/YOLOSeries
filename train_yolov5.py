@@ -814,7 +814,7 @@ class Training:
             
     def test(self, step_in_epoch):
         # testing
-        if self.rank == 0 and step_in_epoch % int(self.hyp.get('validation_every', 0.5) * len(self.train_dataloader)) == 0:
+        if step_in_epoch % int(self.hyp.get('validation_every', 0.5) * len(self.train_dataloader)) == 0:
             torch.cuda.empty_cache()
             all_reduce_norm(self.model)  # 该函数只对batchnorm和instancenorm有效
             if self.hyp['do_ema']:
@@ -837,7 +837,7 @@ class Training:
                     output = validater(inp)  # list of ndarray
                     imgs, preds = self.preds_postprocess(inp.cpu(), output, info)
                     for k in range(inp.size(0)):
-                        save_path = str(self.cwd / 'result' / 'predictions' / f"{i + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
+                        save_path = str(self.cwd / 'result' / 'predictions' / f'rank_{self.rank}' / f"{i + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
                         maybe_mkdir(Path(save_path).parent)
                         if preds[k] is None:
                             cv2_save_img(imgs[k], [], [], [], save_path)
@@ -846,8 +846,8 @@ class Training:
                             cv2_save_img(imgs[k], preds[k][:, :4], preds_lab, preds[k][:, 4], save_path)
                     del y, inp, info, imgs, preds, output
                 del validater
-                gc.collect()
-                synchronize()
+            gc.collect()
+            synchronize()
 
 
 

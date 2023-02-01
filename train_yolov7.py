@@ -29,7 +29,7 @@ from contextlib import nullcontext
 
 from config import Config
 from loss import YOLOV7Loss as loss_fnc
-from trainer import Evaluate
+from trainer import YOLOv7Evaluate as Evaluate
 from utils import cv2_save_img
 from utils import maybe_mkdir, clear_dir
 from trainer import ExponentialMovingAverageModel
@@ -304,8 +304,10 @@ class Training:
     def before_epoch(self, cur_epoch):
         torch.cuda.empty_cache()
         gc.collect()
-        if cur_epoch == 1:
+        
+        if self.rank == 0 and cur_epoch == 1:
             self.update_tbar()
+
         if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
             self.train_dataloader.close_data_aug()
             self.logger.info("--->No mosaic aug now!")
@@ -328,7 +330,7 @@ class Training:
                 self.tbar = tqdm(total=len(self.train_dataloader), file=sys.stdout)
             else:
                 self.tbar = None
-                
+
             for i in range(one_epoch_iters):
                 start_iter = time_synchronize()
                 if self.use_cuda:
@@ -793,7 +795,7 @@ class Training:
             
     def test(self, step_in_epoch):
         # testing
-        if self.rank == 0 and step_in_epoch % int(self.hyp.get('validation_every', 0.5) * len(self.train_dataloader)) == 0:
+        if step_in_epoch % int(self.hyp.get('validation_every', 0.5) * len(self.train_dataloader)) == 0:
             torch.cuda.empty_cache()
             all_reduce_norm(self.model)  # 该函数只对batchnorm和instancenorm有效
             if self.hyp['do_ema']:
@@ -816,7 +818,7 @@ class Training:
                     output = validater(inp)  # list of ndarray
                     imgs, preds = self.preds_postprocess(inp.cpu(), output, info)
                     for k in range(inp.size(0)):
-                        save_path = str(self.cwd / 'result' / 'predictions' / f"{i + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
+                        save_path = str(self.cwd / 'result' / 'predictions' / f'rank_{self.rank}' / f"{i + k} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.png")
                         maybe_mkdir(Path(save_path).parent)
                         if preds[k] is None:
                             cv2_save_img(imgs[k], [], [], [], save_path)
@@ -825,8 +827,8 @@ class Training:
                             cv2_save_img(imgs[k], preds[k][:, :4], preds_lab, preds[k][:, 4], save_path)
                     del y, inp, info, imgs, preds, output
                 del validater
-                gc.collect()
-                synchronize()
+            gc.collect()
+            synchronize()
 
 
 

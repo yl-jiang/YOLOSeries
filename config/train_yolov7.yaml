@@ -25,7 +25,7 @@ train_hyp:
   input_img_size:  # 输入训练网络的图片大小
     - 512
     - 512
-  batch_size: 48
+  batch_size: 52
   drop_last: true  # Pytorch DataLoader中的参数
   pin_memory: true  # Pytorch DataLoader中的参数
   random_seed: 7
@@ -34,7 +34,7 @@ train_hyp:
   start_epoch: 0
   total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
-  accumulate_loss_step: 96  # 累积梯度下降
+  accumulate_loss_step: 104  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
   validation_every: 1  # 每隔多少个epoch validate一次
   show_tbar_every: 2  # 每个多少个step显示实时训练状态信息
