@@ -24,7 +24,13 @@ def read_image(path, dtype=np.float32, color=True):
             img = f.convert('RGB')
         else:
             img = f.convert('P')
+            
+    except Exception as err:
+        print(err)
+        
+    else:
         img = np.asarray(img, dtype=dtype)
+
     finally:
         if hasattr(f, 'close'):
             f.close()

@@ -57,13 +57,15 @@ def configure_module(ulimit_value=8192):
     # system setting
     try:
         import resource
-
-        rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
-        resource.setrlimit(resource.RLIMIT_NOFILE, (ulimit_value, rlimit[1]))
+        
     except Exception:
         # Exception might be raised in Windows OS or rlimit reaches max limit number.
         # However, set rlimit value might not be necessary.
         pass
+
+    else:
+        rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (ulimit_value, rlimit[1]))
 
     # cv2
     # multiprocess might be harmful on performance of torch dataloader

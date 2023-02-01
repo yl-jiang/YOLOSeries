@@ -322,75 +322,85 @@ class Training:
             self.model.train()
             self.before_epoch(cur_epoch+1)
             start_epoch_t = time_synchronize()
-            with tqdm(total=one_epoch_iters, file=sys.stdout) as tbar:
-                for i in range(one_epoch_iters):
-                    start_iter = time_synchronize()
-                    if self.use_cuda:
-                        x = self.train_prefetcher.next()
-                    else:
-                        x = next(self.train_dataloader)
-                    end_data_t = time_synchronize()
-                    step_in_epoch = i + 1
-                    step_in_total = one_epoch_iters * cur_epoch + i + 1
-                    ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
-                    img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
-                    img, ann = self.mutil_scale_training(img, ann)
 
-                    # warmup
-                    self.warmup(step_in_total)
+            # tbar
+            if self.rank == 0:
+                self.tbar = tqdm(total=len(self.train_dataloader), file=sys.stdout)
+            else:
+                self.tbar = None
+                
+            for i in range(one_epoch_iters):
+                start_iter = time_synchronize()
+                if self.use_cuda:
+                    x = self.train_prefetcher.next()
+                else:
+                    x = next(self.train_dataloader)
+                end_data_t = time_synchronize()
+                step_in_epoch = i + 1
+                step_in_total = one_epoch_iters * cur_epoch + i + 1
+                ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
+                img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
+                img, ann = self.mutil_scale_training(img, ann)
 
-                    # forward
-                    my_context = self.model.no_sync if self.is_distributed and step_in_epoch % self.accumulate != 0 else nullcontext
-                    with my_context():
-                        with amp.autocast(enabled=self.use_cuda):
-                            stage_preds = self.model(img)
-                            loss_dict = self.loss_fcn(stage_preds, ann)
-                            loss_dict['tot_loss'] *= get_world_size()
+                # warmup
+                self.warmup(step_in_total)
 
-                    tot_loss = loss_dict['tot_loss']
+                # forward
+                my_context = self.model.no_sync if self.is_distributed and step_in_epoch % self.accumulate != 0 else nullcontext
+                with my_context():
+                    with amp.autocast(enabled=self.use_cuda):
+                        stage_preds = self.model(img)
+                        loss_dict = self.loss_fcn(stage_preds, ann)
+                        loss_dict['tot_loss'] *= get_world_size()
 
-                    # backward
-                    self.scaler.scale(tot_loss).backward()
-                    end_iter_t = time_synchronize()
-                    loss_dict.update({'tot_loss': tot_loss.detach().item()})
+                tot_loss = loss_dict['tot_loss']
 
-                    # optimize
-                    if step_in_epoch % self.accumulate == 0:
-                        # self.scaler.unscale_(self.optimizer)
-                        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
-                        self.scaler.step(self.optimizer)
-                        self.scaler.update()
-                        self.optimizer.zero_grad()
-                        # maintain a model and update it every time, but it only using for inference
-                        if self.hyp['do_ema']:
-                            self.ema_model.update(self.model)
+                # backward
+                self.scaler.scale(tot_loss).backward()
+                end_iter_t = time_synchronize()
+                loss_dict.update({'tot_loss': tot_loss.detach().item()})
 
-                    data_time = end_data_t - start_iter
-                    iter_time = end_iter_t - start_iter
-                    is_best = tot_loss < tot_loss_before
-                    tot_loss_before = tot_loss.item()
+                # optimize
+                if step_in_epoch % self.accumulate == 0:
+                    # self.scaler.unscale_(self.optimizer)
+                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    self.optimizer.zero_grad()
+                    # maintain a model and update it every time, but it only using for inference
+                    if self.hyp['do_ema']:
+                        self.ema_model.update(self.model)
 
-                    self.update_meter(cur_epoch, step_in_epoch, step_in_total, img.size(2), img.size(0), iter_time, data_time, loss_dict, is_best)
-                    self.update_tbar(tbar)
-                    self.update_summarywriter()
-                    self.update_logger(step_in_total)
-                    self.save_model(cur_epoch, step_in_epoch=step_in_epoch, loss_dict=loss_dict)
-                    self.test(step_in_total)
-                    self.calculate_metric(step_in_total)
+                data_time = end_data_t - start_iter
+                iter_time = end_iter_t - start_iter
+                is_best = tot_loss < tot_loss_before
+                tot_loss_before = tot_loss.item()
 
-                    # onecycle scheduler需要在iter尺度update
-                    if self.hyp['scheduler_type'].lower() == "onecycle":
-                        self.lr_scheduler.step()  # 因为self.accumulate会从1开始增长, 因此第一次执行训练时self.optimizer.step()一定会在self.lr_scheduler.step()之前被执行
-                    
-                    del x, img, ann, tot_loss, stage_preds, loss_dict
-                    tbar.update()
+                self.update_meter(cur_epoch, step_in_epoch, step_in_total, img.size(2), img.size(0), iter_time, data_time, loss_dict, is_best)
+                self.update_tbar(self.tbar)
+                self.update_summarywriter()
+                self.update_logger(step_in_total)
+                self.save_model(cur_epoch, step_in_epoch=step_in_epoch, loss_dict=loss_dict)
+                self.test(step_in_total)
+                self.calculate_metric(step_in_total)
 
-                # 其余scheduler在epoch尺度update
-                if self.hyp['scheduler_type'].lower() != "onecycle":
-                    self.lr_scheduler.step()
-                epoch_time = time_synchronize() - start_epoch_t
-                self.logger.info(f'\n\n{"-" * 600}\n')
-                tbar.close()
+                # onecycle scheduler需要在iter尺度update
+                if self.hyp['scheduler_type'].lower() == "onecycle":
+                    self.lr_scheduler.step()  # 因为self.accumulate会从1开始增长, 因此第一次执行训练时self.optimizer.step()一定会在self.lr_scheduler.step()之前被执行
+                
+                del x, img, ann, tot_loss, stage_preds, loss_dict
+
+                if self.rank == 0:
+                    self.tbar.update()
+
+            # 其余scheduler在epoch尺度update
+            if self.hyp['scheduler_type'].lower() != "onecycle":
+                self.lr_scheduler.step()
+            epoch_time = time_synchronize() - start_epoch_t
+            self.logger.info(f'\n\n{"-" * 600}\n')
+
+            if self.rank == 0:
+                self.tbar.close()
 
     def tag2msg(self, tags, fmts, with_tag_name=False):
         assert len(tags) == len(fmts), f"length of tags and fmts should be the same, but got len(tags)={len(tags)} and len(fmts)={len(fmts)}"
@@ -413,16 +423,17 @@ class Training:
         return msg, show_dict
         
     def update_tbar(self, tbar=None):
-        tags = ("cur_epoch", "tot_loss", "iou_loss", "cof_loss", "cls_loss", "tar_nums", "input_dim", "lr"     , "map50"  , "iter_time")
-        fmts = ("^10d"     , "^10.3f"  , "^10.3f"  , "^10.3f"  , "^10.3f"  , "^10d"    , "^10d"     , "^10.3e" , "^10.1f" , "^10.1f"   )
-        if tbar is None:
-            head_fmt = ("%10s", "%11s", "%11s", "%12s", "%12s", "%13s", "%12s", "%9s", "%13s", "%13s")
-            head_msg = ''.join(head_fmt)
-            print(head_msg % tags)
-        else:
-            tbar_msg, tbar_dct = self.tag2msg(tags, fmts)
-            if tbar_msg is not None:
-                tbar.set_description_str(tbar_msg.format(**tbar_dct))
+        if self.rank == 0:
+            tags = ("cur_epoch", "tot_loss", "iou_loss", "cof_loss", "cls_loss", "tar_nums", "input_dim", "lr"     , "map50"  , "iter_time")
+            fmts = ("^10d"     , "^13.3f"  , "^12.3f"  , "^12.3f"  , "^12.3f"  , "^12d"    , "^12d"     , "^13.3e" , "^10.1f" , "^10.1f"   ) 
+            if tbar is None:
+                head_fmt = ("%10s", "%11s", "%11s", "%12s", "%12s", "%13s", "%12s", "%9s", "%13s", "%13s")
+                head_msg = ''.join(head_fmt)
+                print(head_msg % tags)
+            else:
+                tbar_msg, tbar_dct = self.tag2msg(tags, fmts)
+                if tbar_msg is not None:
+                    tbar.set_description_str(tbar_msg.format(**tbar_dct))
 
     def update_logger(self, step_in_total):
         tags = ('percentage', "tot_loss", "iou_loss", 'cof_loss'  , 'cls_loss'  , "accumulate", "iter_time", 'data_time', "lr"  , "cur_epoch", "step_in_epoch", "batch_size", "input_dim", "allo_mem", "cach_mem")
@@ -570,6 +581,11 @@ class Training:
             if Path(model_path).exists():
                 try:
                     state_dict = torch.load(model_path, map_location=map_location)
+
+                except Exception as err:
+                    print(err)
+                
+                else:
                     if "model_state_dict" not in state_dict:
                         print(f"can't load pretrained model from {model_path}")
     
@@ -598,9 +614,6 @@ class Training:
                         self.logger.info(f'traing start epoch: {self.start_epoch}')
 
                     del state_dict
-
-                except Exception as err:
-                    print(err)
             else:
                 print('training from stratch!')
                 self.logger.info(f'training from stratch ...')

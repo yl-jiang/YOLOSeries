@@ -21,13 +21,15 @@ class DataPrefetcher:
     def preload(self):
         try:
             out_dict = next(self.loader)
-            self.next_input, self.next_target, self.next_resize_info, self.next_img_id = out_dict["img"], out_dict["ann"], out_dict['resize_info'], out_dict['img_id']
+            
         except StopIteration:
             self.next_input = None
             self.next_target = None
             self.next_resize_info = None
             self.next_img_id = None
             return
+        else:
+            self.next_input, self.next_target, self.next_resize_info, self.next_img_id = out_dict["img"], out_dict["ann"], out_dict['resize_info'], out_dict['img_id']
 
         with torch.cuda.stream(self.stream):
             self.input_cuda()

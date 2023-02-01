@@ -27,16 +27,17 @@ class DataPrefetcher:
         try:
             # 这里根据自己的dataset的__getitem__()函数的输出或者collect_fn函数来定
             outdict = next(self.loader)
-            self.next_batch_img = outdict['img']
-            self.next_batch_ann = outdict['ann']
-            self.next_batch_img_id = outdict["img_id"]
-            self.next_batch_resize_info = outdict["resize_info"]
         except StopIteration:
             self.next_batch_img = None
             self.next_batch_ann = None
             self.next_batch_img_id = None
             self.next_batch_resize_info = None
             return
+        else:
+            self.next_batch_img = outdict['img']
+            self.next_batch_ann = outdict['ann']
+            self.next_batch_img_id = outdict["img_id"]
+            self.next_batch_resize_info = outdict["resize_info"]
 
         with torch.cuda.stream(self.stream):
             self.input_cuda()

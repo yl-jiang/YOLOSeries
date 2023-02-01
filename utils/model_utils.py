@@ -46,12 +46,15 @@ def summary_model(model, input_img_size=[640, 640], verbose=False, prefix=""):
         number_layers = len(list(model.modules()))
         try:
             from thop import profile
-            dummy_img = torch.rand(1, 3, input_img_size[0], input_img_size[1], device=next(model.parameters()).device)
-            flops, params = profile(deepcopy(model), inputs=(dummy_img, ), verbose=verbose)
-            flops /= 1e9 * 2
+            
         except (ImportError, Exception) as err:
             print(f"error occur in summary_model: {err}")
             flops = ""
+
+        else:
+            dummy_img = torch.rand(1, 3, input_img_size[0], input_img_size[1], device=next(model.parameters()).device)
+            flops, params = profile(deepcopy(model), inputs=(dummy_img, ), verbose=verbose)
+            flops /= 1e9 * 2
         
         if verbose:
             msg = f"Model Summary: {prefix} {number_layers} layers; {number_params} parameters; {number_gradients} gradients; {flops} GFLOPs"

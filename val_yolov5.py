@@ -210,6 +210,11 @@ class Training:
             if Path(model_path).exists():
                 try:
                     state_dict = torch.load(model_path, map_location=map_location)
+                    
+                except Exception as err:
+                    print(err)
+                
+                else:
                     if "model_state_dict" not in state_dict:
                         print(f"can't load pretrained model from {model_path}")
     
@@ -227,9 +232,6 @@ class Training:
                         self.ema_model.update_num = state_dict['ema_update_num']
 
                     del state_dict
-
-                except Exception as err:
-                    print(err)
         else:
             print('training from stratch!')
         
