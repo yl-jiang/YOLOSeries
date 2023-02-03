@@ -142,7 +142,7 @@ class GPUAnchor:
         """
         shift_x = (torch.arange(0, shape[1], device=self.device) + 0.5) * stride
         shift_y = (torch.arange(0, shape[0], device=self.device) + 0.5) * stride
-        shift_x, shift_y = torch.meshgrid(shift_x, shift_y)
+        shift_x, shift_y = torch.meshgrid(shift_x, shift_y, indexing='ij')
 
         # shape: (K, 4)
         shifts = torch.stack([shift_x.T.flatten(),

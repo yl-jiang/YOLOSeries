@@ -25,7 +25,7 @@ train_hyp:
   input_img_size:  # 输入训练网络的图片大小
     - 512
     - 512
-  batch_size: 52
+  batch_size: 64
   drop_last: true  # Pytorch DataLoader中的参数
   pin_memory: true  # Pytorch DataLoader中的参数
   random_seed: 7
@@ -34,7 +34,7 @@ train_hyp:
   start_epoch: 0
   total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
-  accumulate_loss_step: 104  # 累积梯度下降
+  accumulate_loss_step: 64  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
   validation_every: 1  # 每隔多少个epoch validate一次
   show_tbar_every: 2  # 每个多少个step显示实时训练状态信息
@@ -48,21 +48,21 @@ train_hyp:
   no_data_aug_epoch: 10
   enable_tensorboard: true
   use_iou_as_tar_cof: true
-  log_identifier: 'debug'
+  log_identifier: 'v7_debug'
 
 optimizer_hyp:
   scheduler_type: 'linear'
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
-  basic_lr_per_img: 0.00625
-  weight_decay: 0.0001
-  momentum: 0.9
-  lr_max_ds_scale: 0.001
+  basic_lr_per_img: 0.003125
+  weight_decay: 0.00001
+  momentum: 0.98
+  lr_max_ds_scale: 0.0001
 
 warm_up:
   do_warmup: true  # 是否开启预热训练
   warmup_epoch: 3
   warmup_bias_max_lr: 0.1
-  warmup_momentum: 0.8
+  warmup_momentum: 0.9
 
 data_hyp:
   data_aug_prespective_p: 1.0

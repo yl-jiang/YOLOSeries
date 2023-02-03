@@ -2,10 +2,11 @@ import torch
 from torch import nn
 from utils import ConvBnAct, Upsample, Concat, Detect, C3BottleneckCSP, FastSPP
 
-class Yolov5Small(nn.Module):
+__all__ = ['YOLOV5Small']
+class YOLOV5Small(nn.Module):
 
     def __init__(self, anchor_num, num_class, in_channel=3):
-        super(Yolov5Small, self).__init__()
+        super(YOLOV5Small, self).__init__()
         self.num_class = num_class
 
         # ============================== backbone ==============================
@@ -76,7 +77,7 @@ if __name__ == '__main__':
     anchors = [[10, 13, 16, 30, 33, 23],
                [30, 61, 62, 45, 59, 119],
                [116, 90, 156, 198, 373, 326]]
-    yolo = Yolov5Small(3, 80)
+    yolo = YOLOV5Small(3, 80)
 
     dummy_img = torch.rand(5, 3, 640, 640)
     out = yolo(dummy_img)

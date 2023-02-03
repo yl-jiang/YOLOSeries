@@ -131,9 +131,9 @@ class YOLOV5Loss:
 
         loss_dict = {
             'tot_loss': tot_loss, 
-            'iou_loss': iou_loss.detach().item(), 
-            'cof_loss': cof_loss.detach().item(), 
-            'cls_loss': cls_loss.detach().item(), 
+            'iou_loss': iou_loss.detach().item() * batch_size, 
+            'cof_loss': cof_loss.detach().item() * batch_size, 
+            'cls_loss': cls_loss.detach().item() * batch_size, 
             'tar_nums': tot_tar_num,  
         }
         return loss_dict

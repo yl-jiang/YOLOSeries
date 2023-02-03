@@ -2,10 +2,12 @@ import torch
 from torch import nn
 from utils import Focus, DepthWiseConvBnAct, SPP, Upsample, Concat, Detect, DepthWiseC3BottleneckCSP
 
-class Yolov5XLargeDW(nn.Module):
+__all__ = ['YOLOV5XLargeDW']
+
+class YOLOV5XLargeDW(nn.Module):
 
     def __init__(self, anchor_num, num_class):
-        super(Yolov5XLargeDW, self).__init__()
+        super(YOLOV5XLargeDW, self).__init__()
         self.num_class = num_class
 
         # ============================== backbone ==============================
@@ -81,7 +83,7 @@ if __name__ == '__main__':
     anchors = [[10, 13, 16, 30, 33, 23],
                [30, 61, 62, 45, 59, 119],
                [116, 90, 156, 198, 373, 326]]
-    yolo = Yolov5XLargeDW(3, 80)
+    yolo = YOLOV5XLargeDW(3, 80)
 
     dummy_img = torch.rand(5, 3, 640, 640)
     out = yolo(dummy_img)

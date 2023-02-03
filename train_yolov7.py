@@ -29,13 +29,13 @@ from contextlib import nullcontext
 
 from config import Config
 from loss import YOLOV7Loss as loss_fnc
-from trainer import YOLOv7Evaluate as Evaluate
+from trainer import YOLOV7Evaluator as Evaluate
 from utils import cv2_save_img
 from utils import maybe_mkdir, clear_dir
 from trainer import ExponentialMovingAverageModel
 from utils import time_synchronize, summary_model
 from dataset import build_dataloader, build_test_dataloader
-from utils import mAP_v2, catch_warnnings
+from utils import mAP_v2
 from models import *
 
 from utils import (configure_nccl, configure_omp, get_local_rank, print_config, 
@@ -110,12 +110,12 @@ class Training:
 
     @property
     def select_model(self):
-        return YOLOv7Baseline
+        return YOLOV7Baseline
 
     def _init_logger(self):
         # clear_dir(str(self.cwd / 'log'))  # 再写入log文件前先清空log文件夹
         model_summary = summary_model(self.model, self.hyp['input_img_size'], verbose=True)
-        logger = logging.getLogger(f"Yolov5_rank_{self.rank}")
+        logger = logging.getLogger(f"{self.model.__class__.__name__}_rank_{self.rank}")
         formated_config = print_config(self.hyp)  # record training parameters in log.txt
         logger.setLevel(logging.INFO)
         txt_log_path = str(self.cwd / 'log' / f'log_rank_{self.rank}' / f'log_{self.model.__class__.__name__}_{datetime.now().strftime("%Y%m%d-%H:%M:%S")}_{self.hyp["log_identifier"]}.txt')
@@ -304,7 +304,7 @@ class Training:
     def before_epoch(self, cur_epoch):
         torch.cuda.empty_cache()
         gc.collect()
-        
+
         if self.rank == 0 and cur_epoch == 1:
             self.update_tbar()
 
@@ -314,8 +314,6 @@ class Training:
             self.save_model(cur_epoch, filename="last_mosaic_epoch")
             self.no_data_aug = True
 
-    @logger.catch
-    @catch_warnnings
     def step(self):
         self.model.zero_grad()
         tot_loss_before = float('inf')
@@ -831,7 +829,7 @@ class Training:
             synchronize()
 
 
-
+@logger.catch
 def main(x):
     configure_module()
     

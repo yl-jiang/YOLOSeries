@@ -3,6 +3,8 @@ from torch import nn
 from utils import ConvBnAct, Upsample, Concat, Detect, C3BottleneckCSP, FastSPP
 from collections import OrderedDict
 
+__all__ = ['YOLOXSmall']
+
 class SmallYOLOXBackboneAndNeck(nn.Module):
 
     def __init__(self, in_channel=3):
@@ -158,7 +160,7 @@ class Detect(nn.Module):
         return pred_out
 
 
-class YoloXSmall(nn.Module):
+class YOLOXSmall(nn.Module):
 
     def __init__(self, num_anchors, in_channel=3, num_classes=80):
         super().__init__()
@@ -188,7 +190,7 @@ if __name__ == "__main__":
     sys.path.insert(0, str(current_work_dir))
 
     dummy = torch.rand(1, 3, 224, 224)
-    yolox = YoloXSmall(2)
+    yolox = YOLOXSmall(2)
     out = yolox(dummy)
     
     for k, v in out.items():

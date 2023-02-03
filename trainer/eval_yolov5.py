@@ -6,8 +6,8 @@ from utils import xywh2xyxy
 from collections import defaultdict
 from utils import weighted_fusion_bbox
 
-
-class Evaluate:
+__all__ = ['YOLOV5Evaluator']
+class YOLOV5Evaluator:
 
     def __init__(self, yolo, anchors, hyp, compute_metric=False):
         self.yolo = yolo
@@ -229,7 +229,7 @@ class Evaluate:
             return F.pad(img, pad, value=0.447)
 
     def make_grid(self, row_num, col_num):
-        y, x = torch.meshgrid([torch.arange(row_num, device=self.device), torch.arange(col_num, device=self.device)])
+        y, x = torch.meshgrid([torch.arange(row_num, device=self.device), torch.arange(col_num, device=self.device)], indexing='ij')
         # mesh_grid: (col_num, row_num, 2) -> (row_num, col_num, 2)
         mesh_grid = torch.stack((x, y), dim=2).reshape(row_num, col_num, 2)
         # (1, 1, col_num, row_num, 2)

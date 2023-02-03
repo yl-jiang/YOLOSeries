@@ -16,14 +16,14 @@ from loguru import logger
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from config import Config
-from trainer import YOLOV5Evaluator as Evaluate
+from trainer import YOLOV7Evaluator as Evaluate
 from trainer import ExponentialMovingAverageModel
 from utils import cv2_save_img, cv2_save_img_plot_pred_gt
 from utils import clear_dir
 from utils import time_synchronize
 from dataset import build_val_dataloader
 from utils import mAP_v2
-from models import *
+from models import YOLOV7Baseline
 
 from utils import (configure_nccl, configure_omp, get_local_rank,
                    get_rank, get_world_size, occupy_mem, padding, 
@@ -77,24 +77,7 @@ class Training:
 
     @property
     def select_model(self):
-        if self.hyp['model_type'].lower() == "plainsmall":
-            return YOLOV5SmallWithPlainBscp
-        elif self.hyp['model_type'].lower() == "middle":
-            return YOLOV5Middle
-        elif self.hyp['model_type'].lower() == "large":
-            return YOLOV5Large
-        elif self.hyp['model_type'].lower() == "xlarge":
-            return YOLOV5XLarge
-        elif self.hyp['model_type'].lower() == "smalldw":
-            return YOLOV5SmallDW
-        elif self.hyp['model_type'].lower() == "middledw":
-            return YOLOV5MiddleDW
-        elif self.hyp['model_type'].lower() == "largedw":
-            return YOLOV5LargeDW
-        elif self.hyp['model_type'].lower() == "xlargedw":
-            return YOLOV5XLargeDW
-        else:
-            return YOLOV5Small
+            return YOLOV7Baseline
 
     def before_validation(self):
         occupy_mem(self.local_rank)

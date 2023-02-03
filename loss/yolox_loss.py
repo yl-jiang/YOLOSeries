@@ -340,7 +340,7 @@ class YOLOXLoss:
         return frontground_mask, num_fg, matched_iou, matched_gt_idx
 
     def _make_grid(self, h, w, dtype):
-        ys, xs = torch.meshgrid(torch.arange(h, device=self.device), torch.arange(w, device=self.device))
+        ys, xs = torch.meshgrid(torch.arange(h, device=self.device), torch.arange(w, device=self.device), indexing='ij')
         # 排列成(x, y)的形式, 是因为模型输出的预测结果的排列是[x, y, w, h, cof, cls1, cls2, ...]
         grid = torch.stack((xs, ys), dim=2).view(1, 1, h, w, 2).contiguous().type(dtype)
         return grid

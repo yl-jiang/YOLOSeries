@@ -5,6 +5,8 @@ from collections import OrderedDict
 import math
 import numpy as np
 
+__all__ = ['YOLOV7Baseline']
+
 
 class BaselineBackbone(nn.Module):
 
@@ -403,10 +405,10 @@ class BaselineDetect(nn.Module):
         return pred_out
 
 
-class YOLOv7Baseline(nn.Module):
+class YOLOV7Baseline(nn.Module):
 
     def __init__(self, num_anchor=3, num_classes=80, in_channel=3) -> None:
-        super(YOLOv7Baseline, self).__init__()
+        super(YOLOV7Baseline, self).__init__()
 
         self.backbone = BaselineBackbone(in_channel=in_channel)
         self.head = BaselineHead()
@@ -431,7 +433,7 @@ if __name__ == "__main__":
     cwd = Path("./").parent.resolve()
     sys.path.insert(0, str(cwd))
     dummy = torch.rand(8, 3, 448, 448).float().contiguous()
-    net = YOLOv7Baseline()
+    net = YOLOV7Baseline()
     net = net.fuseforward()
     out = net(dummy)
     for k, v in out.items():

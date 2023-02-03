@@ -29,13 +29,13 @@ from contextlib import nullcontext
 
 from config import Config
 from loss import YOLOV5Loss as loss_fnc
-from trainer import Evaluate
+from trainer import YOLOV5Evaluator as Evaluate
 from utils import cv2_save_img
 from utils import maybe_mkdir, clear_dir
 from trainer import ExponentialMovingAverageModel
 from utils import time_synchronize, summary_model
 from dataset import build_dataloader, build_test_dataloader
-from utils import mAP_v2, catch_warnnings
+from utils import mAP_v2
 from models import *
 
 from utils import (configure_nccl, configure_omp, get_local_rank, print_config, 
@@ -111,28 +111,28 @@ class Training:
     @property
     def select_model(self):
         if self.hyp['model_type'].lower() == "plainsmall":
-            return Yolov5SmallWithPlainBscp
+            return YOLOV5SmallWithPlainBscp
         elif self.hyp['model_type'].lower() == "middle":
-            return Yolov5Middle
+            return YOLOV5Middle
         elif self.hyp['model_type'].lower() == "large":
-            return Yolov5Large
+            return YOLOV5Large
         elif self.hyp['model_type'].lower() == "xlarge":
-            return Yolov5XLarge
+            return YOLOV5XLarge
         elif self.hyp['model_type'].lower() == "smalldw":
-            return Yolov5SmallDW
+            return YOLOV5SmallDW
         elif self.hyp['model_type'].lower() == "middledw":
-            return Yolov5MiddleDW
+            return YOLOV5MiddleDW
         elif self.hyp['model_type'].lower() == "largedw":
-            return Yolov5LargeDW
+            return YOLOV5LargeDW
         elif self.hyp['model_type'].lower() == "xlargedw":
-            return Yolov5XLargeDW
+            return YOLOV5XLargeDW
         else:
-            return Yolov5Small
+            return YOLOV5Small
 
     def _init_logger(self):
         # clear_dir(str(self.cwd / 'log'))  # 再写入log文件前先清空log文件夹
         model_summary = summary_model(self.model, self.hyp['input_img_size'], verbose=True)
-        logger = logging.getLogger(f"Yolov5_rank_{self.rank}")
+        logger = logging.getLogger(f"{self.model.__class__.__name__}_rank_{self.rank}")
         formated_config = print_config(self.hyp)  # record training parameters in log.txt
         logger.setLevel(logging.INFO)
         txt_log_path = str(self.cwd / 'log' / f'log_rank_{self.rank}' / f'log_{self.model.__class__.__name__}_{datetime.now().strftime("%Y%m%d-%H:%M:%S")}_{self.hyp["log_identifier"]}.txt')
@@ -254,7 +254,6 @@ class Training:
         # accumulate step
         self.accumulate = self.hyp['accumulate_loss_step'] / self.hyp['batch_size']
 
-
     def _init_optimizer(self):
         param_group_weight, param_group_bias, param_group_other = [], [], []
         for m in self.model.modules():
@@ -332,8 +331,6 @@ class Training:
             self.save_model(cur_epoch, filename="last_mosaic_epoch")
             self.no_data_aug = True
 
-    @logger.catch
-    @catch_warnnings
     def step(self):
         self.model.zero_grad()
         tot_loss_before = float('inf')
@@ -850,7 +847,7 @@ class Training:
             synchronize()
 
 
-
+@logger.catch
 def main(x):
     configure_module()
     

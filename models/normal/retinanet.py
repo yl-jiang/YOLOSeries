@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from utils import resnet50, RetinaNetClassification, RetinaNetRegression, RetinaNetPyramidFeatures
 
+__all__ = ['RetinaNet']
 
 class RetinaNet(nn.Module):
 
