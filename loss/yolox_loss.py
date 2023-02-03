@@ -29,7 +29,7 @@ class YOLOXLoss:
         self.cls_smoothness = hyp['class_smooth_factor']
         self.balances = [4., 1., 0.4] if self.num_stage == 3 else [4., 1., 0.4, 0.1]
 
-    def __call__(self, tars, preds):
+    def __call__(self, preds, tars):
         """
         假设输入训练的图片尺寸为224x224x3
 
@@ -82,10 +82,10 @@ class YOLOXLoss:
         tot_loss = (tot_iou_loss + tot_cls_loss + tot_cof_loss + tot_l1_reg_loss) * batch_size
 
         loss_dict = {'tot_loss': tot_loss, 
-                    'iou_loss': tot_iou_loss, 
-                    'l1_reg_loss': tot_l1_reg_loss, 
-                    'cls_loss': tot_cls_loss, 
-                    'cof_loss': tot_cof_loss, 
+                    'iou_loss': tot_iou_loss.detach().item() * batch_size, 
+                    'l1_reg_loss': tot_l1_reg_loss.detach().item() * batch_size, 
+                    'cls_loss': tot_cls_loss.detach().item() * batch_size, 
+                    'cof_loss': tot_cof_loss.detach().item() * batch_size, 
                     'fg_nums': tot_num_fg, 
                     'tar_nums': tot_num_gt}
 
