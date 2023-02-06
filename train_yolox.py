@@ -365,11 +365,11 @@ class Training:
                 is_best = tot_loss < tot_loss_before
                 tot_loss_before = tot_loss.item()
 
-                self.update_meter(cur_epoch, step_in_epoch, step_in_total, img.size(2), img.size(0), iter_time, data_time, loss_dict, is_best)
+                self.update_meter(cur_epoch+1, step_in_epoch, step_in_total, img.size(2), img.size(0), iter_time, data_time, loss_dict, is_best)
                 self.update_tbar(self.tbar)
                 self.update_summarywriter()
                 self.update_logger(step_in_total)
-                self.save_model(cur_epoch, step_in_epoch=step_in_epoch, loss_dict=loss_dict)
+                self.save_model(cur_epoch+1, step_in_epoch=step_in_epoch, loss_dict=loss_dict)
                 self.test(step_in_total)
                 self.calculate_metric(step_in_total)
 
