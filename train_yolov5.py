@@ -442,7 +442,7 @@ class Training:
     def update_tbar(self, tbar=None):
         if self.rank == 0:
             tags = ("cur_epoch", "tot_loss", "iou_loss", "cof_loss", "cls_loss", "tar_nums", "input_dim", "lr"     , "map50"  , "iter_time")
-            fmts = ("^10d"     , "^13.3f"  , "^12.3f"  , "^12.3f"  , "^12.3f"  , "^12d"    , "^12d"     , "^13.3e" , "^10.1f" , "^10.1f"   )
+            fmts = ("^10d"     , "^13.3f"  , "^12.3f"  , "^12.3f"  , "^12.3f"  , "^12d"    , "^12d"     , "^13.3e" , "^10.1f" , "^12.1f"   )
             if tbar is None:
                 head_fmt = ("%10s", "%11s", "%11s", "%12s", "%12s", "%13s", "%12s", "%9s", "%13s", "%13s")
                 head_msg = ''.join(head_fmt)

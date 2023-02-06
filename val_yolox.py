@@ -16,14 +16,14 @@ from loguru import logger
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from config import Config
-from trainer import YOLOV7Evaluator as Evaluate
+from trainer import YOLOXEvaluator as Evaluate
 from trainer import ExponentialMovingAverageModel
 from utils import cv2_save_img, cv2_save_img_plot_pred_gt
 from utils import clear_dir
 from utils import time_synchronize
 from dataset import build_val_dataloader
 from utils import mAP_v2
-from models import YOLOV7Baseline
+from models import *
 
 from utils import (configure_nccl, configure_omp, get_local_rank,
                    get_rank, get_world_size, occupy_mem, padding, 
@@ -35,12 +35,11 @@ import gc
 
 class Training:
 
-    def __init__(self, anchors, hyp):
+    def __init__(self, hyp):
         configure_omp()
         configure_nccl()
 
         # parameters
-        self.anchors = anchors
         self.hyp = hyp
         self.select_device()
 
@@ -77,7 +76,18 @@ class Training:
 
     @property
     def select_model(self):
-        return YOLOV7Baseline
+        if self.hyp['model_type'].lower() == "darknet21":
+            return YOLOXDarkNet21
+        elif self.hyp['model_type'].lower() == "darknet53":
+            return YOLOXDarkNet53
+        elif self.hyp['model_type'].lower() == "small":
+            return YOLOXSmall
+        elif self.hyp['model_type'].lower() == "middle":
+            return YOLOXMiddle
+        elif self.hyp['model_type'].lower() == "large":
+            return YOLOXSmall
+        else:
+            return YOLOXSmall
 
     def before_validation(self):
         occupy_mem(self.local_rank)
@@ -95,15 +105,9 @@ class Training:
         # update hyper parameters
         self.hyp['num_class'] = self.val_dataset.num_class
 
-        # anchor
-        if isinstance(self.anchors, (list, tuple)):
-            self.anchors = torch.tensor(self.anchors)  # (3, 3, 2)
-        self.anchors = self.anchors.to(self.device)
-        anchor_num_per_stage = self.anchors.size(0)  # 3
-
         # model
         torch.cuda.set_device(self.local_rank)
-        model = self.select_model(anchor_num_per_stage, self.val_dataset.num_class)
+        model = self.select_model(num_anchors=self.hyp['num_anchors'], num_classes=self.val_dataset.num_class)
         model = model.to(self.device)
 
         # EMA
@@ -282,7 +286,7 @@ class Training:
 
         with adjust_status(eval_model, training=False) as m:
             # validater
-            validater = Evaluate(m, self.anchors, self.hyp, compute_metric=True)
+            validater = Evaluate(m, self.hyp, compute_metric=True)
 
             for i in range(iters_num):
                 t1 = time_synchronize()
@@ -379,10 +383,8 @@ def main(x):
         def __init__(self) -> None:
             self.cfg = "./config/train_yolov5.yaml"
     args = Args()
-
-    anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
     hyp = config_.get_config(args.cfg, args)
-    train = Training(anchors, hyp)
+    train = Training(hyp)
     train.step()
 
 
