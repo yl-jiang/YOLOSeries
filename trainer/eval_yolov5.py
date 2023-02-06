@@ -32,7 +32,6 @@ class YOLOV5Evaluator:
         :param inputs: (b, 3, h, w) / tensor from testdataloader
         :return: (N, 6) / [xmin, ymin, xmax, ymax, conf, cls_id]
         """
-        self.yolo.eval()
         torch.cuda.empty_cache()
         if self.use_tta:
             merge_preds_out, inpendent_preds_out = self.test_time_augmentation(inputs)  # (bs, N, 85)
@@ -40,7 +39,6 @@ class YOLOV5Evaluator:
                 return self.do_wfb(inpendent_preds_out)
         else:
             merge_preds_out = self.do_inference(inputs)  # (bs, N, 85)
-        self.yolo.train()
         return [torch.from_numpy(x) if x is not None else None for x in self.numba_nms(merge_preds_out) ]
 
     def do_wfb(self, preds_out):

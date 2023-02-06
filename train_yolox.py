@@ -617,7 +617,7 @@ class Training:
             step_in_epoch = self.meter.get_filtered_meter('step_in_epoch')['step_in_epoch'].latest
         if self.rank == 0 and step_in_epoch % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
             if filename is None:
-                save_path = str(self.cwd / 'checkpoints' / f'every_{self.hyp["model_type"]}.pth')  
+                save_path = str(self.cwd / 'checkpoints' / f'yolox_{self.hyp["model_type"]}_epoch_{cur_epoch}.pth')  
             else:
                 save_path = str(self.cwd / 'checkpoints' / f'{filename}.pth')          
             if not Path(save_path).exists():
@@ -706,7 +706,7 @@ class Training:
 
             with adjust_status(eval_model, training=False) as m:
                 # validater
-                validater = Evaluate(m, self.hyp)
+                validater = Evaluate(m, self.hyp, compute_metric=True)
 
                 for _ in range(iters_num):
                     if self.use_cuda:
@@ -814,8 +814,8 @@ class Training:
                             cv2_save_img(imgs[k], preds[k][:, :4], preds_lab, preds[k][:, 4], save_path)
                     del y, inp, info, imgs, preds, output
                 del validater
-            gc.collect()
             synchronize()
+            gc.collect()
 
 
 @logger.catch

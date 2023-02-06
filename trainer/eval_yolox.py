@@ -10,7 +10,7 @@ from loguru import logger
 __all__ = ['YOLOXEvaluator']
 class YOLOXEvaluator:
 
-    def __init__(self, yolo, hyp):
+    def __init__(self, yolo, hyp, compute_metric=False):
         self.yolo = yolo
         self.hyp = hyp
         self.device = hyp['device']
@@ -21,6 +21,9 @@ class YOLOXEvaluator:
         self.inp_h, self.inp_w = hyp['input_img_size']
         self.use_tta = hyp['use_tta']
         self.grid_coords = [self.make_grid(self.inp_h//s, self.inp_w//s).float() for s in self.ds_scales]
+        self.iou_threshold = self.hyp['compute_metric_iou_threshold'] if compute_metric else self.hyp['iou_threshold']
+        self.cls_threshold = self.hyp['compute_metric_cls_threshold'] if compute_metric else self.hyp['cls_threshold']
+        self.conf_threshold = self.hyp['compute_metric_conf_threshold'] if compute_metric else self.hyp['conf_threshold']
  
     @torch.no_grad()
     def __call__(self, inputs):
@@ -28,7 +31,6 @@ class YOLOXEvaluator:
         :param inputs: (b, 3, h, w) / tensor from testdataloader
         :return: (N, 6) / [xmin, ymin, xmax, ymax, conf, cls_id]
         """
-        self.yolo.eval()
         torch.cuda.empty_cache()
         if self.use_tta:
             merge_preds_out, inpendent_preds_out = self.test_time_augmentation(inputs)  # (bs, N, 85)
@@ -36,7 +38,6 @@ class YOLOXEvaluator:
                 return self.do_wfb(inpendent_preds_out)
         else:
             merge_preds_out = self.do_inference(inputs)  # (bs, N, 85)
-        self.yolo.train()
 
         # return self.do_nms(merge_preds_out)  # list of tensors
         return [torch.from_numpy(x) if x is not None else None for x in self.numba_nms(merge_preds_out) ]
@@ -97,7 +98,7 @@ class YOLOXEvaluator:
         :param preds_out: (batch_size, X, 85)
         :return: list / [(X, 6), ..., None, (Y, 6), None, ..., (Z, 6), ...]
         """
-        obj_conf_mask = preds_out[:, :, 4] > self.hyp['conf_threshold']
+        obj_conf_mask = preds_out[:, :, 4] > self.conf_threshold
         outputs = []
         for i in range(preds_out.size(0)):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
@@ -108,14 +109,14 @@ class YOLOXEvaluator:
             # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
             box = xywh2xyxy(x[:, :4])
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] > self.hyp['cls_threshold']).nonzero(as_tuple=True)
+                row_idx, col_idx = (x[:, 5:] > self.cls_threshold).nonzero(as_tuple=True)
                 # x: [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = torch.cat((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].float()), dim=1)
             else:
                 cls_conf, col_idx = x[:, 5:].max(dim=1, keepdim=True)
                 # [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = torch.cat((box, cls_conf, col_idx.float()), dim=1)
-                cls_conf_mask = cls_conf.view(-1).contiguous() > self.hyp['cls_threshold']
+                cls_conf_mask = cls_conf.view(-1).contiguous() > self.cls_threshold
                 x = x[cls_conf_mask]
 
             bbox_num = x.size(0)
@@ -130,7 +131,7 @@ class YOLOXEvaluator:
                 box_offset = x[:, 5] * 0.
             bboxes_offseted = x[:, :4] + box_offset[:, None]  # M
             scores = x[:, 4]
-            keep_index = gpu_nms(bboxes_offseted, scores, self.hyp['nms_type'], self.hyp['iou_threshold'])
+            keep_index = gpu_nms(bboxes_offseted, scores, self.hyp['nms_type'], self.iou_threshold)
 
             if len(keep_index) > self.hyp['max_predictions_per_img']:
                 keep_index = keep_index[:self.hyp['max_predictions_per_img']]  # N
@@ -139,7 +140,7 @@ class YOLOXEvaluator:
             if self.hyp['postprocess_bbox']:
                 if 1 < bbox_num < 3000:
                     iou = self.bbox_iou(bboxes_offseted[keep_index], bboxes_offseted)  # (N, M)
-                    iou_mask = iou > self.hyp['iou_threshold']  # (N, M)
+                    iou_mask = iou > self.iou_threshold  # (N, M)
                     weights = iou_mask * scores[None, :]  # (N, M)
                     # (N, M) & (M, 4) & (N, 1) -> (N, 4)
                     bboxes_offseted[keep_index, :4] = torch.mm(weights, bboxes_offseted[:, :4]).float() / weights.sum(dim=1, keepdims=True)
@@ -263,7 +264,7 @@ class YOLOXEvaluator:
         do NMS with numba
         """
         preds_out = preds_out.float().cpu().numpy()
-        obj_conf_mask = preds_out[:, :, 4] > self.hyp['conf_threshold']
+        obj_conf_mask = preds_out[:, :, 4] > self.conf_threshold
         outputs = []
         for i in range(preds_out.shape[0]):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
@@ -274,7 +275,7 @@ class YOLOXEvaluator:
             # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
             box = numba_xywh2xyxy(x[:, :4])
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] > self.hyp['cls_threshold']).nonzero()
+                row_idx, col_idx = (x[:, 5:] > self.cls_threshold).nonzero()
                 # x: [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = np.concatenate((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].astype(np.float32)), axis=1)
             else:
@@ -282,7 +283,7 @@ class YOLOXEvaluator:
                 col_idx = x[:, 5:].argmax(axis=1)[:, None]
                 # [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = np.concatenate((box, cls_conf, col_idx.astype(np.float32)), axis=1)
-                cls_conf_mask = np.ascontiguousarray(cls_conf.reshape(-1)) > self.hyp['cls_threshold']
+                cls_conf_mask = np.ascontiguousarray(cls_conf.reshape(-1)) > self.cls_threshold
                 x = x[cls_conf_mask]
 
             bbox_num = x.shape[0]
@@ -297,7 +298,7 @@ class YOLOXEvaluator:
                 box_offset = x[:, 5] * 0.
             bboxes_offseted = x[:, :4] + box_offset[:, None]  # M
             scores = x[:, 4]
-            keep_index = numba_nms(bboxes_offseted, scores, self.hyp['iou_threshold'])
+            keep_index = numba_nms(bboxes_offseted, scores, self.iou_threshold)
 
             if len(keep_index) > self.hyp['max_predictions_per_img']:
                 keep_index = keep_index[:self.hyp['max_predictions_per_img']]  # N
@@ -306,7 +307,7 @@ class YOLOXEvaluator:
             if self.hyp['postprocess_bbox']:
                 if 1 < bbox_num < 3000:
                     iou = numba_iou(bboxes_offseted[keep_index], bboxes_offseted)  # (N, M)
-                    iou_mask = iou > self.hyp['iou_threshold']  # (N, M)
+                    iou_mask = iou > self.iou_threshold  # (N, M)
                     weights = iou_mask * scores[None, :]  # (N, M)
                     # (N, M) & (M, 4) & (N, 1) -> (N, 4)
                     bboxes_offseted[keep_index, :4] = np.matmul(weights, bboxes_offseted[:, :4]).astype(np.float32) / (weights.sum(axis=1, keepdims=True) + 1e-16)

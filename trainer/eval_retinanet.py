@@ -5,9 +5,10 @@ from collections import defaultdict
 import torch.nn.functional as F
 from utils import weighted_fusion_bbox, numba_nms, numba_iou
 
-class RetinaNetEvaluater:
+__all__ = ['RetinaNetEvaluator']
+class RetinaNetEvaluator:
 
-    def __init__(self, model, hyp) -> None:
+    def __init__(self, model, hyp, compute_metric=False) -> None:
         self.model = model
         self.enable_tta = hyp['use_tta']
         self.device = hyp['device']
@@ -15,6 +16,9 @@ class RetinaNetEvaluater:
         self.iou_loss_scale = hyp["tar_box_scale_factor"]
         self.hyp = hyp
         self.anchors = None
+        self.iou_threshold = self.hyp['compute_metric_iou_threshold'] if compute_metric else self.hyp['iou_threshold']
+        self.cls_threshold = self.hyp['compute_metric_cls_threshold'] if compute_metric else self.hyp['cls_threshold']
+        self.conf_threshold = self.hyp['compute_metric_conf_threshold'] if compute_metric else self.hyp['conf_threshold']
 
     def bbox_transform(self, anchors, regressions):
         """
@@ -128,7 +132,7 @@ class RetinaNetEvaluater:
         Returns:
             
         """
-        self.model.eval()
+        
         torch.cuda.empty_cache()
         with torch.no_grad():
             if self.enable_tta:
@@ -137,7 +141,6 @@ class RetinaNetEvaluater:
                     return self.do_wfb(inpendent_preds_out)
             else:
                 merge_preds_out = self.do_inference(imgs)  # (bs, N, 85)
-        self.model.train()
 
         # return self.do_nms(merge_preds_out) / list of tensors
         return [torch.from_numpy(x) if x is not None else None for x in self.numba_nms(merge_preds_out)]
@@ -254,7 +257,7 @@ class RetinaNetEvaluater:
             pred_cls = preds_out[b, :, 4:]  # (N, num_class)
             pred_box = preds_out[b, :, :4]  # (N, 4)
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (pred_cls >= self.hyp['cls_threshold']).nonzero(as_tuple=True)
+                row_idx, col_idx = (pred_cls >= self.cls_threshold).nonzero(as_tuple=True)
                 # x: [xmin, ymin, xmax, ymax, prob, cls_id] / (M, 6)
                 x = torch.cat((pred_box[row_idx], pred_cls[row_idx, col_idx+4][:, None], col_idx[:, None].float()), dim=1)
             else:
@@ -262,7 +265,7 @@ class RetinaNetEvaluater:
                 cls_prob, col_idx = pred_cls.max(dim=1, keepdim=True)
                 # [xmin, ymin, xmax, ymax, prob, cls_id] / (N, 6)
                 x = torch.cat((pred_box, cls_prob, col_idx.float()), dim=1)
-                cls_prob_mask = cls_prob.view(-1).contiguous() >= self.hyp['cls_threshold']  # (N, 1)
+                cls_prob_mask = cls_prob.view(-1).contiguous() >= self.cls_threshold  # (N, 1)
                 x = x[cls_prob_mask]  # (M, 6)
 
                 valid_bbox_num = x.size(0)
@@ -278,14 +281,14 @@ class RetinaNetEvaluater:
 
                 bboxes_offseted = x[:, :4] + box_offset[:, None]  # M
                 scores = x[:, 4]
-                keep_index = gpu_nms(bboxes_offseted, scores, self.hyp['nms_type'], self.hyp['iou_threshold'])
+                keep_index = gpu_nms(bboxes_offseted, scores, self.hyp['nms_type'], self.iou_threshold)
                 keep_index = keep_index[:self.hyp['max_predictions_per_img']]  # N
 
                 # 对每个bbox进行调优(每个最终输出的bbox都由与其iou大于iou threshold的一些bbox共同merge得到的)
                 if self.hyp['postprocess_bbox']:
                     if 1 < valid_bbox_num < 3000:
                         iou = self.bbox_iou(bboxes_offseted[keep_index], bboxes_offseted)  # (N, M)
-                        iou_mask = iou > self.hyp['iou_threshold']  # (N, M)
+                        iou_mask = iou > self.iou_threshold  # (N, M)
                         weights = iou_mask * scores[None, :]  # (N, M)
                         # (N, M) & (M, 4) & (N, 1) -> (N, 4)
                         x[keep_index, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(dim=1, keepdims=True)
@@ -310,7 +313,7 @@ class RetinaNetEvaluater:
             pred_cls = preds_out[b, :, 4:]  # (N, num_class)
             pred_box = preds_out[b, :, :4]  # (N, 4)
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (pred_cls >= self.hyp['cls_threshold']).nonzero(as_tuple=True)
+                row_idx, col_idx = (pred_cls >= self.cls_threshold).nonzero(as_tuple=True)
                 # x: [xmin, ymin, xmax, ymax, prob, cls_id] / (M, 6)
                 x = np.concatenate((pred_box[row_idx], pred_cls[row_idx, col_idx+4][:, None], col_idx[:, None].astype(np.float32)), axis=1)
             else:
@@ -319,7 +322,7 @@ class RetinaNetEvaluater:
                 col_idx = pred_cls.argmax(axis=1)[:, None]  # (N, 1)
                 # [xmin, ymin, xmax, ymax, prob, cls_id] / (N, 6)
                 x = np.concatenate((pred_box, cls_prob, col_idx.astype(np.float32)), axis=1)
-                cls_prob_mask = np.ascontiguousarray(cls_prob.reshape(-1)) > self.hyp['cls_threshold']  # (N, 1)
+                cls_prob_mask = np.ascontiguousarray(cls_prob.reshape(-1)) > self.cls_threshold  # (N, 1)
                 x = x[cls_prob_mask]  # (M, 6)
 
             valid_bbox_num = x.shape[0]
@@ -334,14 +337,14 @@ class RetinaNetEvaluater:
                 box_offset = x[:, 5] * 0.0
             bboxes_offseted = x[:, :4] + box_offset[:, None]  # (M, 4)
             scores = x[:, 4]  # (M,)
-            keep_index = numba_nms(bboxes_offseted, scores, self.hyp['iou_threshold'])
+            keep_index = numba_nms(bboxes_offseted, scores, self.iou_threshold)
             keep_index = keep_index[:self.hyp['max_predictions_per_img']]  # N
 
             # 对每个bbox进行调优(每个最终输出的bbox都由与其iou大于iou threshold的一些bbox共同merge得到的)
             if self.hyp['postprocess_bbox']:
                 if 1 < valid_bbox_num < 3000:
                     iou = numba_iou(bboxes_offseted[keep_index], bboxes_offseted)  # (N, M)
-                    iou_mask = iou > self.hyp['iou_threshold']  # (N, M)
+                    iou_mask = iou > self.iou_threshold  # (N, M)
                     weights = iou_mask * scores[None, :]  # (N, M)
                     # (N, M) & (M, 4) & (N, 1) -> (N, 4)
                     x[keep_index, :4] = np.matmul(weights, x[:, :4]).astype(np.float32) / (weights.sum(axis=1, keepdims=True) + 1e-16)
