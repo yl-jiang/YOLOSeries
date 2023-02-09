@@ -227,7 +227,7 @@ class Training:
                     else:
                         print(f"can't load EMA model from {model_path}")
 
-                    if 'ema_update_num' in state_dict:
+                    if self.ema_model is not None and 'ema_update_num' in state_dict:
                         self.ema_model.update_num = state_dict['ema_update_num']
 
                     del state_dict

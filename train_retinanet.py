@@ -92,7 +92,7 @@ class Train:
 
         # cudnn settings
         if not self.hyp['mutil_scale_training'] and self.hyp['device'] == 'cuda':
-            # 对于输入数据的维度恒定的网络，使用如下配置可加速训练
+            # 对于输入数据的维度恒定的网络, 使用如下配置可加速训练
             torch.backends.cudnn.enabled = True
             torch.backends.cudnn.benchmark = True
 
@@ -301,23 +301,23 @@ class Train:
 
     def warmup(self, epoch, cur_step):
         """
-        模型各部分参数的lr分别从一个很小的值开始，逐渐（一般线性）增大到设定的初始lr。这样做的目的是减少参数初始化带来的影响，使training过程平稳的度过前期的训练。
+        模型各部分参数的lr分别从一个很小的值开始, 逐渐（一般线性）增大到设定的初始lr。这样做的目的是减少参数初始化带来的影响, 使training过程平稳的度过前期的训练。
         """
         if self.hyp['do_warmup'] and cur_step < self.hyp["warmup_steps"]:
             self.accumulate = max(1, np.interp(cur_step,
                                                [0., self.hyp['warmup_steps']],
                                                [1, self.hyp['accumulate_loss_step'] / self.hyp['batch_size']]).round())
-            # optimizer有3各param_group，分别是parm_other, param_weight, param_bias
+            # optimizer有3各param_group, 分别是parm_other, param_weight, param_bias
             for j, para_g in enumerate(self.optimizer.param_groups):
                 if j != 2:  # param_other and param_weight(该部分参数的learning rate逐渐增大)
                     para_g['lr'] = np.interp(cur_step,
                                              [0., self.hyp['warmup_steps']],
                                              [0., para_g['initial_lr'] * self._lr_lambda(epoch)])
-                else:  # param_bias(该部分参数的learning rate逐渐减小，因为warmup_bias_lr大于initial_lr)
+                else:  # param_bias(该部分参数的learning rate逐渐减小, 因为warmup_bias_lr大于initial_lr)
                     para_g['lr'] = np.interp(cur_step,
                                              [0., self.hyp['warmup_steps']],
                                              [self.hyp['warmup_bias_lr'], para_g['initial_lr'] * self._lr_lambda(epoch)])
-                if "momentum" in para_g:  # momentum(momentum在warmup阶段逐渐增大，训练前期减少动量部分对整体梯度的影响)
+                if "momentum" in para_g:  # momentum(momentum在warmup阶段逐渐增大, 训练前期减少动量部分对整体梯度的影响)
                     para_g['momentum'] = np.interp(cur_step,
                                                    [0., self.hyp['warmup_steps']],
                                                    [self.hyp['warmup_momentum'], self.hyp['momentum']])
@@ -380,7 +380,7 @@ class Train:
                 pred[:, [0, 2]] = pred[:, [0, 2]].clamp(1, org_w - 1)
                 pred[:, [1, 3]] = pred[:, [1, 3]].clamp(1, org_h - 1)
                 if self.hyp['use_auxiliary_classifier']:
-                    # 将每个预测框中的物体抠出来，放到一个额外的分类器再进行预测一次是否存在对象
+                    # 将每个预测框中的物体抠出来, 放到一个额外的分类器再进行预测一次是否存在对象
                     pass
                 processed_preds.append(pred.cpu().numpy())
             else:
@@ -426,7 +426,7 @@ class Train:
 
     def _init_model_parameters(self):
         """
-        按照原始论文中的初始化方法，对模型参数进行初始化。
+        按照原始论文中的初始化方法, 对模型参数进行初始化。
         """
         def gaussian_init(m, bias=0.):
             if isinstance(m, torch.nn.Conv2d):
@@ -511,8 +511,15 @@ class Train:
                         print(f"use pretrained EMA model from {model_path}")
                     else:
                         print(f"can't load EMA model from {model_path}")
-                    if 'ema_update_num' in state_dict:
+
+                    if self.ema_model is not None and 'ema_update_num' in state_dict:
                         self.ema_model.update_num = state_dict['ema_update_num']
+
+                    if 'lr_scheduler_state_dict' in state_dict:
+                        self.lr_scheduler.load_state_dict(state_dict['lr_scheduler_state_dict'])
+                        self.logger.info(f'load lr_scheduler from: {model_path}')
+                        print(f'load lr_scheduler from: {model_path}')
+
 
                     del state_dict
 
@@ -534,13 +541,13 @@ class Train:
 
     def mutil_scale_training(self, imgs, targets):
         """
-        对传入的imgs和相应的targets进行缩放，从而达到输入的每个batch中image shape不同的目的；
+        对传入的imgs和相应的targets进行缩放, 从而达到输入的每个batch中image shape不同的目的;
         :param imgs: input image tensor from dataloader / tensor / (bn, 3, h, w)
         :param targets: targets of corrding images / tensor / (bn, bbox_num, 6)
         :return:
 
-        todo：
-            随着训练的进行，image size逐渐增大。
+        todo: 
+            随着训练的进行, image size逐渐增大。
         """
         if self.hyp['mutil_scale_training']:
             input_img_size = max(self.hyp['input_img_size'])
@@ -554,7 +561,7 @@ class Train:
 
     def gt_bbox_postprocess(self, anns, infoes):
         """
-        valdataloader出来的gt bboxes经过了letter resize，这里将其还原为原始的bboxes
+        valdataloader出来的gt bboxes经过了letter resize, 这里将其还原为原始的bboxes
         :param: anns: dict
         """
         ppb = []  # post processed bboxes
@@ -657,7 +664,7 @@ class Train:
         for gt_box, gt_cls in zip(gt_bboxes, gt_classes):
             all_gts.append(np.concatenate((gt_box, gt_cls[:, None]), axis=1))
 
-        # 如果测试的数据较多，计算一次mAP需花费较多时间，这里将结果保存以便后续统计
+        # 如果测试的数据较多, 计算一次mAP需花费较多时间, 这里将结果保存以便后续统计
         if self.hyp['save_pred_bbox']:
             save_path = self.cwd / "result" / "pkl" / f"pred_bbox_{self.hyp['input_img_size'][0]}_{self.hyp['model_type']}.pkl"
             pickle.dump(all_preds, open(str(save_path), 'wb'))

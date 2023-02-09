@@ -640,6 +640,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape, fill_value=128, img_ids=None):
             cur_box_area = np.prod(box[:, 2:4] - box[:, 0:2], axis=1)
             iou = np.round(cur_box_area / org_box_area, decimals=1)
 
+            # =============================================================== debug
             # if np.sum(iou[iou > 1]) > 0:
             #     print(img_ids[i])
             #     debug(img_out, box, np.array(labels[i])[keep_i], iou)
@@ -648,6 +649,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape, fill_value=128, img_ids=None):
             assert np.sum(iou[iou > 1]) == 0
             valid_idx = iou >= 0.3
 
+            # =============================================================== debug
             # if len(iou) > valid_idx.sum():
             #     debug(img, bboxes[i][keep_i], np.array(labels[i])[keep_i], iou)
             #     debug(img_out, box, np.array(labels[i])[keep_i], iou)
@@ -658,7 +660,7 @@ def mosaic(imgs, bboxes, labels, mosaic_shape, fill_value=128, img_ids=None):
             # ===============================================================
         else:
             continue
-        
+
     if len(bboxes_out) > 0:
         bboxes_out = np.concatenate(bboxes_out, axis=0)
         bboxes_out = np.clip(bboxes_out, 0, mosaic_shape[0])

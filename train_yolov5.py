@@ -623,12 +623,17 @@ class Training:
                     else:
                         print(f"can't load EMA model from {model_path}")
 
-                    if 'ema_update_num' in state_dict:
+                    if self.ema_model is not None and 'ema_update_num' in state_dict:
                         self.ema_model.update_num = state_dict['ema_update_num']
 
                     if self.start_epoch is None and 'epoch' in state_dict:
                         self.start_epoch = state_dict['epoch'] + 1
                         self.logger.info(f'traing start epoch: {self.start_epoch}')
+
+                    if 'lr_scheduler_state_dict' in state_dict:
+                        self.lr_scheduler.load_state_dict(state_dict['lr_scheduler_state_dict'])
+                        self.logger.info(f'load lr_scheduler from: {model_path}')
+                        print(f'load lr_scheduler from: {model_path}')
 
                     del state_dict
 

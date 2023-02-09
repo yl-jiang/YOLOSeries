@@ -4,8 +4,8 @@ loss_hyp:
     - 0.1
     - 0.2
     - 0.2
-  negative_iou_thr: 0.4
-  positive_iou_thr: 0.5
+  negative_iou_thr: 0.3
+  positive_iou_thr: 0.4
   cof_loss_scale: 1.0
   l1_loss_scale: 0.05
   cls_loss_scale: 0.01
@@ -13,7 +13,7 @@ loss_hyp:
   gamma : 2.0
     
 train_hyp:
-  pretrained_model_path: ''
+  pretrained_model_path: './checkpoints/retinanet_epoch_11.pth'
   freeze_bn: false
   train_img_dir: "../../Dataset/COCO/train/img"  # 存放训练图像的文件夹路径
   train_lab_dir: "../../Dataset/COCO/train/lab"  # 存放训练label的文件夹路径
