@@ -658,10 +658,13 @@ def mosaic(imgs, bboxes, labels, mosaic_shape, fill_value=128, img_ids=None):
             # ===============================================================
         else:
             continue
-
-    bboxes_out = np.concatenate(bboxes_out, axis=0)
-    bboxes_out = np.clip(bboxes_out, 0, mosaic_shape[0])
-    labels_out = np.array(labels_out)
+        
+    if len(bboxes_out) > 0:
+        bboxes_out = np.concatenate(bboxes_out, axis=0)
+        bboxes_out = np.clip(bboxes_out, 0, mosaic_shape[0])
+        labels_out = np.array(labels_out)
+    else:
+        return imgs, bboxes, labels
 
     return img_out, bboxes_out, labels_out
 
