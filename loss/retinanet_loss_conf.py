@@ -4,8 +4,8 @@ from utils import xyxy2xywh, xywh2xyxy
 from utils import gpu_iou, gpu_DIoU, gpu_Giou, gpu_CIoU
 from utils import GPUAnchor
 
-
-class RetinaNetLoss:
+__all__ = ['RetinaNetLossExperiment']
+class RetinaNetLossExperiment:
 
     def __init__(self, hyp):
 
@@ -14,8 +14,8 @@ class RetinaNetLoss:
         self.pos_iou_thresh = hyp["positive_iou_thr"]
         self.neg_iou_thresh = hyp["negative_iou_thr"]
         self.iou_type = hyp['iou_type']
-        self.l1_loss_scale = hyp['l1_loss_scale']
-        self.iou_loss_scale = hyp['iou_loss_scale']
+        self.l1_loss_scale  = hyp['l1_loss_scale']
+        self.cof_loss_scale = hyp['cof_loss_scale']
         self.cls_loss_scale = hyp['cls_loss_scale']
         assert self.pos_iou_thresh > self.neg_iou_thresh, f"pos_iou_thresh should greater than neg_iou_thresh"
         self.alpha = hyp["alpha"]
@@ -23,6 +23,7 @@ class RetinaNetLoss:
         self.delta_scales = hyp["tar_box_scale_factor"]
         self.L1Loss = torch.nn.L1Loss(reduction='none')
         self.bce_cls = torch.nn.BCEWithLogitsLoss(reduction='none').to(self.device)
+        self.bce_cof = torch.nn.BCEWithLogitsLoss(reduction='mean').to(self.device)
         self.anchors = None
         if not hyp['mutil_scale_training']:
             self.anchors = GPUAnchor(hyp['input_img_size'])()
@@ -59,7 +60,7 @@ class RetinaNetLoss:
     def __call__(self, imgs, regression, classfication, annonations):
         """
         compute focal loss.
-        :param regression: (b, (h/8xw/8+h/16xw/16+h/32xw/32+h/64xw/64+h/128xw/128)*9, 4)
+        :param regression: (b, (h/8xw/8+h/16xw/16+h/32xw/32+h/64xw/64+h/128xw/128)*9, 5)
         :param classfication: (b, (h/8xw/8+h/16xw/16+h/32xw/32+h/64xw/64+h/128xw/128)*9, 80)
         :param annonations: (b, M, 5) / [xmin, ymin, xmax, ymax, cls] / targets / ground truth
         :return:
@@ -71,7 +72,7 @@ class RetinaNetLoss:
         assert regression.size(1) == classfication.size(1), f'regression.size(1)={regression.size(1)} and classfication.size(1)={classfication.size(1)}'
         assert anchors.size(0) == regression.size(1), f'anchor.size(0)={anchors.size(0)} and regression.size(1)={regression.size(1)}'
 
-        l1_losses, iou_losses, cls_losses = [], [], []
+        l1_losses, cls_losses, cof_losses = [], [], []
 
         for b in range(batch_size):  # each image
             gt_ann = annonations[b]
@@ -85,7 +86,7 @@ class RetinaNetLoss:
                 cls_loss *= focal_weight
                 cls_losses.append(cls_loss.sum())
                 l1_losses.append(torch.tensor(0., dtype=alpha_factor.dtype, device=self.device))
-                iou_losses.append(torch.tensor(0., dtype=alpha_factor.dtype, device=self.device))
+                cof_losses.append(torch.tensor(0., dtype=alpha_factor.dtype, device=self.device))
                 continue
 
             # fliter predictions by iou
@@ -122,6 +123,9 @@ class RetinaNetLoss:
             cls_loss = torch.div(cls_loss.sum(), torch.clamp(num_positive_anchors.float(), min=1.))
             cls_losses.append(cls_loss)
 
+            pred_cof = regression[b, :, -1]  # (num_anchor,)
+            target_cof = regression[b].new_zeros(regression[b].shape[0]).float()  # (num_anchor,)
+
             # compute regression loss
             if num_positive_anchors > 0:
                 # build targets
@@ -149,28 +153,31 @@ class RetinaNetLoss:
                 tars_box = torch.div(tars_box, torch.tensor(self.delta_scales, device=self.device))
                 
                 # regression loss
-                keep_preds = regression[b][positive_indices, :].float()
+                keep_preds = regression[b][positive_indices, :4].float()
                 l1_loss = self.compute_l1_loss(keep_preds, tars_box)
                 l1_losses.append(l1_loss.mean())
                 
-                if self.iou_loss_scale > 0.0:
+                # confidence loss
+                if self.cof_loss_scale > 0.0:
                     iou_loss = self.compute_iou_loss(keep_preds, tars_box, self.iou_type)
-                    iou_losses.append(iou_loss.mean())
-                else:
-                    iou_losses.append(torch.tensor(0., dtype=gt_ann.dtype, device=self.device))
+                    target_cof[positive_indices] = iou_loss
+                    cof_losses.append(self.bce_cof(pred_cof, target_cof))
             else:
                 l1_losses.append(torch.tensor(0., dtype=gt_ann.dtype, device=self.device))
-                iou_losses.append(torch.tensor(0., dtype=gt_ann.dtype, device=self.device))
+                cof_losses.append(torch.tensor(0., dtype=gt_ann.dtype, device=self.device))
 
         tot_l1_loss  = torch.stack(l1_losses).mean()  * self.l1_loss_scale
-        tot_iou_loss = torch.stack(iou_losses).mean() * self.iou_loss_scale
+        tot_cof_loss = torch.tensor(0., dtype=alpha_factor.dtype, device=self.device)
+        if self.cof_loss_scale > 0.0:
+            tot_cof_loss = torch.stack(cof_losses).mean() * self.cof_loss_scale
+        
         tot_cls_loss = torch.stack(cls_losses).mean() * self.cls_loss_scale
-        tot_loss = tot_l1_loss + tot_iou_loss + tot_cls_loss
-        del gt_ann, anchor_gt_iou, iou_max, iou_argmax, positive_indices, negative_indices, l1_losses, iou_losses, cls_losses, anchors
+        tot_loss = (tot_l1_loss + tot_cof_loss + tot_cls_loss) * batch_size
+        del gt_ann, anchor_gt_iou, iou_max, iou_argmax, positive_indices, negative_indices, l1_losses, cof_losses, cls_losses
 
-        return {"l1_loss": tot_l1_loss.detach().item(), 
-                "cls_loss": tot_cls_loss.detach().item(), 
-                'iou_loss': tot_iou_loss.detach().item(), 
+        return {"l1_loss": tot_l1_loss.detach().item() * batch_size, 
+                "cls_loss": tot_cls_loss.detach().item() * batch_size, 
+                'cof_loss': tot_cof_loss.detach().item() * batch_size, 
                 'tot_loss': tot_loss, 
                 "tar_nums": num_positive_anchors}
     # endregion
@@ -195,7 +202,7 @@ class RetinaNetLoss:
             tars: (N, 4) / [x, y, w, h]
             iou_type: string / 'iou' or 'giou' or 'ciou'
         Returns:
-
+            iou: (N,)
         """
         inter_xy_min = torch.max((preds_box[:, :2] - preds_box[:, 2:] / 2), (tars_box[:, :2] - tars_box[:, 2:] / 2))
         inter_xy_max = torch.min((preds_box[:, :2] + preds_box[:, 2:] / 2), (tars_box[:, :2] + tars_box[:, 2:] / 2))

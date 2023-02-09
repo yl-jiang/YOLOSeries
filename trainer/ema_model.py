@@ -2,6 +2,7 @@ import torch
 from copy import deepcopy
 import numpy as np
 
+__all__ = ['ExponentialMovingAverageModel']
 
 class ExponentialMovingAverageModel:
     """

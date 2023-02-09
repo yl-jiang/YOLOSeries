@@ -5,8 +5,9 @@ from collections import defaultdict
 import torch.nn.functional as F
 from utils import weighted_fusion_bbox, numba_nms, numba_iou
 
-__all__ = ['RetinaNetEvaluator']
-class RetinaNetEvaluator:
+__all__ = ['RetinaNetEvaluatorExperiment']
+
+class RetinaNetEvaluatorExperiment:
 
     def __init__(self, model, hyp, compute_metric=False) -> None:
         self.model = model
@@ -18,6 +19,7 @@ class RetinaNetEvaluator:
         self.anchors = None
         self.iou_threshold = self.hyp['compute_metric_iou_threshold'] if compute_metric else self.hyp['iou_threshold']
         self.cls_threshold = self.hyp['compute_metric_cls_threshold'] if compute_metric else self.hyp['cls_threshold']
+        self.conf_threshold = self.hyp['compute_metric_conf_threshold'] if compute_metric else self.hyp['conf_threshold']
 
     def bbox_transform(self, anchors, regressions):
         """
@@ -62,15 +64,16 @@ class RetinaNetEvaluator:
         Args:
             imgs: (b, 3, h, w)
         Returns:
-            preds_out: (b, N, num_class + 4) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax]
+            preds_out: (b, N, num_class + 5) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax, conf]
         """
-        # pred_box: (b, N, 4), pred_cls: (bs, N, num_class)
+        # pred_box: (b, N, 5), pred_cls: (bs, N, num_class)
         pred_box, pred_cls = self.model(imgs)
         pred_cls = torch.sigmoid(pred_cls)
         anchors = GPUAnchor([imgs.size(2), imgs.size(3)])()  # (N, 4)
         pred_box[..., :4] = self.bbox_transform(anchors, pred_box[..., :4])  # (b, N, 4)
         pred_box[..., :4] = self.bbox_clip(imgs, pred_box[..., :4])  # (b, N, 4)
-        # preds_out: (b, N, 4) & (b, N, num_class) -> (b, N, num_class+4)
+        pred_box[..., -1] = torch.sigmoid(pred_box[..., -1])
+        # preds_out: (b, N, 5) & (b, N, num_class) -> (b, N, num_class+5)
         preds_out = torch.cat((pred_cls, pred_box), dim=2)
         return preds_out
         
@@ -78,7 +81,7 @@ class RetinaNetEvaluator:
         """
         weighted fusion bbox
         Args:
-            preds_out: [(batch_size, X, 84), (batch_size, Y, 84), (batch_size, Z, 84)] / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax]
+            preds_out: [(batch_size, X, 85), (batch_size, Y, 85), (batch_size, Z, 85)] / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax, conf]
         Returns:
 
         """
@@ -149,7 +152,7 @@ class RetinaNetEvaluator:
         Args:
             inputs: (bn, 3, h, w)
         Returns:
-            preds: (bs, M+N+P, 84) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax]
+            preds: (bs, M+N+P, 85) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax, conf]
         """
         img_h, img_w = inputs.size(2), inputs.size(3)
         scale_facotr = [1, 0.83, 0.67]
@@ -162,7 +165,7 @@ class RetinaNetEvaluator:
             else:
                 img = inputs
             img = self.scale_img(img, s)
-            # (bs, M, 84) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax]
+            # (bs, M, 85) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax, conf]
             preds = self.do_inference(img)
             preds[..., self.hyp['num_class']:self.hyp['num_class']+4] /= s
             if f == 2:  # flip axis y
@@ -177,9 +180,9 @@ class RetinaNetEvaluator:
                 preds[..., self.hyp['num_class']+0] = img_w - tmp_pred_xmax
                 preds[..., self.hyp['num_class']+2] = img_w - tmp_pred_xmin
                 del tmp_pred_xmin, tmp_pred_xmax
-            # [(bs, M, 84), (bs, N, 84), (bs, P, 84)]
+            # [(bs, M, 85), (bs, N, 85), (bs, P, 85)]
             tta_preds.append(preds)
-        # (bs, M+N+P, 84) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax]
+        # (bs, M+N+P, 85) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax, conf]
         return torch.cat(tta_preds, dim=1).contiguous(), tta_preds
 
     def bbox_clip(self, img, bboxes):
@@ -246,15 +249,22 @@ class RetinaNetEvaluator:
     def do_nms(self, preds_out):
         """
         Args:
-            preds_out: (b, N, num_class+4) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax]
+            preds_out: (b, N, num_class+4) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax, conf]
         Returns:
 
         """
         batchsize = preds_out.size(0)
+        preds_out = preds_out.float().cpu().numpy()
+        obj_conf_mask = preds_out[:, :, -1] > self.conf_threshold
         outputs = []
         for b in range(batchsize):  # each image
-            pred_cls = preds_out[b, :, :self.hyp['num_class']]  # (N, num_class)
-            pred_box = preds_out[b, :, self.hyp['num_class']:self.hyp['num_class']+4]  # (N, 4)
+            pred_cls = preds_out[b, obj_conf_mask[b], :self.hyp['num_class']]  # (N, num_class)
+            pred_box = preds_out[b, obj_conf_mask[b], self.hyp['num_class']:self.hyp['num_class']+4]  # (N, 4)
+            if len(pred_cls) == 0:
+                outputs.append(None)
+                continue
+
+            pred_cls *= preds_out[b, obj_conf_mask[b], -1:]  # conf = cls_conf * obj_conf
             if self.hyp['mutil_label']:
                 row_idx, col_idx = (pred_cls >= self.cls_threshold).nonzero(as_tuple=True)
                 # x: [xmin, ymin, xmax, ymax, prob, cls_id] / (M, 6)
@@ -301,16 +311,22 @@ class RetinaNetEvaluator:
         """
         do NMS with numba
         Args:
-            preds_out: (bs, M+N+P, 84) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax]
+            preds_out: (bs, M+N+P, 85) / [cls1, cls2, cls3, ..., xmin, ymin, xmax, ymax, conf]
         Returns:
 
         """
         batchsize = preds_out.size(0)
         preds_out = preds_out.float().cpu().numpy()
+        obj_conf_mask = preds_out[:, :, -1] > self.conf_threshold
         outputs = []
         for b in range(batchsize):  # each image
-            pred_cls = preds_out[b, :, :self.hyp['num_class']]  # (N, num_class)
-            pred_box = preds_out[b, :, self.hyp['num_class']:self.hyp['num_class']+4]  # (N, 4)
+            pred_cls = preds_out[b, obj_conf_mask[b], :self.hyp['num_class']]  # (N, num_class)
+            pred_box = preds_out[b, obj_conf_mask[b], self.hyp['num_class']:self.hyp['num_class']+4]  # (N, 4)
+            if len(pred_cls) == 0:
+                outputs.append(None)
+                continue
+
+            pred_cls *= preds_out[b, obj_conf_mask[b], -1:]  # conf = cls_conf * obj_conf
             if self.hyp['mutil_label']:
                 row_idx, col_idx = (pred_cls >= self.cls_threshold).nonzero(as_tuple=True)
                 # x: [xmin, ymin, xmax, ymax, prob, cls_id] / (M, 6)

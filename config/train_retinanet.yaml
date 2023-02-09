@@ -1,5 +1,4 @@
 loss_hyp:
-  use_focal_loss: false
   tar_box_scale_factor: 
     - 0.1
     - 0.1
@@ -7,14 +6,14 @@ loss_hyp:
     - 0.2
   negative_iou_thr: 0.4
   positive_iou_thr: 0.5
-  iou_loss_scale: 0.0
-  l1_loss_scale: 1.0
-  cls_loss_scale: 1.0
+  cof_loss_scale: 1.0
+  l1_loss_scale: 0.05
+  cls_loss_scale: 0.01
   alpha : 0.25
   gamma : 2.0
     
 train_hyp:
-  pretrained_model_path : ''
+  pretrained_model_path: ''
   freeze_bn: false
   train_img_dir: "../../Dataset/COCO/train/img"  # 存放训练图像的文件夹路径
   train_lab_dir: "../../Dataset/COCO/train/lab"  # 存放训练label的文件夹路径
@@ -40,20 +39,20 @@ train_hyp:
   validation_every: 0.5
   show_tbar_every: 2
   save_log_every: 2
-  use_tta : false
+  use_tta : true
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   mutil_scale_training : false
   enable_data_aug: true
   no_data_aug_epoch: 10
   start_epoch: 0
-  calculate_map_every : 300
-  num_anchors : 9
-  resnet_layers : 
+  calculate_map_every : 200
+  num_anchors: 9
+  resnet_layers: 
     - 3
     - 4
     - 6
     - 3
-  iou_type: 'ciou'
+  iou_type: 'iou'
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   enable_tensorboard: true
   log_identifier: 'retinanet_debug'
@@ -68,7 +67,7 @@ warmup_hyp:
 optimizer_hyp:
   scheduler_type: 'linear'
   optimizer : 'sgd'
-  basic_lr_per_img: 0.003125
+  basic_lr_per_img: 0.0003125
   weight_decay : 0.00001
   momentum : 0.99
   lr_max_ds_scale: 0.0001
@@ -94,6 +93,7 @@ data_hyp:
   data_aug_scale_jitting_p: 0.0
 
 nms_hyp:
+  conf_threshold: 0.3
   iou_threshold: 0.2
   cls_threshold: 0.6
   max_predictions_per_img : 300

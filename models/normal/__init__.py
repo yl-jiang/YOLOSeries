@@ -11,6 +11,7 @@ from .yolox_m import *
 from .yolox_l import *
 
 from .retinanet import *
+from .retinanet_conf import *
 
 from .yolov7 import *
 
@@ -25,4 +26,5 @@ __all__ = ['RetinaNet',
            'YOLOXDarkNet53', 
            'YOLOXLarge', 
            'YOLOXMiddle', 
-           'YOLOXSmall']
+           'YOLOXSmall', 
+           'RetinaNetExperiment']
