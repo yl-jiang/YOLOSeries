@@ -11,7 +11,7 @@ from .yolox_m import *
 from .yolox_l import *
 
 from .retinanet import *
-from .retinanet_conf import *
+from .retinanet_experiment import *
 
 from .yolov7 import *
 

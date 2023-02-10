@@ -170,14 +170,15 @@ class RetinaNetLossExperiment:
         tot_cof_loss = torch.tensor(0., dtype=alpha_factor.dtype, device=self.device)
         if self.cof_loss_scale > 0.0:
             tot_cof_loss = torch.stack(cof_losses).mean() * self.cof_loss_scale
-        
         tot_cls_loss = torch.stack(cls_losses).mean() * self.cls_loss_scale
-        tot_loss = (tot_l1_loss + tot_cof_loss + tot_cls_loss) * batch_size
+
+        common_scale = 1
+        tot_loss = (tot_l1_loss + tot_cof_loss + tot_cls_loss) * common_scale
         del gt_ann, anchor_gt_iou, iou_max, iou_argmax, positive_indices, negative_indices, l1_losses, cof_losses, cls_losses
 
-        return {"l1_loss": tot_l1_loss.detach().item() * batch_size, 
-                "cls_loss": tot_cls_loss.detach().item() * batch_size, 
-                'cof_loss': tot_cof_loss.detach().item() * batch_size, 
+        return {"l1_loss": tot_l1_loss.detach().item() * common_scale, 
+                "cls_loss": tot_cls_loss.detach().item() * common_scale, 
+                'cof_loss': tot_cof_loss.detach().item() * common_scale, 
                 'tot_loss': tot_loss, 
                 "tar_nums": num_positive_anchors}
     # endregion

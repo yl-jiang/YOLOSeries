@@ -331,8 +331,8 @@ class Training:
 
                 # optimize
                 if step_in_epoch % self.accumulate == 0:
-                    self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                    # self.scaler.unscale_(self.optimizer)
+                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()
@@ -540,7 +540,7 @@ class Training:
                 targets[:, :, :4] *= scale
         return imgs, targets
 
-    def load_model(self, map_location='cpu'):
+    def load_model(self, map_location='cpu', only_model=True):
         """
         load pretrained model, EMA model, optimizer(注意: __init_weights()方法并不适用于所有数据集)
         """
@@ -563,7 +563,7 @@ class Training:
                         self.logger.info(f"load pretraned model -> model: {model_path}")
                         print(f"use pretrained model {model_path}")
 
-                    if "optim_state_dict" in state_dict and state_dict.get("optim_type", None) == self.hyp['optimizer']:  # load optimizer
+                    if not only_model and "optim_state_dict" in state_dict and state_dict.get("optim_type", None) == self.hyp['optimizer']:  # load optimizer
                         self.optimizer.load_state_dict(state_dict['optim_state_dict'])
                         self.logger.info(f"load pretraned model -> optimizer: {model_path}")
                         print(f"use pretrained optimizer {model_path}")
@@ -578,11 +578,11 @@ class Training:
                     if self.ema_model is not None and 'ema_update_num' in state_dict:
                         self.ema_model.update_num = state_dict['ema_update_num']
 
-                    if self.start_epoch is None and 'epoch' in state_dict:
+                    if not only_model and self.start_epoch is None and 'epoch' in state_dict:
                         self.start_epoch = state_dict['epoch'] + 1
                         self.logger.info(f'traing start epoch: {self.start_epoch}')
 
-                    if 'lr_scheduler_state_dict' in state_dict:
+                    if not only_model and 'lr_scheduler_state_dict' in state_dict:
                         self.lr_scheduler.load_state_dict(state_dict['lr_scheduler_state_dict'])
                         self.logger.info(f'load lr_scheduler from: {model_path}')
                         print(f'load lr_scheduler from: {model_path}')
