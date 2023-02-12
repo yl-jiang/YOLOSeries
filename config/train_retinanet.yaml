@@ -4,23 +4,23 @@ loss_hyp:
     - 0.1
     - 0.2
     - 0.2
-  negative_iou_thr: 0.35
-  positive_iou_thr: 0.45
-  cof_loss_scale: 1.0
-  l1_loss_scale: 0.01
-  cls_loss_scale: 0.01
+  negative_iou_thr: 0.4
+  positive_iou_thr: 0.5
+  cof_loss_scale: 1
+  cls_loss_scale: 1
+  l1_loss_scale: 1
   alpha : 0.25
   gamma : 2.0
     
 train_hyp:
-  pretrained_model_path: './checkpoints/retinanet_coco_epoch_12.pth'
+  pretrained_model_path: ''
   freeze_bn: false
-  train_img_dir: "../../Dataset/COCO/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "../../Dataset/COCO/train/lab"  # 存放训练label的文件夹路径
-  name_path: "../../Dataset/COCO/train/names.txt"
+  train_img_dir: "/E/JYL/Datasets/VOC/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/E/JYL/Datasets/VOC/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/E/JYL/Datasets/VOC/train/names.txt"
   test_img_dir: "./result/coco_test_imgs"  # for test
-  val_img_dir: "../../Dataset/COCO/val/img"  # validation image dir
-  val_lab_dir: "../../Dataset/COCO/val/lab"  # validation label dir 
+  val_img_dir: "/E/JYL/Datasets/VOC/val/img"  # validation image dir
+  val_lab_dir: "/E/JYL/Datasets/VOC/val/lab"  # validation label dir 
   aspect_ratio: false  
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 2000000
@@ -35,8 +35,8 @@ train_hyp:
   total_epoch: 300
   device: 'gpu'
   accumulate_loss_step: 64
-  do_ema: false
-  validation_every: 0.5
+  do_ema: true
+  validation_every: 1
   show_tbar_every: 2
   save_log_every: 2
   use_tta : true
@@ -62,15 +62,15 @@ warmup_hyp:
   do_warmup: true
   warmup_epoch: 3
   warmup_bias_max_lr: 0.001
-  warmup_momentum: 0.9
+  warmup_momentum: 0.8
 
 optimizer_hyp:
   scheduler_type: 'linear'
   optimizer : 'sgd'
-  basic_lr_per_img: 0.0003125
+  basic_lr_per_img: 0.0003125 # 0.0003125 = 0.01/32
   weight_decay : 0.00001
-  momentum : 0.98
-  lr_max_ds_scale: 0.0001
+  momentum : 0.99
+  lr_max_ds_scale: 0.001
 
 data_hyp:
   data_aug_prespective_p: 1.0
@@ -86,8 +86,8 @@ data_hyp:
   data_aug_mixup_p: 0.0
   data_aug_fliplr_p: 0.5
   data_aug_flipud_p: 0.0
-  data_aug_fill_value: 128
-  data_aug_mosaic_p: 1.0
+  data_aug_fill_value: 114
+  data_aug_mosaic_p: 0.3  # weak data augumentation for small dataset
   data_aug_cutout_p: 1.0
   data_aug_cutout_iou_thr: 0.3
   data_aug_scale_jitting_p: 0.0

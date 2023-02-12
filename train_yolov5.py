@@ -407,7 +407,7 @@ class Training:
                 
                 del x, img, ann, tot_loss, stage_preds, loss_dict
 
-                if self.rank == 0:
+                if self.rank == 0 and self.tbar is not None:
                     self.tbar.update()
 
             # 其余scheduler在epoch尺度update
@@ -416,7 +416,7 @@ class Training:
             epoch_time = time_synchronize() - start_epoch_t
             self.logger.info(f'\n\n{"-" * 600}\n')
 
-            if self.rank == 0:
+            if self.rank == 0 and self.tbar is not None:
                 self.tbar.close()
 
     def tag2msg(self, tags, fmts, with_tag_name=False):

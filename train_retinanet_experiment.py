@@ -274,7 +274,6 @@ class Training:
         torch.cuda.empty_cache()
         gc.collect()
         
-
         if self.rank == 0 and cur_epoch == 1:
             self.update_tbar()
         if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
@@ -331,8 +330,8 @@ class Training:
 
                 # optimize
                 if step_in_epoch % self.accumulate == 0:
-                    # self.scaler.unscale_(self.optimizer)
-                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()
@@ -359,7 +358,7 @@ class Training:
                 
                 del x, img, ann, tot_loss, pred_cls, pred_reg, loss_dict
 
-                if self.rank == 0:
+                if self.rank == 0 and self.tbar is not None:
                     self.tbar.update()
 
             # 其余scheduler在epoch尺度update
@@ -368,7 +367,7 @@ class Training:
             epoch_time = time_synchronize() - start_epoch_t
             self.logger.info(f'\n\n{"-" * 600}\n')
 
-            if self.rank == 0:
+            if self.rank == 0 and self.tbar is not None:
                 self.tbar.close()
 
     def tag2msg(self, tags, fmts, with_tag_name=False):
