@@ -93,7 +93,7 @@ data_hyp:
   data_aug_scale_jitting_p: 0.0
 
 nms_hyp:
-  conf_threshold: 0.1
+  conf_threshold: 0.2
   iou_threshold: 0.2
   cls_threshold: 0.2
   max_predictions_per_img : 300
