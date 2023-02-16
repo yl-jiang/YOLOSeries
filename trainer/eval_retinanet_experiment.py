@@ -317,7 +317,7 @@ class RetinaNetEvaluatorExperiment:
         """
         batchsize = preds_out.size(0)
         preds_out = preds_out.float().cpu().numpy()
-        obj_conf_mask = preds_out[:, :, -1] > self.conf_threshold
+        obj_conf_mask = preds_out[:, :, -1] >= self.conf_threshold
         outputs = []
         for b in range(batchsize):  # each image
             pred_cls = preds_out[b, obj_conf_mask[b], :self.hyp['num_class']]  # (N, num_class)

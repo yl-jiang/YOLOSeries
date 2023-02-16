@@ -168,7 +168,7 @@ class RetinaNetLoss:
         tot_loss = tot_l1_loss + tot_iou_loss + tot_cls_loss
         del gt_ann, anchor_gt_iou, iou_max, iou_argmax, positive_indices, negative_indices, l1_losses, iou_losses, cls_losses, anchors
 
-        return {"l1_loss": tot_l1_loss.detach().item(), 
+        return {"l1_loss" : tot_l1_loss.detach().item(), 
                 "cls_loss": tot_cls_loss.detach().item(), 
                 'iou_loss': tot_iou_loss.detach().item(), 
                 'tot_loss': tot_loss, 

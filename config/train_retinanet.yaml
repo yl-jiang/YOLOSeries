@@ -6,9 +6,10 @@ loss_hyp:
     - 0.2
   negative_iou_thr: 0.4
   positive_iou_thr: 0.5
+  iou_loss_scale: 0.5
   cof_loss_scale: 1
-  cls_loss_scale: 1
-  l1_loss_scale: 1
+  cls_loss_scale: 0.2
+  l1_loss_scale: 0.5
   alpha : 0.25
   gamma : 2.0
     
@@ -25,27 +26,27 @@ train_hyp:
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 2000000
   input_img_size: 
-    - 512
-    - 512
-  batch_size: 64
+    - 640
+    - 640
+  batch_size: 48
   drop_last: true
   pin_memory: true
   shuffle: true
   num_workers: 0
   total_epoch: 300
   device: 'gpu'
-  accumulate_loss_step: 64
+  accumulate_loss_step: 48
   do_ema: true
-  validation_every: 1
+  validation_every: 5
   show_tbar_every: 2
   save_log_every: 2
   use_tta : true
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   mutil_scale_training : false
   enable_data_aug: true
-  no_data_aug_epoch: 10
+  no_data_aug_epoch: 15
   start_epoch: 0
-  calculate_map_every : 200
+  calculate_map_every : 100
   num_anchors: 9
   resnet_layers: 
     - 3
@@ -57,6 +58,7 @@ train_hyp:
   enable_tensorboard: true
   log_identifier: 'retinanet_debug'
   random_seed: 7
+  model_type: 'resnet50'
 
 warmup_hyp:
   do_warmup: true
@@ -87,15 +89,15 @@ data_hyp:
   data_aug_fliplr_p: 0.5
   data_aug_flipud_p: 0.0
   data_aug_fill_value: 114
-  data_aug_mosaic_p: 0.3  # weak data augumentation for small dataset
+  data_aug_mosaic_p: 0.5  # weak data augumentation for small dataset
   data_aug_cutout_p: 1.0
   data_aug_cutout_iou_thr: 0.3
   data_aug_scale_jitting_p: 0.0
 
 nms_hyp:
-  conf_threshold: 0.2
+  conf_threshold: 0.3
   iou_threshold: 0.2
-  cls_threshold: 0.2
+  cls_threshold: 0.3
   max_predictions_per_img : 300
   min_prediction_box_wh : 2
   max_prediction_box_wh : 4096
@@ -103,7 +105,7 @@ nms_hyp:
   infer_img_save_path: ~
   mutil_label: false
   agnostic : true
-  postprocess_bbox : false
+  postprocess_bbox : true
   wfb : false  # use NMS or Weighted Fusion Bbox
   wfb_weights: 
   - 1
@@ -113,9 +115,14 @@ nms_hyp:
   wfb_skip_box_threshold : 0.001
 
 val_hyp:
-  save_gt_bbox: false  # 计算map后，是否保存gt
-  save_pred_bbox: false  # 计算map后，是否将预测结果保存
+  save_img: true
+  show_gt_bbox: true
+  save_gt_bbox: true  # 计算map后，是否保存gt
+  save_pred_bbox: true  # 计算map后，是否将预测结果保存
   half: false  # 是否使用半精度（float16）进行预测
-  compute_metric_conf_threshold: 0.001
-  compute_metric_iou_threshold: 0.65
-  compute_metric_cls_threshold: 0.001 
+  # compute_metric_conf_threshold: 0.001
+  # compute_metric_iou_threshold: 0.65
+  # compute_metric_cls_threshold: 0.001 
+  compute_metric_conf_threshold: 0.2
+  compute_metric_iou_threshold: 0.3
+  compute_metric_cls_threshold: 0.3

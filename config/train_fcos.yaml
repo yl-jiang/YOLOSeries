@@ -12,12 +12,12 @@ loss_hyp:
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "/E/JYL/Datasets/VOC/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "/E/JYL/Datasets/VOC/train/lab"  # 存放训练label的文件夹路径
-  name_path: "/E/JYL/Datasets/VOC/train/names.txt"
+  train_img_dir: "../../Dataset/COCO/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "../../Dataset/COCO/train/lab"  # 存放训练label的文件夹路径
+  name_path: "../../Dataset/COCO/train/names.txt"
   test_img_dir: "./result/coco_test_imgs"  # for test
-  val_img_dir: "/E/JYL/Datasets/VOC/val/img"  # validation image dir
-  val_lab_dir: "/E/JYL/Datasets/VOC/val/lab"  # validation label dir 
+  val_img_dir: "../../Dataset/COCO/val/img"  # validation image dir
+  val_lab_dir: "../../Dataset/COCO/val/lab"  # validation label dir
   aspect_ratio: false  
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
@@ -26,42 +26,42 @@ train_hyp:
     - 512
     - 512
   batch_size: 64
-  drop_last: true  # Pytorch DataLoader中的参数
-  pin_memory: true  # Pytorch DataLoader中的参数
+  drop_last: true  # DataLoader
+  pin_memory: True  # DataLoader
   random_seed: 7
-  shuffle: true  # Pytorch DataLoader中的参数
-  num_workers: 0  # Pytorch DataLoader中的参数
+  shuffle: true  # DataLoader
+  num_workers: 0  # DataLoader
   start_epoch: 0
   total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
-  accumulate_loss_step: 64  # 累积梯度下降
-  do_ema: true  # 是否维持一个Everage Moving Model
-  validation_every: 5  # 每隔多少个epoch validate一次
-  show_tbar_every: 2  # 每个多少个step显示实时训练状态信息
-  use_tta: false  # validation时是否使用TTA
-  mutil_scale_training: false  # 是否使用多尺度训练
-  calculate_map_every: 50  # 每个多少个epoch计算一次map
+  accumulate_loss_step: 128  # 累积梯度下降
+  do_ema: true
+  validation_every: 0.001  # 每隔多少个epoch validate一次
+  use_tta: true  # validation时是否使用TTA
+  mutil_scale_training: false 
+  calculate_map_every: 299  # 每个多少个epoch计算一次map
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
-  save_log_every: 2
-  model_type: 'small'  # 使用模型类型
-  use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
-  no_data_aug_epoch: 10
+  model_type: 'small'
+  use_auxiliary_classifier: false 
   enable_tensorboard: true
-  use_iou_as_tar_cof: true
-  log_identifier: 'v7_debug'
+  log_identifier: 'debug'
+  save_log_every: 2
+  no_data_aug_epoch: 10
+  object_sizes_of_interest:
+    
 
 optimizer_hyp:
   scheduler_type: 'linear'
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
-  basic_lr_per_img: 0.003125
-  weight_decay: 0.00001
-  momentum: 0.99
-  lr_max_ds_scale: 0.0001
+  basic_lr_per_img: 0.00625
+  weight_decay: 0.0001
+  momentum: 0.9
+  lr_max_ds_scale: 0.001
 
 warm_up:
   do_warmup: true  # 是否开启预热训练
   warmup_epoch: 3
-  warmup_bias_max_lr: 0.1
+  warmup_bias_max_lr: 0.1  # warmup 期间bias部分参数可以取到的最大lr(warmup_bias_max_lr >= hyp['lr'])
   warmup_momentum: 0.8
 
 data_hyp:
@@ -70,18 +70,18 @@ data_hyp:
   data_aug_shear: 0.0
   data_aug_translate: 0.1
   data_aug_degree: 0.0
-  data_aug_prespective: 0.0
+  data_aug_prespective: 0.0005  # should not big
   data_aug_hsv_p: 1.0
   data_aug_hsv_hgain: 0.015
   data_aug_hsv_sgain: 0.7
   data_aug_hsv_vgain: 0.4
-  data_aug_mixup_p: 0.0
-  data_aug_fliplr_p: 0.5
+  data_aug_mixup_p: 0.3
+  data_aug_fliplr_p: 0.3
   data_aug_flipud_p: 0.0
-  data_aug_fill_value: 128
+  data_aug_fill_value: 114
   data_aug_mosaic_p: 1.0
-  data_aug_cutout_p: 1.0
-  data_aug_cutout_iou_thr: 0.3  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）
+  data_aug_cutout_p: 0.1
+  data_aug_cutout_iou_thr: 0.5  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）
   data_aug_scale_jitting_p: 0.0
 
 nms_hyp:

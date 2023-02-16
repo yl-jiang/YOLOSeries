@@ -33,14 +33,13 @@ import torch.distributed as dist
 import gc
 
 
-class Training:
+class RetinanetEvaluate:
 
-    def __init__(self, anchors, hyp):
+    def __init__(self, hyp):
         configure_omp()
         configure_nccl()
 
         # parameters
-        self.anchors = anchors
         self.hyp = hyp
         self.select_device()
 
@@ -95,15 +94,9 @@ class Training:
         # update hyper parameters
         self.hyp['num_class'] = self.val_dataset.num_class
 
-        # anchor
-        if isinstance(self.anchors, (list, tuple)):
-            self.anchors = torch.tensor(self.anchors)  # (3, 3, 2)
-        self.anchors = self.anchors.to(self.device)
-        anchor_num_per_stage = self.anchors.size(0)  # 3
-
         # model
         torch.cuda.set_device(self.local_rank)
-        model = self.select_model(anchor_num_per_stage, self.val_dataset.num_class)
+        model = self.select_model(self.hyp['num_anchors'], self.hyp["num_class"], self.hyp["resnet_layers"], freeze_bn=self.hyp['freeze_bn'])
         model = model.to(self.device)
 
         # EMA
@@ -199,23 +192,26 @@ class Training:
                 else:
                     if "model_state_dict" not in state_dict:
                         print(f"can't load pretrained model from {model_path}")
-    
                     else:  # load pretrained model
-                        self.model.load_state_dict(state_dict["model_state_dict"])
-                        print(f"use pretrained model {model_path}")
+                        try:
+                            self.model.load_state_dict(state_dict["model_state_dict"])
+                        except Exception as err:
+                            self.model = None
+                            print(f"can't load pretrained model from {model_path}")
+                        else:
+                            print(f"use pretrained model {model_path}")
 
-                    if self.ema_model is not None and "ema" in state_dict:  # load EMA model
-                        self.ema_model.ema.load_state_dict(state_dict['ema'])
-                        print(f"use pretrained EMA model from {model_path}")
-                    else:
-                        print(f"can't load EMA model from {model_path}")
-
-                    if self.ema_model is not None and 'ema_update_num' in state_dict:
-                        self.ema_model.update_num = state_dict['ema_update_num']
+                    if self.model is not None and self.ema_model is not None and "ema" in state_dict:  # load EMA model
+                        try:
+                            self.model.load_state_dict(state_dict['ema'])
+                        except Exception as err:
+                            self.ema_model.eam = None
+                            print(f"can't load EMA model from {model_path}")
+                        else:
+                            self.ema_model.ema = self.model
+                            print(f"use pretrained EMA model from {model_path}")
 
                     del state_dict
-        else:
-            print('training from stratch!')
         
     def gt_bbox_postprocess(self, anns, infoes):
         """
@@ -273,7 +269,7 @@ class Training:
         pred_bboxes, pred_classes, pred_confidences, pred_labels, gt_bboxes, gt_classes = [], [], [], [], [], []
         iters_num = len(self.val_dataloader)
 
-        if self.hyp['do_ema']:
+        if self.hyp['do_ema'] and self.ema_model.eam is not None:
             eval_model = self.ema_model.ema
         else:
             eval_model = self.model
@@ -282,7 +278,7 @@ class Training:
 
         with adjust_status(eval_model, training=False) as m:
             # validater
-            validater = Evaluate(m, self.anchors, self.hyp, compute_metric=True)
+            validater = Evaluate(m, self.hyp, compute_metric=True)
 
             for i in range(iters_num):
                 t1 = time_synchronize()
@@ -377,12 +373,11 @@ def main(x):
     config_ = Config()
     class Args:
         def __init__(self) -> None:
-            self.cfg = "./config/train_yolov5.yaml"
+            self.cfg = "./config/train_retinanet.yaml"
     args = Args()
 
-    anchors = torch.tensor([[[10, 13], [16, 30], [33, 23]], [[30, 61], [62, 45], [59, 119]], [[116, 90], [156, 198], [373, 326]]])
     hyp = config_.get_config(args.cfg, args)
-    train = Training(anchors, hyp)
+    train = RetinanetEvaluate(hyp)
     train.step()
 
 

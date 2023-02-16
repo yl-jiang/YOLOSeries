@@ -8,7 +8,7 @@ __all__ = ['freeze_bn', 'fuse_conv_bn', 'Concat', 'autopad', 'ConvBnAct', 'Basic
            'Focus', 'SPP', 'FastSPP', 'CSPCSPP', 'RepConv', 'ImplicitAdd', 'ImplicitMul', 
            'Upsample', 'Detect', 'DepthWiseConvBnAct', 'DepthWiseBasicBottleneck', 'DepthWiseBottleneckCSP', 
            'DepthWiseC3BottleneckCSP', 'BasicBlock', 'Bottleneck', 'ResNet', 'resnet50', 'RetinaNetRegression', 
-           'RetinaNetClassification', 'RetinaNetPyramidFeatures', 'ELANBlock']
+           'RetinaNetClassification', 'RetinaNetPyramidFeatures', 'ELANBlock', 'Scale']
 
 def freeze_bn(m):
     """
@@ -53,6 +53,13 @@ def fuse_conv_bn(conv_layer, bn_layer):
     return fuseconv
 
 
+class Scale(nn.Module):
+    def __init__(self, init_value=1.0):
+        super(Scale, self).__init__()
+        self.scale = nn.Parameter(torch.FloatTensor([init_value]))
+
+    def forward(self, input):
+        return input * self.scale
 
 class Concat(nn.Module):
 
@@ -735,7 +742,17 @@ class RetinaNetClassification(nn.Module):
         self.output = nn.Conv2d(inner_channels, num_anchor * num_class, 3, 1, 1)
 
         self.relu = nn.ReLU(inplace=True)
+        self._init_bias()
         # self.sigmoid = nn.Sigmoid()
+
+    def _init_bias(self):
+        # initialize the bias for focal loss
+        prior_prob = 0.01
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                if m.bias is not None:
+                    torch.nn.init.constant_(m.bias, bias_value)
 
     def forward(self, x):
         out = self.relu(self.conv1(x))
