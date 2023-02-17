@@ -28,15 +28,15 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from contextlib import nullcontext
 
 from config import Config
-from loss import RetinaNetLossExperiment as loss_fnc
-from trainer import RetinaNetEvaluatorExperiment as Evaluate
+from loss import FCOSLoss as loss_fnc
+from trainer import FCOSEvaluator as Evaluate
 from utils import cv2_save_img
 from utils import maybe_mkdir, clear_dir
 from trainer import ExponentialMovingAverageModel
 from utils import time_synchronize, summary_model
 from dataset import build_dataloader, build_test_dataloader
 from utils import mAP_v2
-from models import RetinaNetExperiment as RetinaNet
+from models import FCOSBaseline
 
 from utils import (configure_nccl, configure_omp, get_local_rank, print_config, 
                    get_rank, get_world_size, occupy_mem, padding, MeterBuffer, 
@@ -109,7 +109,7 @@ class Training:
 
     @property
     def select_model(self):
-        return RetinaNet
+        return FCOSBaseline
 
     def _init_logger(self):
         # clear_dir(str(self.cwd / 'log'))  # 再写入log文件前先清空log文件夹
@@ -177,7 +177,7 @@ class Training:
 
         # model
         torch.cuda.set_device(self.local_rank)
-        model = self.select_model(self.hyp['num_anchors'], self.hyp["num_class"], self.hyp["resnet_layers"], freeze_bn=self.hyp['freeze_bn'])
+        model = self.select_model(self.hyp["num_class"], self.hyp["resnet_layers"], freeze_bn=self.hyp['freeze_bn'])
         ModelSummary(model, 
                      input_size=(1, 3, self.hyp['input_img_size'][0], 
                      self.hyp['input_img_size'][1]), 
@@ -258,6 +258,7 @@ class Training:
         torch.cuda.empty_cache()
         gc.collect()
         
+
         if self.rank == 0 and cur_epoch == 1:
             self.update_tbar()
         if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
@@ -301,8 +302,8 @@ class Training:
                 my_context = self.model.no_sync if self.is_distributed and step_in_epoch % self.accumulate != 0 else nullcontext
                 with my_context():
                     with amp.autocast(enabled=self.use_cuda):
-                        pred_reg, pred_cls = self.model(img)
-                        loss_dict = self.loss_fcn(img, pred_reg, pred_cls, ann)
+                        cls_fms, reg_fms, ctr_fms = self.model(img)
+                        loss_dict = self.loss_fcn(cls_fms, reg_fms, ctr_fms, ann)
                         loss_dict['tot_loss'] *= get_world_size()
 
                 tot_loss = loss_dict['tot_loss']
@@ -314,8 +315,8 @@ class Training:
 
                 # optimize
                 if step_in_epoch % self.accumulate == 0:
-                    self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                    # self.scaler.unscale_(self.optimizer)
+                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()
@@ -340,7 +341,7 @@ class Training:
                 if self.hyp['scheduler_type'].lower() == "onecycle":
                     self.lr_scheduler.step()  # 因为self.accumulate会从1开始增长, 因此第一次执行训练时self.optimizer.step()一定会在self.lr_scheduler.step()之前被执行
                 
-                del x, img, ann, tot_loss, pred_cls, pred_reg, loss_dict
+                del x, img, ann, tot_loss, stage_preds, loss_dict
 
                 if self.rank == 0 and self.tbar is not None:
                     self.tbar.update()
@@ -376,7 +377,7 @@ class Training:
         
     def update_tbar(self, tbar=None):
         if self.rank == 0:
-            tags = ("cur_epoch", "tot_loss", "cof_loss", "l1_loss", "cls_loss", "tar_nums", "input_dim", "lr"     , "map50"  , "iter_time")
+            tags = ("cur_epoch", "tot_loss", "reg_loss", "cen_loss", "cls_loss", "tar_nums", "input_dim", "lr"     , "map50"  , "iter_time")
             fmts = ("^10d"     , "^13.3f"  , "^12.3f"  , "^12.3f"  , "^12.3f"  , "^12d"    , "^12d"     , "^13.3e" , "^10.1f" , "^12.1f"   )
             if tbar is None:
                 head_fmt = ("%10s", "%11s", "%11s", "%12s", "%12s", "%13s", "%12s", "%9s", "%13s", "%13s")
@@ -388,7 +389,7 @@ class Training:
                     tbar.set_description_str(tbar_msg.format(**tbar_dct))
 
     def update_logger(self, step_in_total):
-        tags = ('percentage', "tot_loss", "cof_loss", 'l1_loss'  , 'cls_loss'  , "accumulate", "iter_time", 'data_time', "lr"  , "cur_epoch", "step_in_epoch", "batch_size", "input_dim", "allo_mem", "cach_mem")
+        tags = ('percentage', "tot_loss", "reg_loss", 'cen_loss'  , 'cls_loss'  , "accumulate", "iter_time", 'data_time', "lr"  , "cur_epoch", "step_in_epoch", "batch_size", "input_dim", "allo_mem", "cach_mem")
         fmts = ('3.2%'      , '5.3f'    , '5.3f'    , '>5.3f'     , '>5.3f'     , '>02d'      , '5.3f'     , '5.3f'     , '5.3e', '>04d'     , '>05d'    , '>02d'      , '>03d'     , '5.3f'    ,  '5.3f')
         if step_in_total % self.hyp['save_log_every'] == 0:
             log_msg, show_dict = self.tag2msg(tags, fmts, True)
@@ -523,10 +524,11 @@ class Training:
                 targets[:, :, :4] *= scale
         return imgs, targets
 
-    def load_model(self, map_location='cpu', only_model=True):
+    def load_model(self, map_location='cpu'):
         """
         load pretrained model, EMA model, optimizer(注意: __init_weights()方法并不适用于所有数据集)
         """
+        # self._init_bias()
         if self.hyp.get("pretrained_model_path", None):
             model_path = self.hyp["pretrained_model_path"]
             if Path(model_path).exists():
@@ -545,7 +547,7 @@ class Training:
                         self.logger.info(f"load pretraned model -> model: {model_path}")
                         print(f"use pretrained model {model_path}")
 
-                    if not only_model and "optim_state_dict" in state_dict and state_dict.get("optim_type", None) == self.hyp['optimizer']:  # load optimizer
+                    if "optim_state_dict" in state_dict and state_dict.get("optim_type", None) == self.hyp['optimizer']:  # load optimizer
                         self.optimizer.load_state_dict(state_dict['optim_state_dict'])
                         self.logger.info(f"load pretraned model -> optimizer: {model_path}")
                         print(f"use pretrained optimizer {model_path}")
@@ -560,11 +562,11 @@ class Training:
                     if self.ema_model is not None and 'ema_update_num' in state_dict:
                         self.ema_model.update_num = state_dict['ema_update_num']
 
-                    if not only_model and self.start_epoch is None and 'epoch' in state_dict:
+                    if self.start_epoch is None and 'epoch' in state_dict:
                         self.start_epoch = state_dict['epoch'] + 1
                         self.logger.info(f'traing start epoch: {self.start_epoch}')
 
-                    if not only_model and 'lr_scheduler_state_dict' in state_dict:
+                    if 'lr_scheduler_state_dict' in state_dict:
                         self.lr_scheduler.load_state_dict(state_dict['lr_scheduler_state_dict'])
                         self.logger.info(f'load lr_scheduler from: {model_path}')
                         print(f'load lr_scheduler from: {model_path}')
@@ -585,7 +587,7 @@ class Training:
             step_in_epoch = self.meter.get_filtered_meter('step_in_epoch')['step_in_epoch'].latest
         if self.rank == 0 and step_in_epoch % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
             if filename is None:
-                save_path = str(self.cwd / 'checkpoints' / f'retinanet_epoch_{cur_epoch}.pth')  
+                save_path = str(self.cwd / 'checkpoints' / f'yolov5_{self.hyp["model_type"]}_epoch_{cur_epoch}.pth')  
             else:
                 save_path = str(self.cwd / 'checkpoints' / f'{filename}.pth')          
             if not Path(save_path).exists():
@@ -674,7 +676,7 @@ class Training:
 
             with adjust_status(eval_model, training=False) as m:
                 # validater
-                validater = Evaluate(m, self.hyp, compute_metric=True)
+                validater = Evaluate(m, self.hyp, True)
 
                 for _ in range(iters_num):
                     if self.use_cuda:
@@ -750,7 +752,7 @@ class Training:
             
     def test(self, step_in_epoch):
         # testing
-        if step_in_epoch % int(self.hyp.get('validation_every', 1.0) * len(self.train_dataloader)) == 0:
+        if step_in_epoch % int(self.hyp.get('validation_every', 0.5) * len(self.train_dataloader)) == 0:
             torch.cuda.empty_cache()
             all_reduce_norm(self.model)  # 该函数只对batchnorm和instancenorm有效
             if self.hyp['do_ema']:
@@ -793,7 +795,7 @@ def main(x):
     config_ = Config()
     class Args:
         def __init__(self) -> None:
-            self.cfg = "./config/train_retinanet.yaml"
+            self.cfg = "./config/train_yolov5.yaml"
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)

@@ -2,13 +2,12 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  iou_loss_scale: 0.05  # 回归损失（bbox损失）权重
-  cls_loss_scale: 0.5  # 分类损失权重
-  cof_loss_scale: 1.0  # 置信度损失权重
-  anchor_match_thr: 4.0  # 该参数用于过滤预测框与标签框之间匹配的阈值
+  reg_loss_weight: 1  # 回归损失（bbox损失）权重
+  cls_loss_weight: 1  # 分类损失权重
+  cen_loss_weight: 1  # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 
-  cof_pos_weight: 1.0  # 
+  cen_pos_weight: 1.0  # 
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
@@ -41,14 +40,16 @@ train_hyp:
   mutil_scale_training: false 
   calculate_map_every: 299  # 每个多少个epoch计算一次map
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
-  model_type: 'small'
+  model_type: 'normal'
   use_auxiliary_classifier: false 
   enable_tensorboard: true
-  log_identifier: 'debug'
+  log_identifier: 'fcos_debug'
   save_log_every: 2
   no_data_aug_epoch: 10
   object_sizes_of_interest:
-    
+  center_sampling_radius: 1.5
+  iou_type: 'giou'
+
 
 optimizer_hyp:
   scheduler_type: 'linear'
@@ -85,8 +86,8 @@ data_hyp:
   data_aug_scale_jitting_p: 0.0
 
 nms_hyp:
+  pre_nms_cls_thresh: 0.2
   iou_threshold: 0.2
-  conf_threshold: 0.3
   cls_threshold: 0.3
   max_predictions_per_img: 300
   min_prediction_box_wh: 2
@@ -105,6 +106,7 @@ nms_hyp:
   wfb_skip_box_threshold: 0.001
 
 val_hyp:
+  save_img: true
   save_gt_bbox: false  # 计算map后，是否保存gt
   save_pred_bbox: false  # 计算map后，是否将预测结果保存
   half: false  # 是否使用半精度（float16）进行预测

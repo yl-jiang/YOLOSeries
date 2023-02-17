@@ -27,6 +27,7 @@ class FCOSHead(nn.Module):
         self.ctr_out_layer = nn.Conv2d(in_channels, 1, 3, 1, 1)
 
         self.scales = nn.ModuleList([Scale(init_value=1.0) for _ in range(5)])
+        self._init_weights()
 
     def _init_weights(self):
         for l in self.modules():
@@ -42,7 +43,7 @@ class FCOSHead(nn.Module):
     def forward(self, x):
         """
         Inputs:
-            x: list of fpn features:
+            x: list of backbone features:
                 # fpn_features_1: (b, 256, h/8, w/8);
                 # fpn_features_2: (b, 256, h/16, w/16);
                 # fpn_features_3: (b, 256, h/32, w/32);
@@ -92,6 +93,16 @@ class FCOSBaseline(nn.Module):
         if freeze_bn:  # only do this for training
             self._freeze_bn()
 
+    def _init_weights(self):
+        # initialization
+        for modules in [self.cls_tower, self.bbox_tower,
+                        self.cls_logits, self.bbox_pred,
+                        self.centerness]:
+            for l in modules.modules():
+                if isinstance(l, nn.Conv2d):
+                    torch.nn.init.normal_(l.weight, std=0.01)
+                    torch.nn.init.constant_(l.bias, 0)
+
     def _freeze_bn(self):
         """
         https://discuss.pytorch.org/t/how-to-freeze-bn-layers-while-training-the-rest-of-network-mean-and-var-wont-freeze/89736/12
@@ -117,12 +128,12 @@ class FCOSBaseline(nn.Module):
         # fpn_features_5: (b, 256, h/128, w/128);
         fpn_features = self.fpn((c3, c4, c5))
 
-        # cls_fms: [(b, num_class, h/8, w/8), (b, num_class, h/16, w/16), (b, num_class, h/32, w/32), (b, num_class, h/64, w/64), (b, num_class, h/128, w/128)]
+        # cls_fms: [(b, num_class, h/8, w/8), (b, num_class, h/16, w/16), (b, num_class, h/32, w/32), (b, num_class, h/64, w/64), (b, num_class, h/128, w/128)] / [l, t, r, b]
         # reg_fms: [(b, 4, h/8, w/8), (b, 4, h/16, w/16), (b, 4, h/32, w/32), (b, 4, h/64, w/64), (b, 4, h/128, w/128)]
-        # ctr_fms: [(b, 1, h/8, w/8), (b, 1, h/16, w/16), (b, 1, h/32, w/32), (b, 1, h/64, w/64), (b, 4, h/128, w/128)]
-        cls_fms, reg_fms, ctr_fms = self.head(fpn_features)
+        # cen_fms: [(b, 1, h/8, w/8), (b, 1, h/16, w/16), (b, 1, h/32, w/32), (b, 1, h/64, w/64), (b, 4, h/128, w/128)]
+        cls_fms, reg_fms, cen_fms = self.head(fpn_features)
 
-        return cls_fms, reg_fms, ctr_fms
+        return cls_fms, reg_fms, cen_fms
 
 
 if __name__ == '__main__':

@@ -254,35 +254,6 @@ class Training:
         del param_group_weight, param_group_bias, param_group_other
         return optimizer
 
-    def _init_bias(self):
-        """
-        初始化模型参数, 主要是对detection layers的bias参数进行特殊初始化, 参考RetinaNet那篇论文, 这种初始化方法可让网络较容易度过前期训练困难阶段
-        (使用该初始化方法可能针对coco数据集有效, 在对global wheat数据集的测试中, 该方法根本train不起来)
-        """
-        for m in self.model.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                # if m.bias is not None:
-                #     nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.BatchNorm2d):
-                m.eps = 1e-3
-                m.momentum = 0.03
-            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6)):
-                m.inplace = True
-
-    def before_epoch(self, cur_epoch):
-        torch.cuda.empty_cache()
-        gc.collect()
-        
-        if self.rank == 0 and cur_epoch == 1:
-            self.update_tbar()
-        if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
-            self.train_dataloader.close_data_aug()
-            self.logger.info("--->No mosaic aug now!")
-            self.save_model(cur_epoch, filename="last_mosaic_epoch")
-            self.no_data_aug = True
-
-    def step(self):
         self.model.zero_grad()
         tot_loss_before = float('inf')
         one_epoch_iters = len(self.train_dataloader)
@@ -543,7 +514,6 @@ class Training:
         """
         load pretrained model, EMA model, optimizer(注意: __init_weights()方法并不适用于所有数据集)
         """
-        self._init_bias()
         if self.hyp.get("pretrained_model_path", None):
             model_path = self.hyp["pretrained_model_path"]
             if Path(model_path).exists():

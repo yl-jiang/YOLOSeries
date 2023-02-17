@@ -278,46 +278,6 @@ class Training:
         del param_group_weight, param_group_bias, param_group_other
         return optimizer
 
-    def _init_bias(self):
-        """
-        初始化模型参数, 主要是对detection layers的bias参数进行特殊初始化, 参考RetinaNet那篇论文, 这种初始化方法可让网络较容易度过前期训练困难阶段
-        (使用该初始化方法可能针对coco数据集有效, 在对global wheat数据集的测试中, 该方法根本train不起来)
-        """
-        for m in self.model.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.BatchNorm2d):
-                m.eps = 1e-3
-                m.momentum = 0.03
-            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6)):
-                m.inplace = True
-
-        detect_layer = [self.model.detect.detect_small,
-                        self.model.detect.detect_mid,
-                        self.model.detect.detect_large]
-
-        input_img_shape = 128
-        stage_outputs = self.model(torch.zeros(1, 3, input_img_shape, input_img_shape, device=self.hyp['device']).float())
-        strides = torch.tensor([input_img_shape / x.size(2) for x in stage_outputs])
-        class_frequency = None  # 各类别占整个数据集的比例
-        for m, stride in zip(detect_layer, strides):
-            bias = m.bias.view(self.model.num_anchor, -1)  # (255,) -> (3, 85)
-            with torch.no_grad():
-                bias[:, 4] += math.log(8 / (self.hyp['input_img_size'][0] / stride) ** 2)
-                if class_frequency is None:
-                    bias[:, 5:] += math.log(0.6 / (self.model.num_class - 0.99))  # cls
-                else:
-                    # 类别较多的那一类给予较大的对应bias值, 类别较少的那些类给予较小的bias。
-                    # 这样做的目的是为了解决类别不平衡问题, 因为这种初始化方式只在分类层进行, 会使得网络在进行分类预测时, 预测到类别较少的那一类case较为容易（因为对应的bias较小, 容易在预测这些类别时给出较大的预测值）
-                    # 使用这种初始化方式的好处主要是为了解决数据类别不平衡问题造成的早期训练不稳定情况。
-                    # 注：这种初始化方法只针对二分类（因为多分类不能针对各个class给予不同的bias）
-                    assert isinstance(class_frequency, torch.Tensor), f"class_frequency should be a tensor but we got {type(class_frequency)}"
-                    bias[:, 5:] += torch.log(class_frequency / class_frequency.sum())
-                m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
-        del stage_outputs
-
     def before_epoch(self, cur_epoch):
         torch.cuda.empty_cache()
         gc.collect()
@@ -592,7 +552,6 @@ class Training:
         """
         load pretrained model, EMA model, optimizer(注意: __init_weights()方法并不适用于所有数据集)
         """
-        # self._init_bias()
         if self.hyp.get("pretrained_model_path", None):
             model_path = self.hyp["pretrained_model_path"]
             if Path(model_path).exists():

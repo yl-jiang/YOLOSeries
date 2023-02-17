@@ -628,8 +628,8 @@ class ResNet(nn.Module):
             self.fc = nn.Linear(in_features=self.inplane_upd, out_features=num_class)
 
         # initialization
-        # self._initialize(self)
-        # self._initialize_last_bn(self)
+        self._initialize(self)
+        self._initialize_last_bn(self)
 
     def _initialize(self, modules):
         """
@@ -743,7 +743,6 @@ class RetinaNetClassification(nn.Module):
 
         self.relu = nn.ReLU(inplace=True)
         self._init_bias()
-        # self.sigmoid = nn.Sigmoid()
 
     def _init_bias(self):
         # initialize the bias for focal loss
@@ -760,14 +759,12 @@ class RetinaNetClassification(nn.Module):
         out = self.relu(self.conv3(out))
         out = self.relu(self.conv4(out))
         out = self.output(out)
-        # out = self.sigmoid(self.output(out))
-        # print(f'cls: {out.shape}')
         # (b, 80x9, h, w)
         b, c, h, w = out.size()
         # (b, h, w, 720)
         out = out.permute(0, 2, 3, 1)
         # (b, hxwx9, 80)
-        out = torch.reshape(out, shape=(b, -1, self.num_class))
+        out = torch.reshape(out, shape=(b, -1, self.num_class)).contiguous()
         return out
 
 

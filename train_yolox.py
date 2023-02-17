@@ -264,32 +264,6 @@ class Training:
         del param_group_weight, param_group_bias, param_group_other
         return optimizer
 
-    def _init_bias(self, p):
-        """
-        初始化模型参数, 主要是对detection layers的bias参数进行特殊初始化, 参考RetinaNet那篇论文, 这种初始化方法可让网络较容易度过前期训练困难阶段
-        (使用该初始化方法可能针对coco数据集有效, 在对global wheat数据集的测试中, 该方法根本train不起来)
-        """
-        cls_layer = [self.model.detect.pred_small['cls'],
-                     self.model.detect.pred_middle['cls'],
-                     self.model.detect.pred_large['cls']]
-
-        reg_layer = [self.model.detect.pred_small['reg'],
-                     self.model.detect.pred_middle['reg'],
-                     self.model.detect.pred_large['reg']]
-        
-        for layer in cls_layer:
-            for m in layer:
-                if isinstance(m, nn.Conv2d):
-                    bias = m.bias.view(self.hyp['num_anchors'], -1) 
-                    bias.data.fill_(-math.log((1-p) / p))
-                    m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
-
-        for m in reg_layer:
-            if isinstance(m, nn.Conv2d):
-                bias = m.bias.view(self.hyp['num_anchors'], -1) 
-                bias.data.fill_(-math.log((1-p) / p))
-                m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
-
     def before_epoch(self, cur_epoch):
         torch.cuda.empty_cache()
         gc.collect()

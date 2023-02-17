@@ -6,19 +6,17 @@ from utils import xywh2xyxy
 from collections import defaultdict
 from utils import weighted_fusion_bbox
 
-__all__ = ['YOLOV7Evaluator']
-class YOLOV7Evaluator:
+__all__ = ['FCOSEvaluator']
 
-    def __init__(self, yolo, anchors, hyp, compute_metric=False):
-        self.yolo = yolo
+class FCOSEvaluator:
+
+    def __init__(self, model, hyp, compute_metric=False):
+        self.model = model
         self.hyp = hyp
         self.device = hyp['device']
         self.num_class = hyp['num_class']
-        self.anchor_num = anchors.size(1)
-        self.anchors = anchors
-        self.num_stage = len(anchors)
-        self.grid = [torch.zeros(1)] * self.num_stage
-        self.ds_scales = [8, 16, 32]  # 这个下采样尺度只适用于yolov5s, yolov5m, yolov5l, yolov5x
+        self.grid = [torch.zeros(1)] * 5
+        self.ds_scales = [8, 16, 32, 64, 128]
         self.inp_h, self.inp_w = hyp['input_img_size']
         self.use_tta = hyp['use_tta']
         self.grid_coords = [self.make_grid(self.inp_h//s, self.inp_w//s).float() for s in self.ds_scales]
@@ -97,7 +95,7 @@ class YOLOV7Evaluator:
         :param preds_out: (batch_size, X, 85)
         :return: list / [(X, 6), ..., None, (Y, 6), None, ..., (Z, 6), ...]
         """
-        obj_conf_mask = preds_out[:, :, 4] >= self.conf_threshold
+        obj_conf_mask = preds_out[:, :, 4] > self.conf_threshold
         outputs = []
         for i in range(preds_out.size(0)):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
@@ -108,7 +106,7 @@ class YOLOV7Evaluator:
             # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
             box = xywh2xyxy(x[:, :4])
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] >= self.cls_threshold).nonzero(as_tuple=True)
+                row_idx, col_idx = (x[:, 5:] > self.cls_threshold).nonzero(as_tuple=True)
                 # x: [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = torch.cat((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].float()), dim=1)
             else:
@@ -182,30 +180,42 @@ class YOLOV7Evaluator:
     def do_inference(self, inputs):
         preds_out = []
         input_img_h, input_img_w = inputs.size(2), inputs.size(3)
-        # [(bs, anchor_num, h/8, w/8, 80), (bs, anchor_num, h/16, w/16, 80), (bs, anchor_num, h/32, w/32, 80)]
-        stage_preds = self.yolo(inputs)
+        # cls_fms: [(b, num_class, h/8, w/8), (b, num_class, h/16, w/16), (b, num_class, h/32, w/32), (b, num_class, h/64, w/64), (b, num_class, h/128, w/128)]
+        # reg_fms: [(b, 4, h/8, w/8), (b, 4, h/16, w/16), (b, 4, h/32, w/32), (b, 4, h/64, w/64), (b, 4, h/128, w/128)]
+        # cen_fms: [(b, 1, h/8, w/8), (b, 1, h/16, w/16), (b, 1, h/32, w/32), (b, 1, h/64, w/64), (b, 4, h/128, w/128)]
+        cls_fms, reg_fms, cen_fms = self.model(inputs)
         batch_size = inputs.size(0)
-        keys = list(stage_preds.keys())
-        for i in range(len(stage_preds)):
-            cur_preds = stage_preds[keys[i]]
-            fm_h, fm_w = cur_preds.size(2), cur_preds.size(3)
-            # stage_anchor: (3, 2) -> (1, 3, 1, 1, 2)
-            stage_anchor = (self.anchors[i] / self.ds_scales[i])[None, :, None, None, :].contiguous().type_as(inputs)
-            # cur_preds: (bn, 3, h, w, 85) / [center_x, center_y, w, h, cofidence, c1, c2, c3, ...]
-            cur_preds = cur_preds.sigmoid()
+
+        # (1, 1, 1, 4)
+        sig = (inputs.new_tensor([-1, -1, 1, 1])[None, None, None]).contiguous()
+        for i in range(len(cls_fms)):  # feature level
+            level_i_stride = self.ds_scales[i]
+            level_i_pred_cls = cls_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, num_class)
+            level_i_pred_reg = reg_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, 4) / [l, t, r, b]
+            level_i_pred_cen = cen_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, 1)
+            level_i_pred_cls = torch.sigmoid(level_i_pred_cls)
+            level_i_pred_cen = torch.sigmoid(level_i_pred_cen)
+            fm_h, fm_w = level_i_pred_cls.size(1), level_i_pred_cls.size(2)
+            
             # grid_coords: (1, 1, h, w, 2) / 可以优化grid_coords的创建方式
             if input_img_h == self.inp_h and input_img_w == self.inp_w:
-                grid_coords = self.grid_coords[i].type_as(inputs)
+                level_i_grid_map = self.grid_coords[i].type_as(inputs)
             else:
-                grid_coords = self.make_grid(fm_h, fm_w).type_as(inputs)
+                level_i_grid_map = self.make_grid(fm_h, fm_w).type_as(inputs)
+            level_i_grid_map *= level_i_stride
+            
+            # [x-l, y-t, x+r, y+b] -> [xmin, ymin, xmax, ymax] / (b, h, w, 4)
+            level_i_box = level_i_pred_cls * sig + level_i_pred_reg  # (b, h, w, 4)
+            level_i_box = (level_i_box).reshape(batch_size, -1, 4).contiguous()  # (b, h*w, 4)
 
-            # (bn, 3, h, w, 2) & (1, 1, h, w, 2) -> (bn, 3, h, w, 2)
-            cur_preds[..., [0, 1]] = (cur_preds[..., [0, 1]] * 2 - 0.5 + grid_coords) * self.ds_scales[i]
-            # (bn, 3, h, w, 2) & (1, 3, 1, 1, 2) -> (bn, 3, h, w, 2)
-            cur_preds[..., [2, 3]] = (cur_preds[..., [2, 3]] * 2) ** 2 * stage_anchor * self.ds_scales[i]
-            # [(bs, 20*20*3, 85), (bs, 40*40*3, 85), (bs, 80*80*3, 85)]
-            preds_out.append(cur_preds.reshape(batch_size, -1, self.num_class+5).contiguous())
-        # (bs, (20*20+40*40+80*80)*3, 85)
+            level_i_cls = level_i_pred_cls.reshape(batch_size, -1, self.hyp['num_class']).contiguous()  # (b, h*w, num_class)
+            level_i_cen = level_i_pred_cen.reshape(batch_size, -1, 1).contiguous()  # (b, h*w, 1)
+
+            # [xmin, ymin, xmax, ymax, centerness, cls1, cls2, cls3, ...] / (b, h*w, 85)
+            preds_out.append(torch.cat((level_i_box, level_i_cen, level_i_cls), dim=-1).contiguous())
+
+        # [(b, h/8 * w/8, 85), (b, h/16 * w/16, 85), (b, h/32 * w/32, 85), (b, h/64 * w/64, 85), (b, h/128 * w/128, 85)]
+        # (bs, h/8 * w/8 + h/16 * w/16 + h/32 * w32 + h/64 * w/64 + h/128 * w/128, 85)
         return torch.cat(preds_out, dim=1).contiguous()
 
     @staticmethod
@@ -261,29 +271,31 @@ class YOLOV7Evaluator:
     def numba_nms(self, preds_out):
         """
         do NMS with numba
+        Inputs: 
+            preds_out: (b, N, 85) / [xmin, ymin, xmax, ymax, centerness, cls1, cls2, cls3, ...]
         """
         preds_out = preds_out.float().cpu().numpy()
-        obj_conf_mask = preds_out[:, :, 4] >= self.conf_threshold
+        obj_conf_mask = (preds_out[:, :, 5] >= self.hyp['pre_nms_cls_thresh']).any(dim=1)  # (b, N)
         outputs = []
         for i in range(preds_out.shape[0]):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
             if len(x) == 0:
                 outputs.append(None)
                 continue
-            x[:, 5:] *= x[:, 4:5]  # conf = cls_conf * obj_conf
-            # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
-            box = numba_xywh2xyxy(x[:, :4])
+            x[:, 5:] *= x[:, 4:5]  # cls_prob = cls * cen
+            # [xmin, ymin, xmax, ymax]
+            box = x[:, :4]
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] >= self.cls_threshold).nonzero()
-                # x: [xmin, ymin, xmax, ymax, conf, cls_id]
+                row_idx, col_idx = (x[:, 5:] > self.cls_threshold).nonzero()
+                # x: [xmin, ymin, xmax, ymax, cls_prob, cls_id]
                 x = np.concatenate((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].astype(np.float32)), axis=1)
             else:
-                cls_conf = x[:, 5:].max(axis=1)[:, None]
+                cls_prob = x[:, 5:].max(axis=1)[:, None]
                 col_idx = x[:, 5:].argmax(axis=1)[:, None]
-                # [xmin, ymin, xmax, ymax, conf, cls_id]
-                x = np.concatenate((box, cls_conf, col_idx.astype(np.float32)), axis=1)
-                cls_conf_mask = np.ascontiguousarray(cls_conf.reshape(-1)) > self.cls_threshold
-                x = x[cls_conf_mask]
+                # [xmin, ymin, xmax, ymax, cls_prob, cls_id]
+                x = np.concatenate((box, cls_prob, col_idx.astype(np.float32)), axis=1)
+                cls_mask = np.ascontiguousarray(cls_prob.reshape(-1)) >= self.cls_threshold
+                x = x[cls_mask]
 
             bbox_num = x.shape[0]
             if not bbox_num:
@@ -304,7 +316,7 @@ class YOLOV7Evaluator:
 
             # 对每个bbox进行调优(每个最终输出的bbox都由与其iou大于iou threshold的一些bbox共同merge得到的)
             if self.hyp['postprocess_bbox']:
-                if 1 < bbox_num < 3000:
+                if 1 < bbox_num <= 300:
                     iou = numba_iou(bboxes_offseted[keep_index], bboxes_offseted)  # (N, M)
                     iou_mask = iou > self.iou_threshold  # (N, M)
                     weights = iou_mask * scores[None, :]  # (N, M)

@@ -12,12 +12,12 @@ loss_hyp:
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "/E/JYL/Datasets/VOC/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "/E/JYL/Datasets/VOC/train/lab"  # 存放训练label的文件夹路径
-  name_path: "/E/JYL/Datasets/VOC/train/names.txt"
+  train_img_dir: "/E/JYL/Datasets/COCO/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/E/JYL/Datasets/COCO/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/E/JYL/Datasets/COCO/train/names.txt"
   test_img_dir: "./result/coco_test_imgs"  # for test
-  val_img_dir: "/E/JYL/Datasets/VOC/val/img"  # validation image dir
-  val_lab_dir: "/E/JYL/Datasets/VOC/val/lab"  # validation label dir 
+  val_img_dir: "/E/JYL/Datasets/COCO/val/img"  # validation image dir
+  val_lab_dir: "/E/JYL/Datasets/COCO/val/lab"  # validation label dir 
   aspect_ratio: false  
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比

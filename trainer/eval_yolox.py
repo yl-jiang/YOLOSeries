@@ -98,7 +98,7 @@ class YOLOXEvaluator:
         :param preds_out: (batch_size, X, 85)
         :return: list / [(X, 6), ..., None, (Y, 6), None, ..., (Z, 6), ...]
         """
-        obj_conf_mask = preds_out[:, :, 4] > self.conf_threshold
+        obj_conf_mask = preds_out[:, :, 4] >= self.conf_threshold
         outputs = []
         for i in range(preds_out.size(0)):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
@@ -109,7 +109,7 @@ class YOLOXEvaluator:
             # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
             box = xywh2xyxy(x[:, :4])
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] > self.cls_threshold).nonzero(as_tuple=True)
+                row_idx, col_idx = (x[:, 5:] >= self.cls_threshold).nonzero(as_tuple=True)
                 # x: [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = torch.cat((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].float()), dim=1)
             else:
@@ -264,7 +264,7 @@ class YOLOXEvaluator:
         do NMS with numba
         """
         preds_out = preds_out.float().cpu().numpy()
-        obj_conf_mask = preds_out[:, :, 4] > self.conf_threshold
+        obj_conf_mask = preds_out[:, :, 4] >= self.conf_threshold
         outputs = []
         for i in range(preds_out.shape[0]):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
@@ -275,7 +275,7 @@ class YOLOXEvaluator:
             # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
             box = numba_xywh2xyxy(x[:, :4])
             if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] > self.cls_threshold).nonzero()
+                row_idx, col_idx = (x[:, 5:] >= self.cls_threshold).nonzero()
                 # x: [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = np.concatenate((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].astype(np.float32)), axis=1)
             else:
