@@ -33,7 +33,8 @@ class FCOSHead(nn.Module):
         for l in self.modules():
             if isinstance(l, nn.Conv2d):
                 torch.nn.init.normal_(l.weight, std=0.01)
-                torch.nn.init.constant_(l.bias, 0)
+                if l.bias is not None:
+                    torch.nn.init.constant_(l.bias, 0)
 
         # initialize the bias for focal loss
         prior_prob = 0.01
@@ -65,8 +66,7 @@ class FCOSHead(nn.Module):
 
             # https://github.com/aim-uofa/AdelaiDet/blob/4a3a1f7372c35b48ebf5f6adc59f135a0fa28d60/adet/modeling/fcos/fcos.py#L231
             reg = self.reg_out_layer(reg_f)
-            if self.scales is not None:
-                reg = F.relu(self.scales[l](reg))
+            reg = F.relu(self.scales[l](reg))
             reg_fms.append(reg)
 
         return cls_fms, reg_fms, ctr_fms
@@ -101,7 +101,8 @@ class FCOSBaseline(nn.Module):
             for l in modules.modules():
                 if isinstance(l, nn.Conv2d):
                     torch.nn.init.normal_(l.weight, std=0.01)
-                    torch.nn.init.constant_(l.bias, 0)
+                    if l.bias is not None:
+                        torch.nn.init.constant_(l.bias, 0)
 
     def _freeze_bn(self):
         """

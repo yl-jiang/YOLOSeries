@@ -99,9 +99,9 @@ class FCOSLoss:
             stage_reg_loss, stage_cls_loss, stage_cen_loss = [], [], []
             grid = self.grids[s]  # (h, w, 2)
             for b in range(batch_size):  # each image
-                pred_cls = cls_fms[s, b]  # (num_class, h, w)
-                pred_reg = reg_fms[s, b]  # (4, h, w)
-                pred_cen = cen_fms[s, b]  # (1, h, w)
+                pred_cls = cls_fms[s][b]  # (num_class, h, w)
+                pred_reg = reg_fms[s][b]  # (4, h, w)
+                pred_cen = cen_fms[s][b]  # (1, h, w)
                 tar_box = targets[b, targets[b, :, 4] >= 0, :4]  # (n, 4)
                 tar_cls = targets[b, targets[b, :, 4] >= 0, 4]  # (n,)
                 stride = self.strides[s]
@@ -112,29 +112,29 @@ class FCOSLoss:
                 
                 # --------------------------------------------------------------------------------- classification loss
                 tmp_pred_cls = pred_cls.permute(1, 2, 0)  # (h, w, num_class)
-                tmp_pred_cls[~pos_idx] = 0
+                tmp_pred_cen = pred_cen.permute(1, 2, 0) # (h, w, 1)
+                tmp_pred_reg = pred_reg.permute(1, 2, 0)  # (h, w, 4)
                 tmp_tars_cls = torch.zeros_like(tmp_pred_cls)  # (h, w, num_class)
-                tmp_tars_cls[pos_idx] = F.one_hot(cls_tar.long(), self.hyp['num_class'])
-                cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
-                focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
-                stage_cls_loss.append((cls_loss * focal).mean())
-
                 if pos_num > 0:
                     # --------------------------------------------------------------------------------- centerness loss
-                    tmp_pred_cen = pred_cen.permute(1, 2, 0) # (h, w, 1)
-                    tmp_pred_cen[~pos_idx] = 0
                     tmp_tars_cen = torch.zeros_like(tmp_pred_cen)
-                    tmp_tars_cen[pos_idx] = cen_tar
-                    cen_loss = self.bce_cen(tmp_pred_cen, tmp_tars_cen)
-                    stage_cen_loss.append(cen_loss)
-
+                    tmp_tars_cen[pos_idx] = cen_tar.unsqueeze(dim=-1).type_as(tmp_pred_cen)
+                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)))
                     # --------------------------------------------------------------------------------- regression loss
-                    tmp_pred_reg = pred_reg.permute(1, 2, 0)  # (h, w, 4)
-                    reg_loss = self.compute_iou_loss(tmp_pred_reg[pos_idx], reg_tar)
-                    stage_reg_loss.append(reg_loss)
+                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[pos_idx], reg_tar))
+                    # --------------------------------------------------------------------------------- classification loss
+                    tmp_tars_cls[pos_idx] = F.one_hot(cls_tar.long(), self.hyp['num_class']).type_as(tmp_tars_cls)
+                    focal = self.focal_loss_factor(tmp_pred_cls[pos_idx].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[pos_idx].float().reshape(-1, self.hyp['num_class'])) 
+                    cls_loss_pos = self.bce_cls(tmp_pred_cls[pos_idx].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[pos_idx].float().reshape(-1, self.hyp['num_class']))
+                    cls_loss_neg = self.bce_cls(tmp_pred_cls[~pos_idx].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[~pos_idx].float().reshape(-1, self.hyp['num_class']))
+                    cls_loss = (cls_loss_pos * focal).sum() + cls_loss_neg.sum()
+                    stage_cls_loss.append(cls_loss / pos_num)
                 else:
-                    stage_cen_loss.append(pred_cen.new_tensor(0.))
-                    stage_reg_loss.append(pred_reg.new_tensor(0.))
+                    stage_reg_loss.append(tmp_pred_reg.sum())
+                    stage_cen_loss.append(tmp_pred_cen.sigmoid().sum())
+                    cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
+                    stage_cls_loss.append(cls_loss.sum() / tar_box.size(0))
+
 
             tot_cen_loss.append(torch.stack(stage_cen_loss, dim=0).mean())
             tot_cls_loss.append(torch.stack(stage_cls_loss, dim=0).mean())
@@ -147,9 +147,9 @@ class FCOSLoss:
         
         return {'tot_loss': tot_loss, 
                 'cen_loss': (torch.stack(tot_cen_loss, dim=0).mean() * self.hyp['cen_loss_weight']).detach().item(), 
-                'cls_loss': (torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight']).detach().iten(), 
+                'cls_loss': (torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight']).detach().item(), 
                 'reg_loss': (torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']).detach().item(), 
-                'tar_num': target_num}
+                'tar_nums': target_num}
             
 
 
@@ -168,7 +168,7 @@ class FCOSLoss:
             cen_tar: (m,)
             pos_num: m
         """
-        g = grid.repeat(1, 1, 1, 2)  # (h, w, 1, 4) / [x, y, x, y]
+        g = grid.repeat(1, 1, 2)[:, :, None, :]  # (h, w, 1, 4) / [x, y, x, y]
         g[..., 2] *= -1
         g[..., 3] *= -1  # [x, y, -x, -y]
         g *= stride
@@ -181,34 +181,39 @@ class FCOSLoss:
         # (h, w, 1, 4) & (1, 1, n, 4) -> (h, w, n, 4)
         reg_targets = g + tar[None, None]  # [x-xmin, y-ymin, xmax-x, ymax-y] / [l, b, r, t]
         is_in_tar_boxes = (reg_targets > 0).all(dim=-1)  # (h, w, n)
+        reg_targets[~is_in_tar_boxes] = 0
+
+        # tar_box_xywh = xyxy2xywh(tar_box)
+        # tar_box_area = torch.prod(tar_box_xywh[:, [2, 3]], dim=-1)
+        # min_area, min_area_i = tar_box_area.min(dim=0)
+        # min_box = tar_box[min_area_i]
+        # location匹配的gt个数总和一定不小于gt总数?
+        # assert is_in_tar_boxes.sum() >= tar_box.size(0), f"stride={stride}; feature map size={list(g.shape[:2])}; min target box area={min_area}; minimul target box: {min_box.tolist()}; grid range={g.abs().min().detach().item(), g.abs().max().detach().item()}"
 
         # center sampling
         if self.hyp['do_center_sampling']:
             is_in_tar_boxes = self.center_sampling(grid, tar_box, stride)  # (h, w, n)
+        # location匹配的gt个数总和一定不小于gt总数
+        # assert is_in_tar_boxes.sum() >= tar_box.size(0), f"is_in_tar_boxes.sum()={is_in_tar_boxes.sum()}, tar_box.size(0)={tar_box.size(0)}"
 
         # filter target box by the maximum corrdinate that feature level i needs to regress
-        max_reg_tar = reg_targets.max(dim=-1)[0]  # (h, w)
-        is_cared_in_the_level = (max_reg_tar >= reg_obj_size[0]) & (max_reg_tar <= reg_obj_size[1])  # (h, w)
-
-        # matching matrix
-        match_matrix = torch.zeros_like(is_in_tar_boxes)  # (h, w, n)
-        match_matrix[is_in_tar_boxes] = 1
-        match_matrix[is_cared_in_the_level] = 0
-        assert match_matrix.sum() >= tar_box.size(0)  # location匹配的gt个数总和一定不小于gt总数
+        reg_targets[~is_in_tar_boxes] = float('inf')
+        max_reg_tar = reg_targets.max(dim=-1)[0]  # (h, w, n)
+        is_cared_in_the_level = (max_reg_tar >= reg_obj_size[0]) & (max_reg_tar <= reg_obj_size[1])  # (h, w, n)
+        is_in_tar_boxes[~is_cared_in_the_level] = False
 
         # make sure each positive location match no more than one target box
-        match_matrix = self.select_unique_by_tar_box_area(tar_box, match_matrix)
-        assert (match_matrix.sum(dim=-1) >= 2).sum() == 0, f"each location should match no more than one target!"
+        if is_in_tar_boxes.sum() > 0:
+            is_in_tar_boxes = self.select_unique_by_tar_box_area(tar_box, is_in_tar_boxes)
+            assert (is_in_tar_boxes.sum(dim=-1) >= 2).sum() == 0, f"each location should match no more than one target!{is_in_tar_boxes.sum(dim=-1).shape}\n{(is_in_tar_boxes.sum(dim=-1) >= 2).sum()}"
 
         # ------------------------------------------------------------------------------ build targets
-        positive_samples_num = match_matrix.sum()
+        positive_samples_num = is_in_tar_boxes.sum()
         if positive_samples_num > 0: 
-            # reg_tars_out = torch.zeros_like(reg_targets)
-            # reg_tars_out[match_matrix] = reg_targets[match_matrix]
-            reg_tars_out = reg_targets[match_matrix.to(torch.bool)]  # (m, 4) / [l, b, r, t]
+            reg_tars_out = reg_targets[is_in_tar_boxes]  # (m, 4) / [l, b, r, t]
 
-            positive_location_idx = match_matrix.any(dim=-1)  # (h, w)
-            positive_samples = match_matrix[positive_location_idx]  # (m, n)
+            positive_location_idx = is_in_tar_boxes.any(dim=-1)  # (h, w)
+            positive_samples = is_in_tar_boxes[positive_location_idx]  # (m, n)
             assert reg_tars_out.size(0) == positive_samples.size(0), f"positive locations in regression and classification targets number should be the same, but got {reg_tars_out.size(0)} v.s {cls_tars_out.size(0)}"
             positive_samples_tar_cls_idx = positive_samples.max(dim=-1)[1]  # (m,)
             cls_tars_out = tar_cls[positive_samples_tar_cls_idx]
@@ -225,7 +230,7 @@ class FCOSLoss:
     def center_sampling(self, grid, tar_box, stride):
         """
         Inputs:
-            grid: (h, w, 2)
+            grid: (h, w, 2) 
             tar_box: (n, 4) / [xmin, ymin, xmax, ymax]
             stride: int
         Ouputs:
@@ -235,54 +240,62 @@ class FCOSLoss:
         tar_xywh = xyxy2xywh(tar_box)  # (n, 4) / [ctr_x, ctr_y, w, h]
         tar_ctr_box = torch.zeros_like(tar_xywh)
         tar_ctr_box[:, 0] = tar_xywh[:, 0] - self.radius * stride  # xmin
-        tar_ctr_box[:, 1] = tar_xywh[:, 0] + self.radius * stride  # xmax
-        tar_ctr_box[:, 2] = tar_xywh[:, 1] - self.radius * stride  # ymin
+        tar_ctr_box[:, 1] = tar_xywh[:, 1] - self.radius * stride  # ymin
+        tar_ctr_box[:, 2] = tar_xywh[:, 0] + self.radius * stride  # xmax
         tar_ctr_box[:, 3] = tar_xywh[:, 1] + self.radius * stride  # ymax
 
-        g = grid.repeat(1, 1, 1, 2)  # (h, w, 1, 4) / [x, y, x, y]
+        tar_ctr_box[:, 0] = torch.where(tar_ctr_box[:, 0] > tar_box[:, 0], tar_ctr_box[:, 0], tar_box[:, 0])
+        tar_ctr_box[:, 1] = torch.where(tar_ctr_box[:, 1] > tar_box[:, 1], tar_ctr_box[:, 1], tar_box[:, 1])
+        tar_ctr_box[:, 2] = torch.where(tar_ctr_box[:, 2] < tar_box[:, 2], tar_ctr_box[:, 2], tar_box[:, 2])
+        tar_ctr_box[:, 3] = torch.where(tar_ctr_box[:, 3] < tar_box[:, 3], tar_ctr_box[:, 3], tar_box[:, 3])
+
+        tar_ctr_box[:, 0] *= -1
+        tar_ctr_box[:, 1] *= -1
+
+        g = grid.repeat(1, 1, 2)[:, :, None, :]  # (h, w, 1, 4) / [x, y, x, y]
         g[..., 2] *= -1
         g[..., 3] *= -1  # [x, y, -x, -y]
         g *= stride
 
         # (h, w, 1, 4) & (1, 1, n, 4) -> (h, w, n, 4)
+        # [-xmin, -ymin, xmax, ymax] & [x, y, -x, -y]
         indicator = g + tar_ctr_box[None, None]  # [x-xmin, y-ymin, xmax-x, ymax-y]
         is_in_tar = (indicator > 0).all(dim=-1)  # (h, w, n)
         return is_in_tar
 
-    def select_unique_by_tar_box_area(self, tar_box, match_matrix):
+    def select_unique_by_tar_box_area(self, tar_box, matrix):
         """
         if there are still more than one objects for a location, we choose the one with minimal area
         Inputs:
             tar_box: (n, 4) / [xmin, ymin, xmax, ymax]
-            match_matrix: (h, w, n) / n is the number of gt
+            matrix: (h, w, n) / n is the number of gt
         """
-        assert torch.unique(match_matrix) == 2
-        matrix = match_matrix.to(torch.bool)
+        assert len(torch.unique(matrix)) <= 2, f"unique match matrix={torch.unique(matrix)}"
 
-        valid_locations = torch.any(matrix, dim=-1)  # (h, w)
         tar_xywh = xyxy2xywh(tar_box)
         tar_box_area = torch.prod(tar_xywh[:, [2, 3]], dim=-1)  # (n,)
         tar_box_area = tar_box_area.repeat(matrix.size(0), matrix.size(1), 1)  # (h, w, n)
-        tar_box_area[~matrix] = 0.0
-        min_idx = torch.min(tar_box_area, dim=-1)[1]
+        tar_box_area[~matrix] = float('inf')
+        min_idx = torch.min(tar_box_area, dim=-1)[1]  # (h, w)
+        min_idx = F.one_hot(min_idx, tar_box.size(0)).to(torch.bool)
+        min_idx[~matrix] = False
         location2gt_mask = torch.zeros_like(tar_box_area, dtype=torch.bool)
         location2gt_mask[min_idx] = True  # (h, w, n)
-        location2gt_mask[~valid_locations] = False 
 
         # 确保每个location都最多只有一个gt与之对应
-        assert location2gt_mask.sum() == valid_locations.sum()
+        assert location2gt_mask.sum() == torch.any(matrix, dim=-1).sum()
         return location2gt_mask
 
     def get_regression_range_of_each_level(self, num_level):
         # [[-1, 64], [64, 128], [128, 256], [256, 512], [512, INF]]
         object_sizes_of_interest = []
         for i in range(1, num_level+1):
-            if i == 0:
-                rg = [-1, 2**(3 + i)]
+            if i == 1:
+                rg = [-1, 2**(5 + i)]
             elif i == num_level:
-                rg = [2**(3+i), float('inf')]
+                rg = [2**(5+i-1), float('inf')]
             else:
-                rg = [2**(3+(i-1)), 2**(3+i)]
+                rg = [2**(5+(i-1)), 2**(5+i)]
             object_sizes_of_interest.append(rg)
         return object_sizes_of_interest
 

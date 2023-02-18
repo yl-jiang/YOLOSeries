@@ -192,7 +192,7 @@ class Training:
 
         # ddp
         if self.is_distributed:
-            model = DDP(model, device_ids=[self.local_rank], broadcast_buffers=False)
+            model = DDP(model, device_ids=[self.local_rank], broadcast_buffers=False, find_unused_parameters=False)
 
         # loss
         self.loss_fcn = loss_fnc(self.hyp)
@@ -310,8 +310,9 @@ class Training:
 
                 # backward
                 self.scaler.scale(tot_loss).backward()
+
                 end_iter_t = time_synchronize()
-                loss_dict.update({'tot_loss': tot_loss.detach().item()})
+                loss_dict.update({'tot_loss': tot_loss.detach().item() / get_world_size()})
 
                 # optimize
                 if step_in_epoch % self.accumulate == 0:
@@ -341,7 +342,7 @@ class Training:
                 if self.hyp['scheduler_type'].lower() == "onecycle":
                     self.lr_scheduler.step()  # 因为self.accumulate会从1开始增长, 因此第一次执行训练时self.optimizer.step()一定会在self.lr_scheduler.step()之前被执行
                 
-                del x, img, ann, tot_loss, stage_preds, loss_dict
+                del x, img, ann, tot_loss, loss_dict
 
                 if self.rank == 0 and self.tbar is not None:
                     self.tbar.update()
@@ -795,7 +796,7 @@ def main(x):
     config_ = Config()
     class Args:
         def __init__(self) -> None:
-            self.cfg = "./config/train_yolov5.yaml"
+            self.cfg = "./config/train_fcos.yaml"
     args = Args()
 
     hyp = config_.get_config(args.cfg, args)
