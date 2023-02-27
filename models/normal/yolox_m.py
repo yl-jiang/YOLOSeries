@@ -142,11 +142,12 @@ class Detect(nn.Module):
 
 class YOLOXMiddle(nn.Module):
 
-    def __init__(self, num_anchors=1, in_channel=3, num_classes=80):
+    def __init__(self, num_anchors=1, in_channel=3, num_classes=80, prior_prob=0.01):
         super().__init__()
         self.neck = MiddleYOLOXBackboneAndNeck(in_channel)
         self.detect = Detect(num_anchors=num_anchors, in_channels=[192, 384, 768], mid_channel=192, wid_mul=1.0, num_classes=num_classes)
         self.num_anchor = num_anchors
+        self._init_bias(prior_prob)
 
     def _init_bias(self, p):
         """

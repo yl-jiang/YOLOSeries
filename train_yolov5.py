@@ -151,7 +151,8 @@ class Training:
 
     def _init_scheduler(self):
         if self.hyp['scheduler_type'].lower() == "onecycle":   # onecycle lr scheduler
-            scheduler = lr_scheduler.OneCycleLR(self.optimizer, max_lr=0.01, epochs=self.hyp['total_epoch'], steps_per_epoch=len(self.train_dataloader), three_phase=True)
+            one_cycle_lr = lambda epoch: ((1.0 - math.cos(epoch * math.pi / self.hyp['total_epoch'])) / 2) * (self.hyp['lr_max_ds_scale'] - 1.0) + 1.0
+            scheduler = lr_scheduler.LambdaLR(self.optimizer, lr_lambda=one_cycle_lr)
         elif self.hyp['scheduler_type'].lower() == 'linear':  # linear lr scheduler
             lr_max_ds_scale = self.hyp['lr_max_ds_scale']
             linear_lr = lambda epoch: (1 - epoch / (self.hyp['total_epoch'] - 1)) * (1. - lr_max_ds_scale) + lr_max_ds_scale  # lr_bias越大lr的下降速度越慢,整个epoch跑完最后的lr值也越大
@@ -361,18 +362,12 @@ class Training:
                 self.test(step_in_total)
                 self.calculate_metric(step_in_total)
 
-                # onecycle scheduler需要在iter尺度update
-                if self.hyp['scheduler_type'].lower() == "onecycle":
-                    self.lr_scheduler.step()  # 因为self.accumulate会从1开始增长, 因此第一次执行训练时self.optimizer.step()一定会在self.lr_scheduler.step()之前被执行
-                
                 del x, img, ann, tot_loss, stage_preds, loss_dict
 
                 if self.rank == 0 and self.tbar is not None:
                     self.tbar.update()
 
-            # 其余scheduler在epoch尺度update
-            if self.hyp['scheduler_type'].lower() != "onecycle":
-                self.lr_scheduler.step()
+            self.lr_scheduler.step()
             epoch_time = time_synchronize() - start_epoch_t
             self.logger.info(f'\n\n{"-" * 600}\n')
 

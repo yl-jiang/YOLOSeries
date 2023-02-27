@@ -137,7 +137,7 @@ class YOLOV7Loss:
                 cof_factor = torch.ones_like(t_cof)
             # endregion ====================================== compute loss ======================================
 
-            # 所有样本均参与置信度损失的计算 / 在3中loss中confidence loss是最为重要的
+            # 所有样本均参与置信度损失的计算 / 在3种loss中confidence loss是最为重要的
             cof_loss_tmp = (self.bce_cof(preds[..., 4], t_cof) * cof_factor).mean()
             cof_loss_tmp *= self.balances[i]
             self.balances[i] = self.balances[i] * 0.9999 + 0.0001 / cof_loss_tmp.detach().item()

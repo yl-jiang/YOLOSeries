@@ -429,7 +429,7 @@ class YOLOV7Baseline(nn.Module):
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.BatchNorm2d):
                 m.eps = 1e-3
-                m.momentum = 0.03
+                m.momentum = 0.05
             elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6)):
                 m.inplace = True
 

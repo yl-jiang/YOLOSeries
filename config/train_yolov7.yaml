@@ -1,10 +1,10 @@
 loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
-  focal_loss_gamma: 1.5 # focal loss参数
+  focal_loss_gamma: 0.0 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
   iou_loss_scale: 0.05  # 回归损失（bbox损失）权重
-  cls_loss_scale: 0.5  # 分类损失权重
-  cof_loss_scale: 1.0  # 置信度损失权重
+  cls_loss_scale: 0.3  # 分类损失权重
+  cof_loss_scale: 0.7  # 置信度损失权重
   anchor_match_thr: 4.0  # 该参数用于过滤预测框与标签框之间匹配的阈值
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 
@@ -36,14 +36,14 @@ train_hyp:
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
   accumulate_loss_step: 64  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
-  validation_every: 5  # 每隔多少个epoch validate一次
+  validation_every: 1  # 每隔多少个epoch validate一次
   show_tbar_every: 2  # 每个多少个step显示实时训练状态信息
   use_tta: false  # validation时是否使用TTA
   mutil_scale_training: false  # 是否使用多尺度训练
-  calculate_map_every: 50  # 每个多少个epoch计算一次map
-  save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
+  calculate_map_every: 200  # 每个多少个epoch计算一次map
+  save_ckpt_every: 2  # 每隔多少个epoch保存一次模型
   save_log_every: 2
-  model_type: 'small'  # 使用模型类型
+  model_type: 'middle'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   no_data_aug_epoch: 10
   enable_tensorboard: true
@@ -51,12 +51,12 @@ train_hyp:
   log_identifier: 'v7_debug'
 
 optimizer_hyp:
-  scheduler_type: 'linear'
+  scheduler_type: 'onecycle'
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
   basic_lr_per_img: 0.003125
-  weight_decay: 0.00001
-  momentum: 0.99
-  lr_max_ds_scale: 0.0001
+  weight_decay: 0.0005
+  momentum: 0.937
+  lr_max_ds_scale: 0.1
 
 warm_up:
   do_warmup: true  # 是否开启预热训练
@@ -66,16 +66,16 @@ warm_up:
 
 data_hyp:
   data_aug_prespective_p: 1.0
-  data_aug_scale: 0.5
+  data_aug_scale: 0.9
   data_aug_shear: 0.0
-  data_aug_translate: 0.1
+  data_aug_translate: 0.2
   data_aug_degree: 0.0
   data_aug_prespective: 0.0
   data_aug_hsv_p: 1.0
   data_aug_hsv_hgain: 0.015
   data_aug_hsv_sgain: 0.7
   data_aug_hsv_vgain: 0.4
-  data_aug_mixup_p: 0.0
+  data_aug_mixup_p: 0.15
   data_aug_fliplr_p: 0.5
   data_aug_flipud_p: 0.0
   data_aug_fill_value: 128
@@ -85,9 +85,9 @@ data_hyp:
   data_aug_scale_jitting_p: 0.0
 
 nms_hyp:
-  iou_threshold: 0.2
-  conf_threshold: 0.3
-  cls_threshold: 0.3
+  iou_threshold: 0.3
+  conf_threshold: 0.2
+  cls_threshold: 0.2
   max_predictions_per_img: 300
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096
