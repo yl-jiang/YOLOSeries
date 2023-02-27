@@ -53,7 +53,7 @@ train_hyp:
 optimizer_hyp:
   scheduler_type: 'onecycle'
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
-  basic_lr_per_img: 0.003125
+  basic_lr_per_img: 0.003125  # 0.1 / 32 = 0.003125
   weight_decay: 0.0005
   momentum: 0.937
   lr_max_ds_scale: 0.1

@@ -62,7 +62,7 @@ warmup_hyp:
 optimizer_hyp:
   scheduler_type: 'linear'
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']中的一种
-  basic_lr_per_img: 0.003125
+  basic_lr_per_img: 0.003125 # 0.1 / 32
   weight_decay: 0.00001
   momentum: 0.98
   lr_max_ds_scale: 0.0001

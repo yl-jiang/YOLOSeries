@@ -82,10 +82,10 @@ class YOLOXLoss:
         tot_loss = (tot_iou_loss + tot_cls_loss + tot_cof_loss + tot_l1_reg_loss) * batch_size
 
         loss_dict = {'tot_loss'  : tot_loss, 
-                    'iou_loss'   : tot_iou_loss.detach().item()    * self.iou_loss_scale * batch_size, 
-                    'l1_reg_loss': tot_l1_reg_loss.detach().item() * self.l1_loss_scale  * batch_size, 
-                    'cls_loss'   : tot_cls_loss.detach().item()    * self.cls_loss_scale * batch_size, 
-                    'cof_loss'   : tot_cof_loss.detach().item()    * self.cof_loss_scale * batch_size, 
+                    'iou_loss'   : tot_iou_loss.detach().item()     * batch_size, 
+                    'l1_reg_loss': tot_l1_reg_loss.detach().item()  * batch_size, 
+                    'cls_loss'   : tot_cls_loss.detach().item()     * batch_size, 
+                    'cof_loss'   : tot_cof_loss.detach().item()     * batch_size, 
                     'fg_nums'    : tot_num_fg, 
                     'tar_nums'   : tot_num_gt}
 
