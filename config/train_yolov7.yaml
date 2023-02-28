@@ -1,6 +1,6 @@
 loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
-  focal_loss_gamma: 0.0 # focal loss参数
+  focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
   iou_loss_scale: 0.05  # 回归损失（bbox损失）权重
   cls_loss_scale: 0.3  # 分类损失权重
@@ -12,42 +12,42 @@ loss_hyp:
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "/E/JYL/Datasets/COCO/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "/E/JYL/Datasets/COCO/train/lab"  # 存放训练label的文件夹路径
-  name_path: "/E/JYL/Datasets/COCO/train/names.txt"
+  train_img_dir: "/E/JYL/Datasets/VOC/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/E/JYL/Datasets/VOC/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/E/JYL/Datasets/VOC/train/names.txt"
   test_img_dir: "./result/coco_test_imgs"  # for test
-  val_img_dir: "/E/JYL/Datasets/COCO/val/img"  # validation image dir
-  val_lab_dir: "/E/JYL/Datasets/COCO/val/lab"  # validation label dir 
+  val_img_dir: "/E/JYL/Datasets/VOC/val/img"  # validation image dir
+  val_lab_dir: "/E/JYL/Datasets/VOC/val/lab"  # validation label dir 
   aspect_ratio: false  
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 200000
   input_img_size:  # 输入训练网络的图片大小
-    - 512
-    - 512
-  batch_size: 64
+    - 640
+    - 640
+  batch_size: 32
   drop_last: true  # Pytorch DataLoader中的参数
   pin_memory: true  # Pytorch DataLoader中的参数
   random_seed: 7
   shuffle: true  # Pytorch DataLoader中的参数
   num_workers: 0  # Pytorch DataLoader中的参数
   start_epoch: 0
-  total_epoch: 300
+  total_epoch: 100
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
-  accumulate_loss_step: 64  # 累积梯度下降
+  accumulate_loss_step: 128  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
   validation_every: 1  # 每隔多少个epoch validate一次
   show_tbar_every: 2  # 每个多少个step显示实时训练状态信息
-  use_tta: false  # validation时是否使用TTA
+  use_tta: true  # validation时是否使用TTA
   mutil_scale_training: false  # 是否使用多尺度训练
   calculate_map_every: 200  # 每个多少个epoch计算一次map
-  save_ckpt_every: 2  # 每隔多少个epoch保存一次模型
-  save_log_every: 2
+  save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   model_type: 'middle'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   no_data_aug_epoch: 10
+  save_log_every: 2
   enable_tensorboard: true
-  use_iou_as_tar_cof: true
+  use_iou_as_tar_cof: false
   log_identifier: 'v7_debug'
 
 optimizer_hyp:
