@@ -275,7 +275,7 @@ class Training:
         if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
             self.train_dataloader.close_data_aug()
             self.logger.info("--->No mosaic aug now!")
-            self.save_model(cur_epoch, filename="last_mosaic_epoch")
+            self.save_model(cur_epoch, filename=f"yolox_{self.hyp['model_type']}_last_mosaic_epoch")
             self.no_data_aug = True
 
     def step(self):
@@ -344,7 +344,7 @@ class Training:
                 self.update_tbar(self.tbar)
                 self.update_summarywriter()
                 self.update_logger(step_in_total)
-                self.save_model(cur_epoch+1, step_in_epoch=step_in_epoch, loss_dict=loss_dict)
+                self.save_model(cur_epoch+1, step_in_total=step_in_total, loss_dict=loss_dict)
                 self.test(step_in_total)
                 self.calculate_metric(step_in_total)
 
@@ -587,10 +587,10 @@ class Training:
         
         self.logger.info(f"\n{'-' * 300}\n")
 
-    def save_model(self, cur_epoch, filename=None, step_in_epoch=None, loss_dict=None, save_optimizer=True):
-        if step_in_epoch is None:
-            step_in_epoch = self.meter.get_filtered_meter('step_in_epoch')['step_in_epoch'].latest
-        if self.rank == 0 and step_in_epoch % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
+    def save_model(self, cur_epoch, filename=None, step_in_total=None, loss_dict=None, save_optimizer=True):
+        if step_in_total is None:
+            step_in_total = self.meter.get_filtered_meter('step_in_total')['step_in_total'].latest
+        if self.rank == 0 and step_in_total % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
             if filename is None:
                 save_path = str(self.cwd / 'checkpoints' / f'yolox_{self.hyp["model_type"]}_epoch_{cur_epoch}.pth')  
             else:
@@ -607,7 +607,7 @@ class Training:
                 "lr_scheduler_state_dict": self.lr_scheduler.state_dict(),
                 "loss": loss_dict,
                 "epoch": cur_epoch,
-                "step": step_in_epoch, 
+                "step": step_in_total, 
                 "ema": self.ema_model.ema.state_dict() if self.hyp['do_ema'] else None, 
                 "ema_update_num": self.ema_model.update_num  if self.hyp['do_ema'] else 0, 
                 "hyp": self.hyp, 

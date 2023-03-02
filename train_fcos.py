@@ -133,7 +133,8 @@ class Training:
 
     def _init_scheduler(self):
         if self.hyp['scheduler_type'].lower() == "onecycle":   # onecycle lr scheduler
-            scheduler = lr_scheduler.OneCycleLR(self.optimizer, max_lr=0.01, epochs=self.hyp['total_epoch'], steps_per_epoch=len(self.train_dataloader), three_phase=True)
+            one_cycle_lr = lambda epoch: ((1.0 - math.cos(epoch * math.pi / self.hyp['total_epoch'])) / 2) * (self.hyp['lr_max_ds_scale'] - 1.0) + 1.0
+            scheduler = lr_scheduler.LambdaLR(self.optimizer, lr_lambda=one_cycle_lr)
         elif self.hyp['scheduler_type'].lower() == 'linear':  # linear lr scheduler
             lr_max_ds_scale = self.hyp['lr_max_ds_scale']
             linear_lr = lambda epoch: (1 - epoch / (self.hyp['total_epoch'] - 1)) * (1. - lr_max_ds_scale) + lr_max_ds_scale  # lr_bias越大lr的下降速度越慢,整个epoch跑完最后的lr值也越大
@@ -258,13 +259,12 @@ class Training:
         torch.cuda.empty_cache()
         gc.collect()
         
-
         if self.rank == 0 and cur_epoch == 1:
             self.update_tbar()
         if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
             self.train_dataloader.close_data_aug()
             self.logger.info("--->No mosaic aug now!")
-            self.save_model(cur_epoch, filename="last_mosaic_epoch")
+            self.save_model(cur_epoch, filename=f"fcos_{self.hyp['model_type']}_last_mosaic_epoch")
             self.no_data_aug = True
 
     def step(self):
@@ -334,22 +334,16 @@ class Training:
                 self.update_tbar(self.tbar)
                 self.update_summarywriter()
                 self.update_logger(step_in_total)
-                self.save_model(cur_epoch+1, step_in_epoch=step_in_epoch, loss_dict=loss_dict)
+                self.save_model(cur_epoch+1, step_in_total=step_in_total, loss_dict=loss_dict)
                 self.test(step_in_total)
                 self.calculate_metric(step_in_total)
 
-                # onecycle scheduler需要在iter尺度update
-                if self.hyp['scheduler_type'].lower() == "onecycle":
-                    self.lr_scheduler.step()  # 因为self.accumulate会从1开始增长, 因此第一次执行训练时self.optimizer.step()一定会在self.lr_scheduler.step()之前被执行
-                
                 del x, img, ann, tot_loss, loss_dict
 
                 if self.rank == 0 and self.tbar is not None:
                     self.tbar.update()
-
-            # 其余scheduler在epoch尺度update
-            if self.hyp['scheduler_type'].lower() != "onecycle":
-                self.lr_scheduler.step()
+           
+            self.lr_scheduler.step()
             epoch_time = time_synchronize() - start_epoch_t
             self.logger.info(f'\n\n{"-" * 600}\n')
 
@@ -583,12 +577,12 @@ class Training:
         
         self.logger.info(f"\n{'-' * 300}\n")
 
-    def save_model(self, cur_epoch, filename=None, step_in_epoch=None, loss_dict=None, save_optimizer=True):
-        if step_in_epoch is None:
-            step_in_epoch = self.meter.get_filtered_meter('step_in_epoch')['step_in_epoch'].latest
-        if self.rank == 0 and step_in_epoch % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
+    def save_model(self, cur_epoch, filename=None, step_in_total=None, loss_dict=None, save_optimizer=True):
+        if step_in_total is None:
+            step_in_total = self.meter.get_filtered_meter('step_in_total')['step_in_total'].latest
+        if self.rank == 0 and step_in_total % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
             if filename is None:
-                save_path = str(self.cwd / 'checkpoints' / f'yolov5_{self.hyp["model_type"]}_epoch_{cur_epoch}.pth')  
+                save_path = str(self.cwd / 'checkpoints' / f'fcos_{self.hyp["model_type"]}_epoch_{cur_epoch}.pth')  
             else:
                 save_path = str(self.cwd / 'checkpoints' / f'{filename}.pth')          
             if not Path(save_path).exists():
@@ -603,7 +597,7 @@ class Training:
                 "lr_scheduler_state_dict": self.lr_scheduler.state_dict(),
                 "loss": loss_dict,
                 "epoch": cur_epoch,
-                "step": step_in_epoch, 
+                "step": step_in_total, 
                 "ema": self.ema_model.ema.state_dict() if self.hyp['do_ema'] else None, 
                 "ema_update_num": self.ema_model.update_num  if self.hyp['do_ema'] else 0, 
                 "hyp": self.hyp, 
@@ -751,9 +745,9 @@ class Training:
             self.meter.update(mp=mp, map50=map50) 
             gc.collect()
             
-    def test(self, step_in_epoch):
+    def test(self, step_in_total):
         # testing
-        if step_in_epoch % int(self.hyp.get('validation_every', 0.5) * len(self.train_dataloader)) == 0:
+        if step_in_total % int(self.hyp.get('validation_every', 0.5) * len(self.train_dataloader)) == 0:
             torch.cuda.empty_cache()
             all_reduce_norm(self.model)  # 该函数只对batchnorm和instancenorm有效
             if self.hyp['do_ema']:

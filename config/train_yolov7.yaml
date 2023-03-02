@@ -78,7 +78,7 @@ data_hyp:
   data_aug_mixup_p: 0.15
   data_aug_fliplr_p: 0.5
   data_aug_flipud_p: 0.0
-  data_aug_fill_value: 128
+  data_aug_fill_value: 114
   data_aug_mosaic_p: 1.0
   data_aug_cutout_p: 1.0
   data_aug_cutout_iou_thr: 0.3  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）

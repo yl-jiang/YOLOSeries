@@ -2,9 +2,9 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  reg_loss_weight: 0.5  # 回归损失（bbox损失）权重
-  cls_loss_weight: 1  # 分类损失权重
-  cen_loss_weight: 1  # 置信度损失权重
+  reg_loss_weight: 0.05  # 回归损失（bbox损失）权重
+  cls_loss_weight: 0.3  # 分类损失权重
+  cen_loss_weight: 0.7  # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 
   cen_pos_weight: 1.0  # 
@@ -22,24 +22,24 @@ train_hyp:
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 200000
   input_img_size:  # 输入训练网络的图片大小
-    - 512
-    - 512
+    - 640
+    - 640
   resnet_layers: 
     - 3
     - 4
     - 6
     - 3
   freeze_bn: false
-  batch_size: 64
+  batch_size: 32
   drop_last: true  # DataLoader
   pin_memory: True  # DataLoader
   random_seed: 7
   shuffle: true  # DataLoader
   num_workers: 0  # DataLoader
   start_epoch: 0
-  total_epoch: 300
+  total_epoch: 100
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
-  accumulate_loss_step: 64  # 累积梯度下降
+  accumulate_loss_step: 128  # 累积梯度下降
   do_ema: true
   validation_every: 1  # 每隔多少个epoch validate一次
   use_tta: true  # validation时是否使用TTA
@@ -59,12 +59,12 @@ train_hyp:
 
 
 optimizer_hyp:
-  scheduler_type: 'linear'
+  scheduler_type: 'onecycle'
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
-  basic_lr_per_img: 0.00625
-  weight_decay: 0.0001
-  momentum: 0.9
-  lr_max_ds_scale: 0.001
+  basic_lr_per_img: 0.003125
+  weight_decay: 0.0005
+  momentum: 0.937
+  lr_max_ds_scale: 0.1
 
 warm_up:
   do_warmup: true  # 是否开启预热训练
@@ -74,9 +74,9 @@ warm_up:
 
 data_hyp:
   data_aug_prespective_p: 1.0
-  data_aug_scale: 0.5
+  data_aug_scale: 0.9
   data_aug_shear: 0.0
-  data_aug_translate: 0.1
+  data_aug_translate: 0.2
   data_aug_degree: 0.0
   data_aug_prespective: 0.0005  # should not big
   data_aug_hsv_p: 1.0
@@ -84,12 +84,12 @@ data_hyp:
   data_aug_hsv_sgain: 0.7
   data_aug_hsv_vgain: 0.4
   data_aug_mixup_p: 0.3
-  data_aug_fliplr_p: 0.3
+  data_aug_fliplr_p: 0.15
   data_aug_flipud_p: 0.0
   data_aug_fill_value: 114
   data_aug_mosaic_p: 1.0
-  data_aug_cutout_p: 0.1
-  data_aug_cutout_iou_thr: 0.5  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）
+  data_aug_cutout_p: 0.2
+  data_aug_cutout_iou_thr: 0.3  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）
   data_aug_scale_jitting_p: 0.0
 
 nms_hyp:

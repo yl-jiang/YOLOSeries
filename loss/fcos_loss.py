@@ -88,10 +88,11 @@ class FCOSLoss:
         num_level = len(cls_fms)
         targets = targets_batch.clone().detach()
 
-        fm_shapes  = [(f.size(2), f.size(3)) for f in cls_fms]
-        self.grids = self.make_grid(fm_shapes)
-
         self.strides = [2**(3+i) for i in range(num_level)]
+
+        fm_shapes  = [(f.size(2), f.size(3)) for f in cls_fms]
+        self.grids = self.make_grid(fm_shapes)  # [x, y]
+
         # [[-1, 64], [64, 128], [128, 256], [256, 512], [512, INF]]
         self.object_sizes_of_interest = self.get_regression_range_of_each_level(num_level)
 
@@ -101,7 +102,6 @@ class FCOSLoss:
             stage_reg_loss, stage_cls_loss, stage_cen_loss = [], [], []
             grid = self.grids[s]  # (h, w, 2)
             stride = self.strides[s]
-            grid *= stride
             for b in range(batch_size):  # each image
                 pred_cls = cls_fms[s][b]  # (num_class, h, w)
                 pred_reg = reg_fms[s][b]  # (4, h, w)
@@ -121,37 +121,40 @@ class FCOSLoss:
                 if pos_num > 0:
                     # --------------------------------------------------------------------------------- centerness loss
                     tmp_tars_cen = torch.zeros_like(tmp_pred_cen)
-                    tmp_tars_cen[pos_idx] = cen_tar.unsqueeze(dim=-1).type_as(tmp_pred_cen)
+                    tmp_tars_cen[(pos_idx[0], pos_idx[1])] = cen_tar.unsqueeze(dim=-1).type_as(tmp_pred_cen)
                     stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)))
                     # --------------------------------------------------------------------------------- regression loss
-                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[pos_idx], reg_tar))
+                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar))
                     # --------------------------------------------------------------------------------- classification loss
-                    tmp_tars_cls[pos_idx] = F.one_hot(cls_tar.long(), self.hyp['num_class']).type_as(tmp_tars_cls)
-                    focal = self.focal_loss_factor(tmp_pred_cls[pos_idx].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[pos_idx].float().reshape(-1, self.hyp['num_class'])) 
-                    cls_loss_pos = self.bce_cls(tmp_pred_cls[pos_idx].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[pos_idx].float().reshape(-1, self.hyp['num_class']))
-                    cls_loss_neg = self.bce_cls(tmp_pred_cls[~pos_idx].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[~pos_idx].float().reshape(-1, self.hyp['num_class']))
-                    cls_loss = (cls_loss_pos * focal).sum() + cls_loss_neg.sum()
-                    stage_cls_loss.append(cls_loss / pos_num)
+                    tmp_tars_cls[(pos_idx[0], pos_idx[1])] = F.one_hot(cls_tar.long(), self.hyp['num_class']).type_as(tmp_tars_cls)
+                    focal = self.focal_loss_factor(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class'])) 
+                    cls_loss_pos = self.bce_cls(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']))
+                    negative_sample_idx = tmp_pred_cls.new_ones(tmp_pred_cls.size(0), tmp_pred_cls.size(1))  # (h, w)
+                    negative_sample_idx[(pos_idx[0], pos_idx[1])] = 0
+                    negative_sample_idx = negative_sample_idx.to(torch.bool)
+                    cls_loss_neg = self.bce_cls(tmp_pred_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']))
+                    cls_loss = (cls_loss_pos * focal).sum() / pos_num + cls_loss_neg.mean()
+                    stage_cls_loss.append(cls_loss)
                 else:
-                    stage_reg_loss.append(tmp_pred_reg.sum())
-                    stage_cen_loss.append(tmp_pred_cen.sigmoid().sum())
+                    stage_reg_loss.append(tmp_pred_reg.mean())
+                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), torch.zeros_like(tmp_pred_cen).reshape(-1, 1)))
                     cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
-                    stage_cls_loss.append(cls_loss.sum() / tar_box.size(0))
+                    stage_cls_loss.append(cls_loss.mean())
 
 
             tot_cen_loss.append(torch.stack(stage_cen_loss, dim=0).mean())
             tot_cls_loss.append(torch.stack(stage_cls_loss, dim=0).mean())
             tot_reg_loss.append(torch.stack(stage_reg_loss, dim=0).mean())
 
-
-        tot_loss = torch.stack(tot_cen_loss, dim=0).mean() * self.hyp['cen_loss_weight'] + \
-                   torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight'] + \
-                   torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']
+        scale = batch_size
+        tot_loss = (torch.stack(tot_cen_loss, dim=0).mean() * self.hyp['cen_loss_weight'] + \
+                    torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight'] + \
+                    torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']) * scale
         
         return {'tot_loss': tot_loss, 
-                'cen_loss': (torch.stack(tot_cen_loss, dim=0).mean() * self.hyp['cen_loss_weight']).detach().item(), 
-                'cls_loss': (torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight']).detach().item(), 
-                'reg_loss': (torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']).detach().item(), 
+                'cen_loss': (torch.stack(tot_cen_loss, dim=0).mean() * self.hyp['cen_loss_weight']).detach().item() * scale, 
+                'cls_loss': (torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight']).detach().item() * scale, 
+                'reg_loss': (torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']).detach().item() * scale, 
                 'tar_nums': target_num}
             
 
@@ -159,7 +162,7 @@ class FCOSLoss:
     def build_targets(self, grid, tar_box, tar_cls, reg_obj_size, stride):
         """
         Inputs:
-            grid: (h, w, 2)
+            grid: (h, w, 2) / [x, y]
             tar_box: (n, 4) / [xmin, ymin, xmax, ymax]
             tar_cls: (n,)
             reg_obj_size: two elements list / the regression range of the level 
@@ -207,7 +210,7 @@ class FCOSLoss:
 
             positive_location_idx = torch.nonzero(match_matrix, as_tuple=True)  # tuple / positive grid index
             assert reg_tars_out.size(0) == len(positive_location_idx[0]), f"positive locations in regression and classification targets number should be the same, but got {reg_tars_out.size(0)} v.s {cls_tars_out.size(0)}"
-            cls_tars_out = tar_cls[positive_location_idx[1]]
+            cls_tars_out = tar_cls[positive_location_idx[2]]
 
             # centerness targets
             cen_tars_out = (reg_tars_out[:, [0, 2]].min(dim=-1)[0] / reg_tars_out[:, [0, 2]].max(dim=-1)[0]) \
@@ -221,7 +224,7 @@ class FCOSLoss:
     def center_sampling(self, grid, tar_box, stride):
         """
         Inputs:
-            grid: (h, w, 2) 
+            grid: (h, w, 2) / [x, y]
             tar_box: (n, 4) / [xmin, ymin, xmax, ymax]
         Ouputs:
             is_in_tar: (h, w, n) / True means grid in tar box
@@ -260,22 +263,23 @@ class FCOSLoss:
             is_in_tar_boxes: (h, w, n) / n is the number of gt
             is_cared_in_the_level: (h, w, n)
         """
-        
-        h, w, n = is_in_tar_boxes.shape
-        tar_xywh = xyxy2xywh(tar_box)
-        tar_box_area = torch.prod(tar_xywh[:, [2, 3]], dim=-1)  # (n,)
-        tar_box_area = tar_box_area.repeat(h, w, 1)  # (h, w, n)
-        tar_box_area[~is_in_tar_boxes] = INF
-        tar_box_area[~is_cared_in_the_level] = INF
-        min_idx = torch.min(tar_box_area, dim=-1)[1]  # (h, w)
-        min_idx = F.one_hot(min_idx, tar_box.size(0)).to(torch.bool)  # (h, w, n)
-        min_idx[tar_box_area == INF] = False
-        location2gt_mask = torch.zeros_like(tar_box_area, dtype=torch.bool)
-        location2gt_mask[min_idx] = True  # (h, w, n)
+        if is_in_tar_boxes.sum() > 0 and is_cared_in_the_level.sum() > 0:
+            h, w, n = is_in_tar_boxes.shape
+            tar_xywh = xyxy2xywh(tar_box)
+            tar_box_area = torch.prod(tar_xywh[:, [2, 3]], dim=-1)  # (n,)
+            tar_box_area = tar_box_area.repeat(h, w, 1)  # (h, w, n)
+            tar_box_area[~is_in_tar_boxes] = INF
+            tar_box_area[~is_cared_in_the_level] = INF
+            min_idx = torch.min(tar_box_area, dim=-1)[1]  # (h, w)
+            min_idx = F.one_hot(min_idx, tar_box.size(0)).to(torch.bool)  # (h, w, n)
+            min_idx[tar_box_area == INF] = False
+            location2gt_mask = torch.zeros_like(tar_box_area, dtype=torch.bool)
+            location2gt_mask[min_idx] = True  # (h, w, n)
 
-        # 确保每个location都最多只有一个gt与之对应
-        assert (location2gt_mask.sum(dim=-1) >= 2).sum() == 0
-        return location2gt_mask
+            # 确保每个location都最多只有一个gt与之对应
+            assert (location2gt_mask.sum(dim=-1) >= 2).sum() == 0
+            return location2gt_mask
+        return torch.zeros_like(is_in_tar_boxes, dtype=torch.bool)
 
     def get_regression_range_of_each_level(self, num_level):
         # [[-1, 64], [64, 128], [128, 256], [256, 512], [512, INF]]
@@ -318,10 +322,13 @@ class FCOSLoss:
             shape_list: [[h/8, w/8], [h/16, w/16], [h/32, w/32], [h/64, w/64], [h/128, w/128]]
         """
         grids = []
-        for row_num, col_num in shape_list:
-            y, x = torch.meshgrid([torch.arange(row_num, device=self.device), torch.arange(col_num, device=self.device)], indexing='ij')
+        for s, (row_num, col_num) in enumerate(shape_list):
+            stride = self.strides[s]
+            shift_x = torch.arange(0, col_num*stride, step=stride, device=self.device, dtype=torch.float32)
+            shift_y = torch.arange(0, row_num*stride, step=stride, device=self.device, dtype=torch.float32)
+            y, x = torch.meshgrid((shift_x, shift_y), indexing='ij')
             # mesh_grid: (col_num, row_num, 2) -> (row_num, col_num, 2)
-            mesh_grid = torch.stack((x, y), dim=2).reshape(row_num, col_num, 2)
+            mesh_grid = torch.stack((x, y), dim=2).reshape(row_num, col_num, 2) + stride // 2
             # (col_num, row_num, 2)
             grids.append(mesh_grid)
         return grids

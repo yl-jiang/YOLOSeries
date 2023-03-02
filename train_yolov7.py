@@ -272,7 +272,7 @@ class Training:
         if not self.no_data_aug and cur_epoch == self.hyp['total_epoch'] - self.hyp['no_data_aug_epoch']:
             self.train_dataloader.close_data_aug()
             self.logger.info("--->No mosaic aug now!")
-            self.save_model(cur_epoch, filename="last_mosaic_epoch")
+            self.save_model(cur_epoch, filename=f"yolov7_{self.hyp['model_type']}_last_mosaic_epoch")
             self.no_data_aug = True
 
     def step(self):
