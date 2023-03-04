@@ -15,7 +15,6 @@ class FCOSEvaluator:
         self.hyp = hyp
         self.device = hyp['device']
         self.num_class = hyp['num_class']
-        self.grid = [torch.zeros(1)] * 5
         self.ds_scales = [8, 16, 32, 64, 128]
         self.inp_h, self.inp_w = hyp['input_img_size']
         self.use_tta = hyp['use_tta']
@@ -94,10 +93,11 @@ class FCOSEvaluator:
         :param preds_out: (batch_size, X, 85)
         :return: list / [(X, 6), ..., None, (Y, 6), None, ..., (Z, 6), ...]
         """
-        obj_conf_mask = preds_out[:, :, 5] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
+        # obj_conf_mask = preds_out[:, :, 5] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
         outputs = []
         for i in range(preds_out.size(0)):  # do nms for each image
-            x = preds_out[i][obj_conf_mask[i]]
+            # x = preds_out[i][obj_conf_mask[i]]
+            x = preds_out[i]
             if x.size(0) == 0:
                 outputs.append(None)
                 continue
@@ -190,7 +190,7 @@ class FCOSEvaluator:
         for i in range(len(cls_fms)):  # feature level
             level_i_stride = self.ds_scales[i]
             level_i_pred_cls = cls_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, num_class)
-            level_i_pred_reg = reg_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, 4) / [l, t, r, b]
+            level_i_pred_reg = reg_fms[i].permute(0, 2, 3, 1).contiguous() * level_i_stride  # (b, h, w, 4) / [l, t, r, b]
             level_i_pred_cen = cen_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, 1)
             level_i_pred_cls = torch.sigmoid(level_i_pred_cls)
             level_i_pred_cen = torch.sigmoid(level_i_pred_cen)
@@ -198,13 +198,13 @@ class FCOSEvaluator:
             
             # grid_coords: (1, h, w, 2) / 可以优化grid_coords的创建方式
             if input_img_h == self.inp_h and input_img_w == self.inp_w:
-                level_i_grid_map = self.grid_coords[i].type_as(inputs)
+                level_i_grid = self.grid_coords[i].type_as(inputs)  # [x, y]
             else:
-                level_i_grid_map = self.make_grid(fm_h, fm_w, level_i_stride).type_as(inputs)
-            level_i_grid_map = level_i_grid_map.repeat(1, 1, 1, 2)  # (1, h, w, 4)
+                level_i_grid = self.make_grid(fm_h, fm_w, level_i_stride).type_as(inputs)
+            level_i_grid = level_i_grid.repeat(1, 1, 1, 2)  # (1, h, w, 2) -> (1, h, w, 4) / [x, y, x, y]
             
             # [x-l, y-t, x+r, y+b] -> [xmin, ymin, xmax, ymax] / (b, h, w, 4)
-            level_i_box = level_i_grid_map + level_i_pred_reg * sig  # (b, h, w, 4)
+            level_i_box = level_i_grid + level_i_pred_reg * sig  # (b, h, w, 4)
             level_i_box = (level_i_box).reshape(batch_size, -1, 4).contiguous()  # (b, h*w, 4)
 
             level_i_cls = level_i_pred_cls.reshape(batch_size, -1, self.hyp['num_class']).contiguous()  # (b, h*w, num_class)
@@ -279,10 +279,11 @@ class FCOSEvaluator:
             preds_out: (b, N, 85) / [xmin, ymin, xmax, ymax, centerness, cls1, cls2, cls3, ...]
         """
         preds_out = preds_out.float().cpu().numpy()
-        obj_conf_mask = preds_out[:, :, 5] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
+        # obj_conf_mask = preds_out[:, :, 5] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
         outputs = []
         for i in range(preds_out.shape[0]):  # do nms for each image
-            x = preds_out[i][obj_conf_mask[i]]
+            # x = preds_out[i][obj_conf_mask[i]]
+            x = preds_out[i]
             if len(x) == 0:
                 outputs.append(None)
                 continue

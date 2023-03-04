@@ -29,32 +29,33 @@ class FCOSLoss:
         self.input_img_size = hyp['input_img_size']
         self.balances = [4., 1., 0.4] if stage_num == 3 else [4., 1., 0.4, 0.1]
         self.radius = hyp['center_sampling_radius']
+        self.grids = None
 
     def compute_iou_loss(self, pred, tar, weight=None):
         """
         Inputs:
-            pred: (m, 4) / [l, b, r, t]
-            tar: (m, 4) / [l, b, r, t]
+            pred: (m, 4) / [l, t, r, b]
+            tar: (m, 4) / [l, t, r, b]
         """
-        pred_left = pred[:, 0]
-        pred_top = pred[:, 1]
-        pred_right = pred[:, 2]
-        pred_bottom = pred[:, 3]
+        pred_left   = pred[:, 0]  # (m,)
+        pred_top    = pred[:, 1]  # (m,)
+        pred_right  = pred[:, 2]  # (m,)
+        pred_bottom = pred[:, 3]  # (m,)
 
-        target_left = tar[:, 0]
-        target_top = tar[:, 1]
-        target_right = tar[:, 2]
-        target_bottom = tar[:, 3]
+        target_left   = tar[:, 0]  # (m,)
+        target_top    = tar[:, 1]  # (m,)
+        target_right  = tar[:, 2]  # (m,)
+        target_bottom = tar[:, 3]  # (m,)
 
-        target_area = (target_left + target_right) * (target_top + target_bottom)
-        pred_area   = (pred_left + pred_right) * (pred_top + pred_bottom)
+        target_area = (target_left + target_right) * (target_top + target_bottom)  # (m,)
+        pred_area   = (pred_left   + pred_right)   * (pred_top   + pred_bottom)    # (m,)
 
-        w_intersect = torch.min(pred_left, target_left) + torch.min(pred_right, target_right)
-        g_w_intersect = torch.max(pred_left, target_left) + torch.max(pred_right, target_right)
-        h_intersect = torch.min(pred_bottom, target_bottom) + torch.min(pred_top, target_top)
-        g_h_intersect = torch.max(pred_bottom, target_bottom) + torch.max(pred_top, target_top)
-        ac_uion = g_w_intersect * g_h_intersect + 1e-7
-        area_intersect = w_intersect * h_intersect
+        w_intersect = torch.min(pred_left, target_left) + torch.min(pred_right, target_right)    # (m,)
+        g_w_intersect = torch.max(pred_left, target_left) + torch.max(pred_right, target_right)  # (m,)
+        h_intersect = torch.min(pred_bottom, target_bottom) + torch.min(pred_top, target_top)    # (m,)
+        g_h_intersect = torch.max(pred_bottom, target_bottom) + torch.max(pred_top, target_top)  # (m,)
+        ac_uion = g_w_intersect * g_h_intersect + 1e-7  # (m,)
+        area_intersect = w_intersect * h_intersect  # (m,)
         area_union = target_area + pred_area - area_intersect
         ious = (area_intersect + 1.0) / (area_union + 1.0)
         gious = ious - (ac_uion - area_union) / ac_uion
@@ -91,7 +92,7 @@ class FCOSLoss:
         self.strides = [2**(3+i) for i in range(num_level)]
 
         fm_shapes  = [(f.size(2), f.size(3)) for f in cls_fms]
-        self.grids = self.make_grid(fm_shapes)  # [x, y]
+        self.grids = self.make_grid(fm_shapes) if self.grids is None else self.grids  # [x, y]
 
         # [[-1, 64], [64, 128], [128, 256], [256, 512], [512, INF]]
         self.object_sizes_of_interest = self.get_regression_range_of_each_level(num_level)
@@ -124,7 +125,7 @@ class FCOSLoss:
                     tmp_tars_cen[(pos_idx[0], pos_idx[1])] = cen_tar.unsqueeze(dim=-1).type_as(tmp_pred_cen)
                     stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)))
                     # --------------------------------------------------------------------------------- regression loss
-                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar))
+                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, cen_tar))
                     # --------------------------------------------------------------------------------- classification loss
                     tmp_tars_cls[(pos_idx[0], pos_idx[1])] = F.one_hot(cls_tar.long(), self.hyp['num_class']).type_as(tmp_tars_cls)
                     focal = self.focal_loss_factor(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class'])) 
@@ -140,7 +141,6 @@ class FCOSLoss:
                     stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), torch.zeros_like(tmp_pred_cen).reshape(-1, 1)))
                     cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
                     stage_cls_loss.append(cls_loss.mean())
-
 
             tot_cen_loss.append(torch.stack(stage_cen_loss, dim=0).mean())
             tot_cls_loss.append(torch.stack(stage_cls_loss, dim=0).mean())
@@ -168,7 +168,7 @@ class FCOSLoss:
             reg_obj_size: two elements list / the regression range of the level 
         Ouputs:
             match: (h, w, n)
-            reg_tar: (m, 4)
+            reg_tar: (m, 4) / [l, t, r, b]
             cls_tar: (m,)
             cen_tar: (m,)
             pos_num: m
@@ -185,7 +185,7 @@ class FCOSLoss:
         # ------------------------------------------------------------------------------ negative & positive samples assignment
         # is location in origin target boxes
         # (h, w, 1, 4) & (1, 1, n, 4) -> (h, w, n, 4)
-        reg_targets = g + tar[None, None]  # [x-xmin, y-ymin, xmax-x, ymax-y] / [l, b, r, t]
+        reg_targets = g + tar[None, None]  # [x-xmin, y-ymin, xmax-x, ymax-y] / [l, t, r, b]
         # (h, w, n, 4) -> (h, w, n)
         is_in_tar_boxes = (reg_targets > 0).all(dim=-1)  # (h, w, n)
 
@@ -195,7 +195,7 @@ class FCOSLoss:
         
         # filter target box by the maximum corrdinate that feature level i needs to regress
         max_reg_tar = reg_targets.max(dim=-1)[0]  # (h, w, n)
-        is_cared_in_the_level = (max_reg_tar >= reg_obj_size[0]) & (max_reg_tar <= reg_obj_size[1])  # (h, w, n)
+        is_cared_in_the_level = (max_reg_tar > reg_obj_size[0]) & (max_reg_tar < reg_obj_size[1])  # (h, w, n)
 
         # make sure each positive location match no more than one target box
         match_matrix = self.select_unique_by_tar_box_area(tar_box, is_in_tar_boxes, is_cared_in_the_level)
@@ -204,7 +204,7 @@ class FCOSLoss:
         # ------------------------------------------------------------------------------ build targets
         positive_samples_num = match_matrix.sum()
         if positive_samples_num > 0: 
-            reg_tars_out = reg_targets[match_matrix]  # (m, 4) / [l, b, r, t]
+            reg_tars_out = reg_targets[match_matrix] / stride  # (m, 4) / [l, t, r, b]
             # positive samples的regression target都应该为正数
             assert (reg_tars_out > 0).sum() == (reg_tars_out.size(0) * reg_tars_out.size(1))
 
@@ -251,7 +251,7 @@ class FCOSLoss:
 
         # (h, w, 1, 4) & (1, 1, n, 4) -> (h, w, n, 4)
         # [-xmin, -ymin, xmax, ymax] & [x, y, -x, -y]
-        indicator = g + tar_ctr_box[None, None]  # [x-xmin, y-ymin, xmax-x, ymax-y]
+        indicator = g + tar_ctr_box[None, None]  # [x-xmin, y-ymin, xmax-x, ymax-y] / [l, t, r, b]
         is_in_tar = (indicator > 0).all(dim=-1)  # (h, w, n)
         return is_in_tar
 

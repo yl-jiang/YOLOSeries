@@ -8,7 +8,7 @@ __all__ = ['FCOSBaseline']
 
 class FCOSHead(nn.Module):
 
-    def __init__(self, in_channels, num_class):
+    def __init__(self, in_channels, num_class, enable_head_scale=False):
         super(FCOSHead, self).__init__()
 
         cls_layers, reg_layers = [], []
@@ -26,7 +26,8 @@ class FCOSHead(nn.Module):
         self.reg_out_layer = nn.Conv2d(in_channels, 4, 3, 1, 1)
         self.ctr_out_layer = nn.Conv2d(in_channels, 1, 3, 1, 1)
 
-        self.scales = nn.ModuleList([Scale(init_value=1.0) for _ in range(5)])
+        self.scales = nn.ModuleList([Scale(init_value=1.0) for _ in range(5)]) if enable_head_scale else None
+        self.enable_head_scale = enable_head_scale
         self._init_weights()
 
     def _init_weights(self):
@@ -66,7 +67,9 @@ class FCOSHead(nn.Module):
 
             # https://github.com/aim-uofa/AdelaiDet/blob/4a3a1f7372c35b48ebf5f6adc59f135a0fa28d60/adet/modeling/fcos/fcos.py#L231
             reg = self.reg_out_layer(reg_f)
-            reg = F.relu(self.scales[l](reg))
+            if self.enable_head_scale:
+                reg = self.scales[l](reg)
+            reg = F.relu(reg)
             reg_fms.append(reg)
 
         return cls_fms, reg_fms, ctr_fms
@@ -74,7 +77,7 @@ class FCOSHead(nn.Module):
 
 class FCOSBaseline(nn.Module):
 
-    def __init__(self, num_class, resnet_layers, freeze_bn=False):
+    def __init__(self, num_class, resnet_layers, freeze_bn=False, enable_head_scale=False):
         super(FCOSBaseline, self).__init__()
 
         if resnet_layers is None:
@@ -88,7 +91,7 @@ class FCOSBaseline(nn.Module):
                     self.backbone.layer4[resnet_layers[3]-1].conv3.out_channels]
 
         self.fpn = RetinaNetPyramidFeatures(c3_size=fpn_size[0], c4_size=fpn_size[1], c5_size=fpn_size[2], feature_size=256)
-        self.head = FCOSHead(in_channels=256, num_class=num_class)
+        self.head = FCOSHead(in_channels=256, num_class=num_class, enable_head_scale=enable_head_scale)
 
         if freeze_bn:  # only do this for training
             self._freeze_bn()
