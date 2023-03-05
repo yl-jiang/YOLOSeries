@@ -9,6 +9,11 @@ __all__ = ['FCOSLoss']
 
 INF = 1000000.0
 
+
+def smooth_bce(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
+    # return positive, negative label smoothing BCE targets
+    return 1.0 - 0.5 * eps, 0.5 * eps
+
 class FCOSLoss:
 
     def __init__(self, hyp, stage_num=5):
@@ -28,6 +33,7 @@ class FCOSLoss:
         self.bce_cen = nn.BCEWithLogitsLoss(pos_weight=cen_pos_weight, reduction='mean').to(self.device)
         self.input_img_size = hyp['input_img_size']
         self.balances = [4., 1., 0.4] if stage_num == 3 else [4., 1., 0.4, 0.1]
+        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce()
         self.radius = hyp['center_sampling_radius']
         self.grids = None
 
@@ -118,28 +124,35 @@ class FCOSLoss:
                 tmp_pred_cls = pred_cls.permute(1, 2, 0)  # (h, w, num_class)
                 tmp_pred_cen = pred_cen.permute(1, 2, 0) # (h, w, 1)
                 tmp_pred_reg = pred_reg.permute(1, 2, 0)  # (h, w, 4)
-                tmp_tars_cls = torch.zeros_like(tmp_pred_cls)  # (h, w, num_class)
+                tmp_tars_cls = torch.ones_like(tmp_pred_cls) * self.negative_smooth_cls  # (h, w, num_class)
                 if pos_num > 0:
                     # --------------------------------------------------------------------------------- centerness loss
                     tmp_tars_cen = torch.zeros_like(tmp_pred_cen)
                     tmp_tars_cen[(pos_idx[0], pos_idx[1])] = cen_tar.unsqueeze(dim=-1).type_as(tmp_pred_cen)
                     stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)))
+
                     # --------------------------------------------------------------------------------- regression loss
                     stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, cen_tar))
+                    
                     # --------------------------------------------------------------------------------- classification loss
-                    tmp_tars_cls[(pos_idx[0], pos_idx[1])] = F.one_hot(cls_tar.long(), self.hyp['num_class']).type_as(tmp_tars_cls)
-                    focal = self.focal_loss_factor(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class'])) 
-                    cls_loss_pos = self.bce_cls(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']))
+                    tmp_tars_cls[(pos_idx[0], pos_idx[1])] = F.one_hot(cls_tar.long(), self.hyp['num_class']).type_as(tmp_tars_cls) * self.positive_smooth_cls
+                    focal = self.focal_loss_factor(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), 
+                                                   tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class'])) 
+                    cls_loss_pos = self.bce_cls(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), 
+                                                tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']))
                     negative_sample_idx = tmp_pred_cls.new_ones(tmp_pred_cls.size(0), tmp_pred_cls.size(1))  # (h, w)
                     negative_sample_idx[(pos_idx[0], pos_idx[1])] = 0
                     negative_sample_idx = negative_sample_idx.to(torch.bool)
-                    cls_loss_neg = self.bce_cls(tmp_pred_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']), tmp_tars_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']))
+                    cls_loss_neg = self.bce_cls(tmp_pred_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']), 
+                                                tmp_tars_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']))
                     cls_loss = (cls_loss_pos * focal).sum() / pos_num + cls_loss_neg.mean()
                     stage_cls_loss.append(cls_loss)
                 else:
                     stage_reg_loss.append(tmp_pred_reg.mean())
-                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), torch.zeros_like(tmp_pred_cen).reshape(-1, 1)))
-                    cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
+                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), 
+                                                       torch.zeros_like(tmp_pred_cen).reshape(-1, 1)))
+                    cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), 
+                                            tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
                     stage_cls_loss.append(cls_loss.mean())
 
             tot_cen_loss.append(torch.stack(stage_cen_loss, dim=0).mean())
