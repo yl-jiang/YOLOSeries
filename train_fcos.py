@@ -178,7 +178,11 @@ class Training:
 
         # model
         torch.cuda.set_device(self.local_rank)
-        model = self.select_model(self.hyp["num_class"], self.hyp["resnet_layers"], freeze_bn=self.hyp['freeze_bn'], enable_head_scale=self.hyp['enable_head_scale'])
+        model = self.select_model(self.hyp["num_class"], 
+                                  self.hyp["resnet_layers"], 
+                                  freeze_bn=self.hyp['freeze_bn'], 
+                                  head_norm_layer_type=self.hyp['head_norm_layer_type'],
+                                  enable_head_scale=self.hyp['enable_head_scale'])
         ModelSummary(model, 
                      input_size=(1, 3, self.hyp['input_img_size'][0], 
                      self.hyp['input_img_size'][1]), 
@@ -316,8 +320,8 @@ class Training:
 
                 # optimize
                 if step_in_epoch % self.accumulate == 0:
-                    self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                    # self.scaler.unscale_(self.optimizer)
+                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()

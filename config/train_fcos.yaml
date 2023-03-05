@@ -1,8 +1,8 @@
 loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
-  focal_loss_gamma: 1.5 # focal loss参数
+  focal_loss_gamma: 2.0 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  reg_loss_weight: 0.5  # 回归损失（bbox损失）权重
+  reg_loss_weight: 0.1  # 回归损失（bbox损失）权重
   cls_loss_weight: 1.0  # 分类损失权重
   cen_loss_weight: 1.0 # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
@@ -30,17 +30,18 @@ train_hyp:
     - 6
     - 3
   enable_head_scale: false
+  head_norm_layer_type: 'group_norm'
   freeze_bn: false
   batch_size: 32
   drop_last: true  # DataLoader
-  pin_memory: True  # DataLoader
+  pin_memory: true  # DataLoader
   random_seed: 7
-  shuffle: true  # DataLoader
+  shuffle: false  # DataLoader
   num_workers: 0  # DataLoader
   start_epoch: 0
   total_epoch: 100
   device: "gpu"  # 是否使用GPU进行训练['gpu' or 'cpu']
-  accumulate_loss_step: 128  # 累积梯度下降
+  accumulate_loss_step: 64  # 累积梯度下降
   do_ema: true
   validation_every: 1  # 每隔多少个epoch validate一次
   use_tta: true  # validation时是否使用TTA
@@ -55,12 +56,12 @@ train_hyp:
   no_data_aug_epoch: 10
   object_sizes_of_interest:
   center_sampling_radius: 1.5
-  iou_type: 'giou'
+  iou_type: 'iou'  # ['iou', 'giou', 'linear_iou']
   do_center_sampling: true
 
 
 optimizer_hyp:
-  scheduler_type: 'onecycle'
+  scheduler_type: 'onecycle'  # ['onecycle', 'linear', 'cosine']
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
   basic_lr_per_img: 0.003125
   weight_decay: 0.0005
@@ -75,17 +76,17 @@ warm_up:
 
 data_hyp:
   data_aug_prespective_p: 1.0
-  data_aug_scale: 0.9
+  data_aug_scale: 0.3
   data_aug_shear: 0.0
   data_aug_translate: 0.2
   data_aug_degree: 0.0
-  data_aug_prespective: 0.0005  # should not big
+  data_aug_prespective: 0.0  # should not big
   data_aug_hsv_p: 1.0
   data_aug_hsv_hgain: 0.015
   data_aug_hsv_sgain: 0.7
   data_aug_hsv_vgain: 0.4
   data_aug_mixup_p: 0.3
-  data_aug_fliplr_p: 0.15
+  data_aug_fliplr_p: 0.5
   data_aug_flipud_p: 0.0
   data_aug_fill_value: 114
   data_aug_mosaic_p: 0.3
@@ -95,8 +96,8 @@ data_hyp:
 
 nms_hyp:
   pre_nms_cls_thresh: 0.1
-  iou_threshold: 0.3
-  cls_threshold: 0.2
+  iou_threshold: 0.2
+  cls_threshold: 0.5
   max_predictions_per_img: 300
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096

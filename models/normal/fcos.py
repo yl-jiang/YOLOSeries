@@ -3,21 +3,29 @@ import torch.nn as nn
 from utils import resnet50, Scale, RetinaNetPyramidFeatures
 import math
 import torch.nn.functional as F
+from functools import partial
 
 __all__ = ['FCOSBaseline']
 
 class FCOSHead(nn.Module):
 
-    def __init__(self, in_channels, num_class, enable_head_scale=False):
+    def __init__(self, in_channels, num_class, head_norm_layer_type='group_norm', enable_head_scale=False):
         super(FCOSHead, self).__init__()
 
         cls_layers, reg_layers = [], []
+        if head_norm_layer_type.lower() == "barch_norm":
+            NormLayer = nn.BatchNorm2d
+        elif head_norm_layer_type.lower() == 'group_norm':
+            NormLayer = partial(nn.GroupNorm, num_groups=32)
+        else:
+            raise RuntimeError(f'unknow head_norm_layer_type {head_norm_layer_type}, must be "batch_norm" or "group_norm".')
+        
         for _ in range(4):
             cls_layers.append(nn.Sequential(nn.Conv2d(in_channels, in_channels, 3, 1, 1, bias=False), 
-                                            nn.BatchNorm2d(in_channels), 
+                                            NormLayer(num_channels=in_channels) if head_norm_layer_type == 'group_norm' else NormLayer(num_features=in_channels), 
                                             nn.ReLU(inplace=True)))
             reg_layers.append(nn.Sequential(nn.Conv2d(in_channels, in_channels, 3, 1, 1, bias=False), 
-                                            nn.BatchNorm2d(in_channels), 
+                                            NormLayer(num_channels=in_channels) if head_norm_layer_type == 'group_norm' else NormLayer(num_features=in_channels), 
                                             nn.ReLU(inplace=True)))
 
         self.cls_layers = nn.Sequential(*cls_layers)
@@ -77,7 +85,7 @@ class FCOSHead(nn.Module):
 
 class FCOSBaseline(nn.Module):
 
-    def __init__(self, num_class, resnet_layers, freeze_bn=False, enable_head_scale=False):
+    def __init__(self, num_class, resnet_layers, freeze_bn=False, head_norm_layer_type='group_norm', enable_head_scale=False):
         super(FCOSBaseline, self).__init__()
 
         if resnet_layers is None:
@@ -91,7 +99,7 @@ class FCOSBaseline(nn.Module):
                     self.backbone.layer4[resnet_layers[3]-1].conv3.out_channels]
 
         self.fpn = RetinaNetPyramidFeatures(c3_size=fpn_size[0], c4_size=fpn_size[1], c5_size=fpn_size[2], feature_size=256)
-        self.head = FCOSHead(in_channels=256, num_class=num_class, enable_head_scale=enable_head_scale)
+        self.head = FCOSHead(in_channels=256, num_class=num_class, head_norm_layer_type=head_norm_layer_type, enable_head_scale=enable_head_scale)
 
         if freeze_bn:  # only do this for training
             self._freeze_bn()
