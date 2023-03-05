@@ -13,7 +13,7 @@ class FCOSHead(nn.Module):
         super(FCOSHead, self).__init__()
 
         cls_layers, reg_layers = [], []
-        if head_norm_layer_type.lower() == "barch_norm":
+        if head_norm_layer_type.lower() == "batch_norm":
             NormLayer = nn.BatchNorm2d
         elif head_norm_layer_type.lower() == 'group_norm':
             NormLayer = partial(nn.GroupNorm, num_groups=32)

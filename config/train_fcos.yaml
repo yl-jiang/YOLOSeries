@@ -30,7 +30,7 @@ train_hyp:
     - 6
     - 3
   enable_head_scale: false
-  head_norm_layer_type: 'group_norm'  # ['batch_norm', 'group_norm']
+  head_norm_layer_type: 'batch_norm'  # ['batch_norm', 'group_norm']
   freeze_bn: false
   batch_size: 32
   drop_last: true  # DataLoader
@@ -97,7 +97,7 @@ data_hyp:
 nms_hyp:
   pre_nms_cls_thresh: 0.1
   iou_threshold: 0.2
-  cls_threshold: 0.5
+  cls_threshold: 0.35
   max_predictions_per_img: 300
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096

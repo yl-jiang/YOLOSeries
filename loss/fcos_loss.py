@@ -135,7 +135,8 @@ class FCOSLoss:
                     stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, cen_tar))
                     
                     # --------------------------------------------------------------------------------- classification loss
-                    tmp_tars_cls[(pos_idx[0], pos_idx[1])] = F.one_hot(cls_tar.long(), self.hyp['num_class']).type_as(tmp_tars_cls) * self.positive_smooth_cls
+                    # tmp_tars_cls[(pos_idx[0], pos_idx[1])] = F.one_hot(cls_tar.long(), self.hyp['num_class']).type_as(tmp_tars_cls) * self.positive_smooth_cls
+                    tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls
                     focal = self.focal_loss_factor(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), 
                                                    tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class'])) 
                     cls_loss_pos = self.bce_cls(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), 
