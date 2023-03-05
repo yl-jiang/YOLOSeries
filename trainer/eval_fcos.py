@@ -93,11 +93,11 @@ class FCOSEvaluator:
         :param preds_out: (batch_size, X, 85)
         :return: list / [(X, 6), ..., None, (Y, 6), None, ..., (Z, 6), ...]
         """
-        # obj_conf_mask = preds_out[:, :, 5] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
+        obj_conf_mask = preds_out[:, :, 4] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
         outputs = []
         for i in range(preds_out.size(0)):  # do nms for each image
-            # x = preds_out[i][obj_conf_mask[i]]
-            x = preds_out[i]
+            x = preds_out[i][obj_conf_mask[i]]
+            # x = preds_out[i]
             if x.size(0) == 0:
                 outputs.append(None)
                 continue
@@ -279,11 +279,11 @@ class FCOSEvaluator:
             preds_out: (b, N, 85) / [xmin, ymin, xmax, ymax, centerness, cls1, cls2, cls3, ...]
         """
         preds_out = preds_out.float().cpu().numpy()
-        # obj_conf_mask = preds_out[:, :, 5] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
+        obj_conf_mask = preds_out[:, :, 4] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
         outputs = []
         for i in range(preds_out.shape[0]):  # do nms for each image
-            # x = preds_out[i][obj_conf_mask[i]]
-            x = preds_out[i]
+            x = preds_out[i][obj_conf_mask[i]]
+            # x = preds_out[i]
             if len(x) == 0:
                 outputs.append(None)
                 continue

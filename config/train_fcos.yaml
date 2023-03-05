@@ -2,9 +2,9 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  reg_loss_weight: 0.1  # 回归损失（bbox损失）权重
-  cls_loss_weight: 0.3  # 分类损失权重
-  cen_loss_weight: 0.7 # 置信度损失权重
+  reg_loss_weight: 0.5  # 回归损失（bbox损失）权重
+  cls_loss_weight: 1.0  # 分类损失权重
+  cen_loss_weight: 1.0 # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 
   cen_pos_weight: 1.0  # 
@@ -88,8 +88,8 @@ data_hyp:
   data_aug_fliplr_p: 0.15
   data_aug_flipud_p: 0.0
   data_aug_fill_value: 114
-  data_aug_mosaic_p: 1.0
-  data_aug_cutout_p: 1.0
+  data_aug_mosaic_p: 0.3
+  data_aug_cutout_p: 0
   data_aug_cutout_iou_thr: 0.3  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）
   data_aug_scale_jitting_p: 0.0
 
