@@ -519,7 +519,7 @@ class Training:
         """
         if self.hyp['mutil_scale_training']:
             input_img_size = max(self.hyp['input_img_size'])
-            random_shape = random.randrange(input_img_size * 0.5, input_img_size * 1. + 32) // 32 * 32
+            random_shape = random.randrange(input_img_size * 0.5, input_img_size * 1.5 + 32) // 32 * 32
             scale = random_shape / max(imgs.shape[2:])
             if scale != 1.:
                 new_shape = [math.ceil(x * scale / 32) * 32 for x in imgs.shape[2:]]

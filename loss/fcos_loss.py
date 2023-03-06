@@ -33,7 +33,7 @@ class FCOSLoss:
         self.bce_cen = nn.BCEWithLogitsLoss(pos_weight=cen_pos_weight, reduction='mean').to(self.device)
         self.input_img_size = hyp['input_img_size']
         self.balances = [4., 1., 0.4] if stage_num == 3 else [4., 1., 0.4, 0.1]
-        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce()
+        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce(0.01)
         self.radius = hyp['center_sampling_radius']
         self.grids = None
 
@@ -142,8 +142,9 @@ class FCOSLoss:
                     cls_loss_pos = self.bce_cls(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), 
                                                 tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']))
                     negative_sample_idx = tmp_pred_cls.new_ones(tmp_pred_cls.size(0), tmp_pred_cls.size(1))  # (h, w)
-                    negative_sample_idx[(pos_idx[0], pos_idx[1])] = 0
+                    negative_sample_idx[(pos_idx[0], pos_idx[1])] = 0.0
                     negative_sample_idx = negative_sample_idx.to(torch.bool)
+                    assert (tmp_tars_cls[negative_sample_idx] > self.negative_smooth_cls).sum() == 0
                     cls_loss_neg = self.bce_cls(tmp_pred_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']), 
                                                 tmp_tars_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']))
                     cls_loss = (cls_loss_pos * focal).sum() / pos_num + cls_loss_neg.mean()

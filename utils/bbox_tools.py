@@ -5,7 +5,7 @@ import numpy as np
 __all__ = ['letter_resize_bbox', 'minmax_bbox_resize', 
            'cpu_iou', 'xyxy2xywh', 'xyxy2xywhn', 'xywh2xyxy', 'numba_xywh2xyxy', 
            'gpu_iou', 'gpu_Giou', 'gpu_CIoU', 'gpu_DIoU', 'box_candidates', 
-           'valid_bbox', 'numba_iou']
+           'valid_bbox', 'numba_iou', 'numba_xyxy2xywh']
 
 
 @numba.njit
@@ -145,6 +145,19 @@ def numba_xywh2xyxy(bboxes):
     bbox_out[:, 3] = bboxes[:, 1] + bboxes[:, 3] / 2
     return bbox_out
 
+
+@numba.njit
+def numba_xyxy2xywh(bboxes):
+    """
+    [xmin, ymin, xmax, ymax] -> [center_x, center_y, w, h]
+    :param bboxes:
+    """
+    bbox_out = np.zeros_like(bboxes)
+    bbox_out[:, 0] = (bboxes[:, 0] + bboxes[:, 2]) / 2
+    bbox_out[:, 1] = (bboxes[:, 1] + bboxes[:, 3]) / 2
+    bbox_out[:, 2] = bboxes[:, 2] - bboxes[:, 0]
+    bbox_out[:, 3] = bboxes[:, 3] - bboxes[:, 1]
+    return bbox_out
 
 def gpu_iou(bbox1, bbox2):
     """

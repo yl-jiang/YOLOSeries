@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torch.nn.functional as F
-from utils import gpu_nms, numba_iou, numba_nms, numba_xywh2xyxy
+from utils import gpu_nms, numba_iou, numba_nms, numba_xyxy2xywh
 from utils import xywh2xyxy
 from collections import defaultdict
 from utils import weighted_fusion_bbox
@@ -93,7 +93,7 @@ class FCOSEvaluator:
         :param preds_out: (batch_size, X, 85)
         :return: list / [(X, 6), ..., None, (Y, 6), None, ..., (Z, 6), ...]
         """
-        obj_conf_mask = preds_out[:, :, 4] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
+        obj_conf_mask = preds_out[:, :, 4] > self.hyp['pre_nms_cls_thresh']  # (b, N)
         outputs = []
         for i in range(preds_out.size(0)):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
@@ -143,7 +143,7 @@ class FCOSEvaluator:
                     # 因为如果一个区域有物体，网络应该在这一区域内给出很多不同的预测框，我们再从这些预测框中选取一个最好的作为该处obj的最终输出；
                     # 如果在某个grid处网络只给出了很少的几个预测框，则更倾向于认为这是网络预测错误所致
                     keep_index = torch.tensor(keep_index)[iou_mask.float().sum(dim=1) > 1]
-            outputs.append(x[keep_index])
+            outputs.append(self.remove_small_boxes(x[keep_index], self.hyp['min_prediction_box_wh']))
         return outputs
 
     def test_time_augmentation(self, inputs):  # just for inference not training time
@@ -272,6 +272,18 @@ class FCOSEvaluator:
         assert iou.size(0) == n and iou.size(1) == m
         return iou
 
+    def remove_small_boxes(self, bboxes, min_size=0.0):
+        """
+        Inputs:
+            bboxes: (M, 6) / [xmin, ymin, xmax, ymax, prob, cls]
+        Outputs:
+            bboxes: (N, 6) / N <= M
+        """
+        bbox_xywh = numba_xyxy2xywh(bboxes[:, :4])  # (M, 4)
+        bbox_mask = bbox_xywh[:, [2, 3]] > min_size  # (M, 2)
+        valid_idx = np.all(bbox_mask, axis=1)  # (M,)
+        return bboxes[valid_idx]
+
     def numba_nms(self, preds_out):
         """
         do NMS with numba
@@ -279,7 +291,7 @@ class FCOSEvaluator:
             preds_out: (b, N, 85) / [xmin, ymin, xmax, ymax, centerness, cls1, cls2, cls3, ...]
         """
         preds_out = preds_out.float().cpu().numpy()
-        obj_conf_mask = preds_out[:, :, 4] >= self.hyp['pre_nms_cls_thresh']  # (b, N)
+        obj_conf_mask = preds_out[:, :, 4] > self.hyp['pre_nms_cls_thresh']  # (b, N)
         outputs = []
         for i in range(preds_out.shape[0]):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
@@ -330,5 +342,5 @@ class FCOSEvaluator:
                     # 因为如果一个区域有物体，网络应该在这一区域内给出很多不同的预测框，我们再从这些预测框中选取一个最好的作为该处obj的最终输出；
                     # 如果在某个grid处网络只给出了很少的几个预测框，则更倾向于认为这是网络预测错误所致
                     keep_index = np.asarray(keep_index)[iou_mask.astype(np.float32).sum(axis=1) > 1]
-            outputs.append(x[keep_index])
+            outputs.append(self.remove_small_boxes(x[keep_index], self.hyp['min_prediction_box_wh']))
         return outputs

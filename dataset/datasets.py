@@ -343,7 +343,7 @@ class YOLODataset(Dataset, Generator):
             w, h = first_line.split(' ')
 
         ann = self.load_annotations(i)
-        r = min(self.input_dim[0] / int(h), self.input_dim[1] / int(w))
+        r = min(self.input_dim[0] / int(float(h)), self.input_dim[1] / int(float(w)))
         ann['bboxes'] = ann['bboxes'] * r
         return ann
 
