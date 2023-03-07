@@ -30,7 +30,7 @@ train_hyp:
     - 6
     - 3
   enable_head_scale: false
-  head_norm_layer_type: 'group_norm'  # ['batch_norm', 'group_norm']
+  head_norm_layer_type: 'batch_norm'  # ['batch_norm', 'group_norm']
   freeze_bn: false
   batch_size: 8
   drop_last: true  # DataLoader
@@ -57,7 +57,7 @@ train_hyp:
   center_sampling_radius: 1.5
   iou_type: 'giou'  # ['iou', 'giou', 'linear_iou']
   do_center_sampling: true
-  do_cen_loss_balance: true
+  do_cen_loss_balance: false
   do_cls_loss_balance: false
   do_reg_loss_balance: false
 
@@ -98,9 +98,9 @@ data_hyp:
 
 nms_hyp:
   cen_threshold: 0.05
-  iou_threshold: 0.3
-  cls_threshold: 0.3
-  max_predictions_per_img: 300
+  iou_threshold: 0.2
+  cls_threshold: 0.
+  max_predictions_per_img: 100
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096
   iou_type: 'iou'
