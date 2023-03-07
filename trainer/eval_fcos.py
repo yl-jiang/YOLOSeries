@@ -143,7 +143,18 @@ class FCOSEvaluator:
                     # 因为如果一个区域有物体，网络应该在这一区域内给出很多不同的预测框，我们再从这些预测框中选取一个最好的作为该处obj的最终输出；
                     # 如果在某个grid处网络只给出了很少的几个预测框，则更倾向于认为这是网络预测错误所致
                     keep_index = torch.tensor(keep_index)[iou_mask.float().sum(dim=1) > 1]
-            outputs.append(self.remove_small_boxes(x[keep_index], self.hyp['min_prediction_box_wh']))
+
+            x = self.remove_small_boxes(x[keep_index], self.hyp['min_prediction_box_wh'])  # (X, 6)
+            if len(x) == 0:
+                outputs.append(None)
+                continue
+            fg_idx = x[:, -1] > 0
+            if len(x[fg_idx]) == 0:
+                outputs.append(None)
+                continue
+            x[fg_idx, -1] -= 1
+            outputs.append(x[fg_idx])
+
         return outputs
 
     def test_time_augmentation(self, inputs):  # just for inference not training time
@@ -179,7 +190,7 @@ class FCOSEvaluator:
     def do_inference(self, inputs):
         preds_out = []
         input_img_h, input_img_w = inputs.size(2), inputs.size(3)
-        # cls_fms: [(b, num_class, h/8, w/8), (b, num_class, h/16, w/16), (b, num_class, h/32, w/32), (b, num_class, h/64, w/64), (b, num_class, h/128, w/128)]
+        # cls_fms: [(b, num_class+1, h/8, w/8), (b, num_class+1, h/16, w/16), (b, num_class+1, h/32, w/32), (b, num_class+1, h/64, w/64), (b, num_class+1, h/128, w/128)]
         # reg_fms: [(b, 4, h/8, w/8), (b, 4, h/16, w/16), (b, 4, h/32, w/32), (b, 4, h/64, w/64), (b, 4, h/128, w/128)]
         # cen_fms: [(b, 1, h/8, w/8), (b, 1, h/16, w/16), (b, 1, h/32, w/32), (b, 1, h/64, w/64), (b, 4, h/128, w/128)]
         cls_fms, reg_fms, cen_fms = self.model(inputs)
@@ -189,7 +200,7 @@ class FCOSEvaluator:
         sig = (inputs.new_tensor([-1, -1, 1, 1])[None, None, None]).contiguous()
         for i in range(len(cls_fms)):  # feature level
             level_i_stride = self.ds_scales[i]
-            level_i_pred_cls = cls_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, num_class)
+            level_i_pred_cls = cls_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, num_class+1)
             level_i_pred_reg = reg_fms[i].permute(0, 2, 3, 1).contiguous() * level_i_stride  # (b, h, w, 4) / [l, t, r, b]
             level_i_pred_cen = cen_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, 1)
             level_i_pred_cls = torch.sigmoid(level_i_pred_cls)
@@ -205,16 +216,16 @@ class FCOSEvaluator:
             
             # [x-l, y-t, x+r, y+b] -> [xmin, ymin, xmax, ymax] / (b, h, w, 4)
             level_i_box = level_i_grid + level_i_pred_reg * sig  # (b, h, w, 4)
-            level_i_box = (level_i_box).reshape(batch_size, -1, 4).contiguous()  # (b, h*w, 4)
+            level_i_box = level_i_box.reshape(batch_size, -1, 4).contiguous()  # (b, h*w, 4)
 
-            level_i_cls = level_i_pred_cls.reshape(batch_size, -1, self.hyp['num_class']).contiguous()  # (b, h*w, num_class)
+            level_i_cls = level_i_pred_cls.reshape(batch_size, -1, self.hyp['num_class']+1).contiguous()  # (b, h*w, num_class+1)
             level_i_cen = level_i_pred_cen.reshape(batch_size, -1, 1).contiguous()  # (b, h*w, 1)
 
-            # [xmin, ymin, xmax, ymax, centerness, cls1, cls2, cls3, ...] / (b, h*w, 85)
+            # [xmin, ymin, xmax, ymax, centerness, cls0, cls1, cls2, cls3, ...] / (b, h*w, 4+1+(1+80))
             preds_out.append(torch.cat((level_i_box, level_i_cen, level_i_cls), dim=-1).contiguous())
 
-        # [(b, h/8 * w/8, 85), (b, h/16 * w/16, 85), (b, h/32 * w/32, 85), (b, h/64 * w/64, 85), (b, h/128 * w/128, 85)]
-        # (bs, h/8 * w/8 + h/16 * w/16 + h/32 * w32 + h/64 * w/64 + h/128 * w/128, 85)
+        # [(b, h/8 * w/8, 86), (b, h/16 * w/16, 86), (b, h/32 * w/32, 86), (b, h/64 * w/64, 86), (b, h/128 * w/128, 86)]
+        # (bs, h/8 * w/8 + h/16 * w/16 + h/32 * w32 + h/64 * w/64 + h/128 * w/128, 86)
         return torch.cat(preds_out, dim=1).contiguous()
 
     @staticmethod
@@ -288,7 +299,7 @@ class FCOSEvaluator:
         """
         do NMS with numba
         Inputs: 
-            preds_out: (b, N, 85) / [xmin, ymin, xmax, ymax, centerness, cls1, cls2, cls3, ...]
+            preds_out: (b, N, 86) / [xmin, ymin, xmax, ymax, centerness, cls0, cls1, cls2, cls3, ...]
         """
         preds_out = preds_out.float().cpu().numpy()
         obj_conf_mask = preds_out[:, :, 4] > self.hyp['cen_threshold']  # (b, N)
@@ -342,5 +353,14 @@ class FCOSEvaluator:
                     # 因为如果一个区域有物体，网络应该在这一区域内给出很多不同的预测框，我们再从这些预测框中选取一个最好的作为该处obj的最终输出；
                     # 如果在某个grid处网络只给出了很少的几个预测框，则更倾向于认为这是网络预测错误所致
                     keep_index = np.asarray(keep_index)[iou_mask.astype(np.float32).sum(axis=1) > 1]
-            outputs.append(self.remove_small_boxes(x[keep_index], self.hyp['min_prediction_box_wh']))
+            x = self.remove_small_boxes(x[keep_index], self.hyp['min_prediction_box_wh'])  # (X, 6)
+            if len(x) == 0:
+                outputs.append(None)
+                continue
+            fg_idx = x[:, -1] > 0
+            if len(x[fg_idx]) == 0:
+                outputs.append(None)
+                continue
+            x[fg_idx, -1] -= 1
+            outputs.append(x[fg_idx])
         return outputs

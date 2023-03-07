@@ -773,7 +773,7 @@ class Training:
                         if preds[k] is None:
                             cv2_save_img(imgs[k], [], [], [], save_path)
                         else:
-                            preds_lab = [self.train_dataset.cls2lab[c] for c in preds[k][:, 5].astype(np.uint8)]
+                            preds_lab = [self.train_dataset.cls2lab[c] for c in preds[k][:, 5].astype(np.int32)]
                             cv2_save_img(imgs[k], preds[k][:, :4], preds_lab, preds[k][:, 4], save_path)
                     del y, inp, info, imgs, preds, output
                 del validater

@@ -99,7 +99,8 @@ class FCOSBaseline(nn.Module):
                     self.backbone.layer4[resnet_layers[3]-1].conv3.out_channels]
 
         self.fpn = RetinaNetPyramidFeatures(c3_size=fpn_size[0], c4_size=fpn_size[1], c5_size=fpn_size[2], feature_size=256)
-        self.head = FCOSHead(in_channels=256, num_class=num_class, head_norm_layer_type=head_norm_layer_type, enable_head_scale=enable_head_scale)
+        # 增加一个背景类
+        self.head = FCOSHead(in_channels=256, num_class=num_class+1, head_norm_layer_type=head_norm_layer_type, enable_head_scale=enable_head_scale)
 
         if freeze_bn:  # only do this for training
             self._freeze_bn()
@@ -140,7 +141,7 @@ class FCOSBaseline(nn.Module):
         # fpn_features_5: (b, 256, h/128, w/128);
         fpn_features = self.fpn((c3, c4, c5))
 
-        # cls_fms: [(b, num_class, h/8, w/8), (b, num_class, h/16, w/16), (b, num_class, h/32, w/32), (b, num_class, h/64, w/64), (b, num_class, h/128, w/128)] / [l, t, r, b]
+        # cls_fms: [(b, num_class+1, h/8, w/8), (b, num_class+1, h/16, w/16), (b, num_class+1, h/32, w/32), (b, num_class+1, h/64, w/64), (b, num_class+1, h/128, w/128)] / [l, t, r, b]
         # reg_fms: [(b, 4, h/8, w/8), (b, 4, h/16, w/16), (b, 4, h/32, w/32), (b, 4, h/64, w/64), (b, 4, h/128, w/128)]
         # cen_fms: [(b, 1, h/8, w/8), (b, 1, h/16, w/16), (b, 1, h/32, w/32), (b, 1, h/64, w/64), (b, 4, h/128, w/128)]
         cls_fms, reg_fms, cen_fms = self.head(fpn_features)

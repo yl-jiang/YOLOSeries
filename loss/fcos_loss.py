@@ -113,21 +113,21 @@ class FCOSLoss:
             grid = self.grids[s]  # (h, w, 2)
             stride = self.strides[s]
             for b in range(batch_size):  # each image
-                pred_cls = cls_fms[s][b]  # (num_class, h, w)
+                pred_cls = cls_fms[s][b]  # (num_class+1, h, w)
                 pred_reg = reg_fms[s][b]  # (4, h, w)
                 pred_cen = cen_fms[s][b]  # (1, h, w)
                 tar_box = targets[b, targets[b, :, 4] >= 0, :4]  # (n, 4)
-                tar_cls = targets[b, targets[b, :, 4] >= 0, 4]  # (n,)
+                tar_cls = targets[b, targets[b, :, 4] >= 0, 4] + 1  # (n,) / 增加了一个背景类
                 reg_obj_size = self.object_sizes_of_interest[s]
                 # pos_idx: tuple; reg_tar: (m, 4); cls_tar: (m,); cen_tar: (m,); pos_num: m
                 pos_idx, reg_tar, cls_tar, cen_tar, pos_num = self.build_targets(grid, tar_box, tar_cls, reg_obj_size, stride)
                 target_num += pos_num
                 
                 # --------------------------------------------------------------------------------- classification loss
-                tmp_pred_cls = pred_cls.permute(1, 2, 0)  # (h, w, num_class)
+                tmp_pred_cls = pred_cls.permute(1, 2, 0)  # (h, w, num_class+1)
                 tmp_pred_cen = pred_cen.permute(1, 2, 0) # (h, w, 1)
                 tmp_pred_reg = pred_reg.permute(1, 2, 0)  # (h, w, 4)
-                tmp_tars_cls = torch.ones_like(tmp_pred_cls) * self.negative_smooth_cls  # (h, w, num_class)
+                tmp_tars_cls = torch.ones_like(tmp_pred_cls) * self.negative_smooth_cls  # (h, w, num_class+1)
                 if pos_num > 0:
                     # --------------------------------------------------------------------------------- centerness loss
                     tmp_tars_cen = torch.zeros_like(tmp_pred_cen)
@@ -138,25 +138,25 @@ class FCOSLoss:
                     stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, cen_tar))
                     
                     # --------------------------------------------------------------------------------- classification loss
-                    tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls
-                    focal = self.focal_loss_factor(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), 
-                                                   tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class'])) 
-                    cls_loss_pos = self.bce_cls(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), 
-                                                tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']))
+                    tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls  # foreground class
                     negative_sample_idx = tmp_pred_cls.new_ones(tmp_pred_cls.size(0), tmp_pred_cls.size(1))  # (h, w)
                     negative_sample_idx[(pos_idx[0], pos_idx[1])] = 0.0
                     negative_sample_idx = negative_sample_idx.to(torch.bool)
-                    assert (tmp_tars_cls[negative_sample_idx] > self.negative_smooth_cls).sum() == 0
-                    cls_loss_neg = self.bce_cls(tmp_pred_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']), 
-                                                tmp_tars_cls[negative_sample_idx].float().reshape(-1, self.hyp['num_class']))
-                    cls_loss = (cls_loss_pos * focal).sum() / pos_num + cls_loss_neg.mean()
+                    tmp_tars_cls[negative_sample_idx][:, 0] = self.positive_smooth_cls  # background class
+                    assert (tmp_tars_cls[negative_sample_idx][:, 1:] > self.negative_smooth_cls).sum() == 0
+                    focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']+1), 
+                                                   tmp_tars_cls.float().reshape(-1, self.hyp['num_class']+1)) 
+                    cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']+1), 
+                                            tmp_tars_cls.float().reshape(-1, self.hyp['num_class']+1))
+                    
+                    cls_loss = (cls_loss * focal).sum() / pos_num
                     stage_cls_loss.append(cls_loss)
                 else:
                     stage_reg_loss.append(tmp_pred_reg.mean())
-                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), 
-                                                       torch.zeros_like(tmp_pred_cen).reshape(-1, 1)))
-                    cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), 
-                                            tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
+                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1),  torch.zeros_like(tmp_pred_cen).reshape(-1, 1)))
+                    tmp_tars_cls[:, :, 0] = self.positive_smooth_cls  # background class
+                    cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']+1), 
+                                            tmp_tars_cls.float().reshape(-1, self.hyp['num_class']+1))
                     stage_cls_loss.append(cls_loss.mean())
             
             balance_reg_loss, balance_cen_loss, balance_cls_loss = self.compute_balance_losses(s, 
