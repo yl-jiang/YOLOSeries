@@ -32,8 +32,11 @@ class FCOSLoss:
         self.bce_cls = nn.BCEWithLogitsLoss(pos_weight=cls_pos_weight, reduction='none').to(self.device)
         self.bce_cen = nn.BCEWithLogitsLoss(pos_weight=cen_pos_weight, reduction='mean').to(self.device)
         self.input_img_size = hyp['input_img_size']
-        self.balances = [4., 1., 0.4] if stage_num == 3 else [4., 1., 0.4, 0.1]
-        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce(0.01)
+        self.cen_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
+        self.cls_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
+        self.reg_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
+        self.num_stage = stage_num
+        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce(0.1)
         self.radius = hyp['center_sampling_radius']
         self.grids = None
 
@@ -135,7 +138,6 @@ class FCOSLoss:
                     stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, cen_tar))
                     
                     # --------------------------------------------------------------------------------- classification loss
-                    # tmp_tars_cls[(pos_idx[0], pos_idx[1])] = F.one_hot(cls_tar.long(), self.hyp['num_class']).type_as(tmp_tars_cls) * self.positive_smooth_cls
                     tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls
                     focal = self.focal_loss_factor(tmp_pred_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class']), 
                                                    tmp_tars_cls[(pos_idx[0], pos_idx[1])].float().reshape(-1, self.hyp['num_class'])) 
@@ -156,10 +158,16 @@ class FCOSLoss:
                     cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), 
                                             tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
                     stage_cls_loss.append(cls_loss.mean())
+            
+            balance_reg_loss, balance_cen_loss, balance_cls_loss = self.compute_balance_losses(s, 
+                                                                                               stage_reg_loss=torch.stack(stage_reg_loss, dim=0).mean(), 
+                                                                                               stage_cen_loss=torch.stack(stage_cen_loss, dim=0).mean(), 
+                                                                                               stage_cls_loss=torch.stack(stage_cls_loss, dim=0).mean())
+            tot_cen_loss.append(balance_cen_loss)
+            tot_cls_loss.append(balance_cls_loss)
+            tot_reg_loss.append(balance_reg_loss)
 
-            tot_cen_loss.append(torch.stack(stage_cen_loss, dim=0).mean())
-            tot_cls_loss.append(torch.stack(stage_cls_loss, dim=0).mean())
-            tot_reg_loss.append(torch.stack(stage_reg_loss, dim=0).mean())
+        self.update_balances() 
 
         scale = batch_size
         tot_loss = (torch.stack(tot_cen_loss, dim=0).mean() * self.hyp['cen_loss_weight'] + \
@@ -171,7 +179,32 @@ class FCOSLoss:
                 'cls_loss': (torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight']).detach().item() * scale, 
                 'reg_loss': (torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']).detach().item() * scale, 
                 'tar_nums': target_num}
+    
+    def compute_balance_losses(self, stage, stage_reg_loss, stage_cen_loss, stage_cls_loss):
+        if self.hyp['do_cen_loss_balance']:
+            stage_cen_loss = stage_cen_loss * self.cen_loss_balances[stage]
+            self.cen_loss_balances[stage] = self.cen_loss_balances[stage] * 0.9999 + 0.0001 / (stage_cen_loss.detach().item() if stage_cen_loss.detach().item() != 0 else 1.0)
             
+        if self.hyp['do_cls_loss_balance']:
+            stage_cls_loss = stage_cls_loss * self.cls_loss_balances[stage]
+            self.cls_loss_balances[stage] = self.cls_loss_balances[stage] * 0.9999 + 0.0001 / (stage_cls_loss.detach().item() if stage_cls_loss.detach().item() != 0 else 1.0)
+
+        if self.hyp['do_reg_loss_balance']:
+            stage_reg_loss = stage_reg_loss * self.reg_loss_balances[stage]
+            self.reg_loss_balances[stage] = self.reg_loss_balances[stage] * 0.9999 + 0.0001 / (stage_reg_loss.detach().item() if stage_reg_loss.detach().item() != 0 else 1.0)
+
+        return stage_reg_loss, stage_cen_loss, stage_cls_loss
+    
+
+    def update_balances(self):
+        if self.hyp['do_cen_loss_balance']:
+            self.cen_loss_balances = [x/self.cen_loss_balances[self.num_stage // 2] for x in self.cen_loss_balances]
+
+        if self.hyp['do_cls_loss_balance']:
+            self.cls_loss_balances = [x/self.cls_loss_balances[self.num_stage // 2] for x in self.cls_loss_balances]
+            
+        if self.hyp['do_reg_loss_balance']:
+            self.reg_loss_balances = [x/self.reg_loss_balances[self.num_stage // 2] for x in self.reg_loss_balances]
 
 
     def build_targets(self, grid, tar_box, tar_cls, reg_obj_size, stride):

@@ -1,9 +1,9 @@
 loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
-  focal_loss_gamma: 1.5 # focal loss参数
+  focal_loss_gamma: 2.0 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
   reg_loss_weight: 0.5  # 回归损失（bbox损失）权重
-  cls_loss_weight: 1.0   # 分类损失权重
+  cls_loss_weight: 0.5   # 分类损失权重
   cen_loss_weight: 1.0 # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 
@@ -30,7 +30,7 @@ train_hyp:
     - 6
     - 3
   enable_head_scale: false
-  head_norm_layer_type: 'batch_norm'  # ['batch_norm', 'group_norm']
+  head_norm_layer_type: 'group_norm'  # ['batch_norm', 'group_norm']
   freeze_bn: false
   batch_size: 8
   drop_last: true  # DataLoader
@@ -41,11 +41,11 @@ train_hyp:
   start_epoch: 0
   total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu', 'cpu']
-  accumulate_loss_step: 64  # 累积梯度下降
+  accumulate_loss_step: 4  # 累积梯度下降
   do_ema: true
   validation_every: 1  # 每隔多少个epoch validate一次
   use_tta: true  # validation时是否使用TTA
-  mutil_scale_training: true 
+  mutil_scale_training: false 
   calculate_map_every: 299  # 每个多少个epoch计算一次map
   save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
   model_type: 'normal'
@@ -57,12 +57,15 @@ train_hyp:
   center_sampling_radius: 1.5
   iou_type: 'giou'  # ['iou', 'giou', 'linear_iou']
   do_center_sampling: true
+  do_cen_loss_balance: true
+  do_cls_loss_balance: true
+  do_reg_loss_balance: true
 
 
 optimizer_hyp:
   scheduler_type: 'onecycle'  # ['onecycle', 'linear', 'cosine']
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']
-  basic_lr_per_img: 0.00025
+  basic_lr_per_img: 0.0025
   weight_decay: 0.0005
   momentum: 0.937
   lr_max_ds_scale: 0.1
@@ -94,9 +97,9 @@ data_hyp:
   data_aug_scale_jitting_p: 0.0
 
 nms_hyp:
-  pre_nms_cls_thresh: 0.05
+  cen_threshold: 0.05
   iou_threshold: 0.2
-  cls_threshold: 0.0
+  cls_threshold: 0.3
   max_predictions_per_img: 300
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096
@@ -104,7 +107,7 @@ nms_hyp:
   infer_img_save_path: ~
   mutil_label: false  # 一个object是否可以有多个标签
   agnostic: true  # 是否在同类别的bbox之间进行NMS
-  postprocess_bbox: false  # 是否对预测框进行调优
+  postprocess_bbox: true  # 是否对预测框进行调优
   wfb: false  # use NMS or Weighted Fusion Bbox
   wfb_weights: 
     - 1
