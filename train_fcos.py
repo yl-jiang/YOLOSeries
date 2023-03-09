@@ -36,7 +36,7 @@ from trainer import ExponentialMovingAverageModel
 from utils import time_synchronize, summary_model
 from dataset import build_dataloader, build_test_dataloader
 from utils import mAP_v2
-from models import FCOSBaseline
+from models import FCOSBaseline, FCOSCSPNet
 
 from utils import (configure_nccl, configure_omp, get_local_rank, print_config, 
                    get_rank, get_world_size, occupy_mem, padding, MeterBuffer, 
@@ -109,7 +109,7 @@ class Training:
 
     @property
     def select_model(self):
-        return FCOSBaseline
+        return FCOSCSPNet
 
     def _init_logger(self):
         # clear_dir(str(self.cwd / 'log'))  # 再写入log文件前先清空log文件夹
@@ -178,8 +178,7 @@ class Training:
 
         # model
         torch.cuda.set_device(self.local_rank)
-        model = self.select_model(self.hyp["num_class"], 
-                                  self.hyp["resnet_layers"], 
+        model = self.select_model(self.hyp["num_class"]+1, 
                                   freeze_bn=self.hyp['freeze_bn'], 
                                   head_norm_layer_type=self.hyp['head_norm_layer_type'],
                                   enable_head_scale=self.hyp['enable_head_scale'])
@@ -320,8 +319,8 @@ class Training:
 
                 # optimize
                 if step_in_epoch % self.accumulate == 0:
-                    # self.scaler.unscale_(self.optimizer)
-                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()

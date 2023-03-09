@@ -16,6 +16,7 @@ from .retinanet_experiment import *
 from .yolov7 import *
 
 from .fcos import *
+from .fcos_cspnet import *
 
 __all__ = ['RetinaNet', 
            'YOLOV5Large', 
@@ -30,4 +31,5 @@ __all__ = ['RetinaNet',
            'YOLOXMiddle', 
            'YOLOXSmall', 
            'RetinaNetExperiment', 
-           'FCOSBaseline']
+           'FCOSBaseline',
+           'FCOSCSPNet']

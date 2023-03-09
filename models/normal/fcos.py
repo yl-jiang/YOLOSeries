@@ -1,11 +1,53 @@
 import torch
 import torch.nn as nn
-from utils import resnet50, Scale, RetinaNetPyramidFeatures
+from utils import resnet50, Scale
 import math
 import torch.nn.functional as F
 from functools import partial
 
 __all__ = ['FCOSBaseline']
+
+
+class FCOSFPN(nn.Module):
+
+    def __init__(self, c3_size, c4_size, c5_size, feature_size):
+        super(FCOSFPN, self).__init__()
+
+        self.p5_1 = nn.Conv2d(in_channels=c5_size, out_channels=feature_size, kernel_size=1, stride=1, padding=0)
+        self.p5_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.p5_2 = nn.Conv2d(in_channels=feature_size, out_channels=feature_size, kernel_size=3, stride=1, padding=1)
+
+        self.p4_1 = nn.Conv2d(c4_size, feature_size, 1, 1, 0)
+        self.p4_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.p4_2 = nn.Conv2d(feature_size, feature_size, 3, 1, 1)
+
+        self.p3_1 = nn.Conv2d(c3_size, feature_size, 1, 1, 0)
+        self.p3_2 = nn.Conv2d(feature_size, feature_size, 3, 1, 1)
+
+        self.p6 = nn.Conv2d(c5_size, feature_size, 3, 2, 1)
+        self.p7 = nn.Conv2d(feature_size, feature_size, 3, 2, 1)
+
+    def forward(self, x):
+        assert len(x) == 3
+
+        c3, c4, c5 = x
+        p5 = self.p5_1(c5)
+        p5_upsample = self.p5_upsample(p5)
+        p5 = self.p5_2(p5)
+
+        p4 = self.p4_1(c4)
+        p4 += p5_upsample
+        p4_upsample = self.p4_upsample(p4)
+        p4 = self.p4_2(p4)
+
+        p3 = self.p3_1(c3)
+        p3 += p4_upsample
+        p3 = self.p3_2(p3)
+
+        p6 = self.p6(p5)
+        p7 = self.p7(p6)
+
+        return p3, p4, p5, p6, p7
 
 class FCOSHead(nn.Module):
 
@@ -85,7 +127,7 @@ class FCOSHead(nn.Module):
 
 class FCOSBaseline(nn.Module):
 
-    def __init__(self, num_class, resnet_layers, freeze_bn=False, head_norm_layer_type='group_norm', enable_head_scale=False):
+    def __init__(self, num_class, resnet_layers=[3, 4, 6, 3], freeze_bn=False, head_norm_layer_type='group_norm', enable_head_scale=False):
         super(FCOSBaseline, self).__init__()
 
         if resnet_layers is None:
@@ -98,9 +140,9 @@ class FCOSBaseline(nn.Module):
                     self.backbone.layer3[resnet_layers[2]-1].conv3.out_channels,
                     self.backbone.layer4[resnet_layers[3]-1].conv3.out_channels]
 
-        self.fpn = RetinaNetPyramidFeatures(c3_size=fpn_size[0], c4_size=fpn_size[1], c5_size=fpn_size[2], feature_size=256)
+        self.fpn = FCOSFPN(c3_size=fpn_size[0], c4_size=fpn_size[1], c5_size=fpn_size[2], feature_size=256)
         # 增加一个背景类
-        self.head = FCOSHead(in_channels=256, num_class=num_class+1, head_norm_layer_type=head_norm_layer_type, enable_head_scale=enable_head_scale)
+        self.head = FCOSHead(in_channels=256, num_class=num_class, head_norm_layer_type=head_norm_layer_type, enable_head_scale=enable_head_scale)
 
         if freeze_bn:  # only do this for training
             self._freeze_bn()

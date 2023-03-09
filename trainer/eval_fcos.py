@@ -102,6 +102,7 @@ class FCOSEvaluator:
                 outputs.append(None)
                 continue
             x[:, 5:] *= x[:, 4:5]  # conf = cls_conf * obj_conf
+            x[:, 5:] = np.sqrt(x[:, 5:])
             # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
             box = xywh2xyxy(x[:, :4])
             if self.hyp['mutil_label']:
@@ -311,6 +312,7 @@ class FCOSEvaluator:
                 outputs.append(None)
                 continue
             x[:, 5:] *= x[:, 4:5]  # cls_prob = cls * cen
+            x[:, 5:] = np.sqrt(x[:, 5:])
             # [xmin, ymin, xmax, ymax]
             box = x[:, :4]
             if self.hyp['mutil_label']:
@@ -353,6 +355,9 @@ class FCOSEvaluator:
                     # 因为如果一个区域有物体，网络应该在这一区域内给出很多不同的预测框，我们再从这些预测框中选取一个最好的作为该处obj的最终输出；
                     # 如果在某个grid处网络只给出了很少的几个预测框，则更倾向于认为这是网络预测错误所致
                     keep_index = np.asarray(keep_index)[iou_mask.astype(np.float32).sum(axis=1) > 1]
+            if len(keep_index) == 0:
+                outputs.append(None)
+                continue
             x = self.remove_small_boxes(x[keep_index], self.hyp['min_prediction_box_wh'])  # (X, 6)
             if len(x) == 0:
                 outputs.append(None)

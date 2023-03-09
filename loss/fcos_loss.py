@@ -36,7 +36,7 @@ class FCOSLoss:
         self.cls_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
         self.reg_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
         self.num_stage = stage_num
-        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce(0.1)
+        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce(0.01)
         self.radius = hyp['center_sampling_radius']
         self.grids = None
 
@@ -149,7 +149,8 @@ class FCOSLoss:
                     cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']+1), 
                                             tmp_tars_cls.float().reshape(-1, self.hyp['num_class']+1))
                     
-                    cls_loss = (cls_loss * focal).sum() / pos_num
+                    # cls_loss = (cls_loss * focal).sum() / pos_num
+                    cls_loss = (cls_loss * focal).mean()
                     stage_cls_loss.append(cls_loss)
                 else:
                     stage_reg_loss.append(tmp_pred_reg.mean())
