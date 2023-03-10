@@ -24,23 +24,22 @@ class FCOSFPN(nn.Module):
         self.p3_1 = nn.Conv2d(c3_size, feature_size, 1, 1, 0)
         self.p3_2 = nn.Conv2d(feature_size, feature_size, 3, 1, 1)
 
-        self.p6 = nn.Conv2d(c5_size, feature_size, 3, 2, 1)
+        self.p6 = nn.Conv2d(feature_size, feature_size, 3, 2, 1)
         self.p7 = nn.Conv2d(feature_size, feature_size, 3, 2, 1)
 
     def forward(self, x):
         assert len(x) == 3
 
         c3, c4, c5 = x
-        p5 = self.p5_1(c5)
-        p5_upsample = self.p5_upsample(p5)
-        p5 = self.p5_2(p5)
+        p5 = self.p5_2(self.p5_1(c5))
 
         p4 = self.p4_1(c4)
+        p5_upsample = self.p5_upsample(p5)
         p4 += p5_upsample
-        p4_upsample = self.p4_upsample(p4)
         p4 = self.p4_2(p4)
 
         p3 = self.p3_1(c3)
+        p4_upsample = self.p4_upsample(p4)
         p3 += p4_upsample
         p3 = self.p3_2(p3)
 

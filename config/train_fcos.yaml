@@ -41,7 +41,7 @@ train_hyp:
   start_epoch: 0
   total_epoch: 60
   device: "gpu"  # 是否使用GPU进行训练['gpu', 'cpu']
-  accumulate_loss_step: 8  # 累积梯度下降
+  accumulate_loss_step: 4  # 累积梯度下降
   do_ema: true
   validation_every: 1  # 每隔多少个epoch validate一次
   use_tta: true  # validation时是否使用TTA
@@ -99,7 +99,7 @@ data_hyp:
 nms_hyp:
   cen_threshold: 0.05
   iou_threshold: 0.6
-  cls_threshold: 0.3
+  cls_threshold: 0.05
   max_predictions_per_img: 100
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096
