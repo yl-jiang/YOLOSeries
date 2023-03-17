@@ -182,7 +182,7 @@ class FCOSBaseline(nn.Module):
         # fpn_features_5: (b, 256, h/128, w/128);
         fpn_features = self.fpn((c3, c4, c5))
 
-        # cls_fms: [(b, num_class+1, h/8, w/8), (b, num_class+1, h/16, w/16), (b, num_class+1, h/32, w/32), (b, num_class+1, h/64, w/64), (b, num_class+1, h/128, w/128)] / [l, t, r, b]
+        # cls_fms: [(b, num_class, h/8, w/8), (b, num_class, h/16, w/16), (b, num_class, h/32, w/32), (b, num_class, h/64, w/64), (b, num_class, h/128, w/128)] / [l, t, r, b]
         # reg_fms: [(b, 4, h/8, w/8), (b, 4, h/16, w/16), (b, 4, h/32, w/32), (b, 4, h/64, w/64), (b, 4, h/128, w/128)]
         # cen_fms: [(b, 1, h/8, w/8), (b, 1, h/16, w/16), (b, 1, h/32, w/32), (b, 1, h/64, w/64), (b, 4, h/128, w/128)]
         cls_fms, reg_fms, cen_fms = self.head(fpn_features)

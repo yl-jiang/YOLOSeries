@@ -179,7 +179,7 @@ class Training:
 
         # model
         torch.cuda.set_device(self.local_rank)
-        model = self.select_model(self.hyp["num_class"]+1, 
+        model = self.select_model(self.hyp["num_class"], 
                                   freeze_bn=self.hyp['freeze_bn'], 
                                   head_norm_layer_type=self.hyp['head_norm_layer_type'],
                                   enable_head_scale=self.hyp['enable_head_scale'])

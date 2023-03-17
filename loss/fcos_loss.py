@@ -113,21 +113,21 @@ class FCOSLoss:
             grid = self.grids[s]  # (h, w, 2)
             stride = self.strides[s]
             for b in range(batch_size):  # each image
-                pred_cls = cls_fms[s][b]  # (num_class+1, h, w)
+                pred_cls = cls_fms[s][b]  # (num_class, h, w)
                 pred_reg = reg_fms[s][b]  # (4, h, w)
                 pred_cen = cen_fms[s][b]  # (1, h, w)
                 tar_box = targets[b, targets[b, :, 4] >= 0, :4]  # (n, 4)
-                tar_cls = targets[b, targets[b, :, 4] >= 0, 4] + 1  # (n,) / 增加了一个背景类
+                tar_cls = targets[b, targets[b, :, 4] >= 0, 4]  # (n,)
                 reg_obj_size = self.object_sizes_of_interest[s]
                 # pos_idx: tuple; reg_tar: (m, 4); cls_tar: (m,); cen_tar: (m,); pos_num: m
                 pos_idx, reg_tar, cls_tar, cen_tar, pos_num = self.build_targets(grid, tar_box, tar_cls, reg_obj_size, stride)
                 target_num += pos_num
                 
                 # --------------------------------------------------------------------------------- classification loss
-                tmp_pred_cls = pred_cls.permute(1, 2, 0)  # (h, w, num_class+1)
+                tmp_pred_cls = pred_cls.permute(1, 2, 0)  # (h, w, num_class)
                 tmp_pred_cen = pred_cen.permute(1, 2, 0) # (h, w, 1)
                 tmp_pred_reg = pred_reg.permute(1, 2, 0)  # (h, w, 4)
-                tmp_tars_cls = torch.ones_like(tmp_pred_cls) * self.negative_smooth_cls  # (h, w, num_class+1)
+                tmp_tars_cls = torch.ones_like(tmp_pred_cls) * self.negative_smooth_cls  # (h, w, num_class)
                 if pos_num > 0:
                     # --------------------------------------------------------------------------------- centerness loss
                     tmp_tars_cen = torch.zeros_like(tmp_pred_cen)
@@ -135,7 +135,7 @@ class FCOSLoss:
                     stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)))
 
                     # --------------------------------------------------------------------------------- regression loss
-                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, cen_tar))
+                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, cen_tar) / pos_num)
                     
                     # --------------------------------------------------------------------------------- classification loss
                     tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls  # foreground class
@@ -144,22 +144,17 @@ class FCOSLoss:
                     negative_sample_idx = negative_sample_idx.to(torch.bool)
                     tmp_tars_cls[negative_sample_idx][:, 0] = self.positive_smooth_cls  # background class
                     assert (tmp_tars_cls[negative_sample_idx][:, 1:] > self.negative_smooth_cls).sum() == 0
-                    focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']+1), 
-                                                   tmp_tars_cls.float().reshape(-1, self.hyp['num_class']+1)) 
-                    cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']+1), 
-                                            tmp_tars_cls.float().reshape(-1, self.hyp['num_class']+1))
-                    
-                    # cls_loss = (cls_loss * focal).sum() / pos_num
-                    cls_loss = (cls_loss * focal).mean()
-                    stage_cls_loss.append(cls_loss)
                 else:
-                    stage_reg_loss.append(tmp_pred_reg.mean())
-                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1),  torch.zeros_like(tmp_pred_cen).reshape(-1, 1)))
-                    tmp_tars_cls[:, :, 0] = self.positive_smooth_cls  # background class
-                    cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']+1), 
-                                            tmp_tars_cls.float().reshape(-1, self.hyp['num_class']+1))
-                    stage_cls_loss.append(cls_loss.mean())
-            
+                    stage_cen_loss.append(tmp_pred_cen.new_tensor(0.0))
+                    stage_reg_loss.append(tmp_pred_reg.new_tensor(0.0))
+
+                focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), 
+                                               tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
+                cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), 
+                                        tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
+                cls_loss = (cls_loss * focal).sum() / (pos_num + batch_size)
+                stage_cls_loss.append(cls_loss)
+
             balance_reg_loss, balance_cen_loss, balance_cls_loss = self.compute_balance_losses(s, 
                                                                                                stage_reg_loss=torch.stack(stage_reg_loss, dim=0).mean(), 
                                                                                                stage_cen_loss=torch.stack(stage_cen_loss, dim=0).mean(), 
@@ -196,7 +191,6 @@ class FCOSLoss:
 
         return stage_reg_loss, stage_cen_loss, stage_cls_loss
     
-
     def update_balances(self):
         if self.hyp['do_cen_loss_balance']:
             self.cen_loss_balances = [x/self.cen_loss_balances[self.num_stage // 2] for x in self.cen_loss_balances]
@@ -206,7 +200,6 @@ class FCOSLoss:
             
         if self.hyp['do_reg_loss_balance']:
             self.reg_loss_balances = [x/self.reg_loss_balances[self.num_stage // 2] for x in self.reg_loss_balances]
-
 
     def build_targets(self, grid, tar_box, tar_cls, reg_obj_size, stride):
         """
@@ -248,7 +241,8 @@ class FCOSLoss:
 
         # make sure each positive location match no more than one target box
         match_matrix = self.select_unique_by_tar_box_area(tar_box, is_in_tar_boxes, is_cared_in_the_level)
-        assert (match_matrix.sum(dim=-1) >= 2).sum() == 0, f"each location should match no more than one target!{match_matrix.sum(dim=-1).shape}\n{(match_matrix.sum(dim=-1) >= 2).sum()}"
+        assert (match_matrix.sum(dim=-1) >= 2).sum() == 0, \
+            f"each location should match no more than one target!{match_matrix.sum(dim=-1).shape}\n{(match_matrix.sum(dim=-1) >= 2).sum()}"
 
         # ------------------------------------------------------------------------------ build targets
         positive_samples_num = match_matrix.sum()
@@ -363,7 +357,6 @@ class FCOSLoss:
         factor = gamma_factor * alpha_factor
 
         return factor
-
 
     def make_grid(self, shape_list):
         """

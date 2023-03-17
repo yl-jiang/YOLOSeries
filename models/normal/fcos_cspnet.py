@@ -174,7 +174,7 @@ class FCOSHead(nn.Module):
             reg = F.relu(reg)
             reg_fms.append(reg)
 
-        # cls_fms: [(b, num_class+1, h/8, w/8), (b, num_class+1, h/16, w/16), (b, num_class+1, h/32, w/32)] / [l, t, r, b]
+        # cls_fms: [(b, num_class, h/8, w/8), (b, num_class, h/16, w/16), (b, num_class, h/32, w/32)] / [l, t, r, b]
         # reg_fms: [(b, 4, h/8, w/8), (b, 4, h/16, w/16), (b, 4, h/32, w/32)]
         # cen_fms: [(b, 1, h/8, w/8), (b, 1, h/16, w/16), (b, 1, h/32, w/32)]
         return cls_fms, reg_fms, ctr_fms
