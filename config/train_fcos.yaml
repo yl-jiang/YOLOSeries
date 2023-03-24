@@ -11,37 +11,37 @@ loss_hyp:
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "/E/JYL/Datasets/GlobalWheatDetection/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "/E/JYL/Datasets/GlobalWheatDetection/train/lab"  # 存放训练label的文件夹路径
-  name_path: "/E/JYL/Datasets/GlobalWheatDetection/train/names.txt"
-  test_img_dir: "./result/wheat_test_imgs"  # for test
-  val_img_dir: "/E/JYL/Datasets/GlobalWheatDetection/val/img"  # validation image dir
-  val_lab_dir: "/E/JYL/Datasets/GlobalWheatDetection/val/lab"  # validation label dir
+  train_img_dir: "/E/JYL/Datasets/VOC/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/E/JYL/Datasets/VOC/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/E/JYL/Datasets/VOC/train/names.txt"
+  test_img_dir: "./result/coco_test_imgs"  # for test
+  val_img_dir: "/E/JYL/Datasets/VOC/val/img"  # validation image dir
+  val_lab_dir: "/E/JYL/Datasets/VOC/val/lab"  # validation label dir
   aspect_ratio: false  
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 200000
   input_img_size:  # 输入训练网络的图片大小
-    - 1024
-    - 1024
+    - 640
+    - 640
   resnet_layers: 
     - 3
     - 4
     - 6
     - 3
   enable_head_scale: false
-  head_norm_layer_type: 'batch_norm'  # ['batch_norm', 'group_norm']
+  norm_layer_type: 'group_norm'  # ['batch_norm', 'group_norm']
   freeze_bn: false
-  batch_size: 8
+  batch_size: 24
   drop_last: true  # DataLoader
   pin_memory: true  # DataLoader
   random_seed: 7
   shuffle: false  # DataLoader
   num_workers: 0  # DataLoader
   start_epoch: 0
-  total_epoch: 60
+  total_epoch: 100
   device: "gpu"  # 是否使用GPU进行训练['gpu', 'cpu']
-  accumulate_loss_step: 4  # 累积梯度下降
+  accumulate_loss_step: 48  # 累积梯度下降
   do_ema: true
   validation_every: 1  # 每隔多少个epoch validate一次
   use_tta: true  # validation时是否使用TTA
@@ -54,7 +54,7 @@ train_hyp:
   log_identifier: 'fcos_debug'
   save_log_every: 2
   no_data_aug_epoch: 5
-  center_sampling_radius: 2.0
+  center_sampling_radius: 1.5
   iou_type: 'giou'  # ['iou', 'giou', 'linear_iou']
   do_center_sampling: true
   do_cen_loss_balance: false
@@ -63,9 +63,9 @@ train_hyp:
 
 
 optimizer_hyp:
-  scheduler_type: 'onecycle'  # ['onecycle', 'linear', 'cosine']
+  scheduler_type: 'linear'  # ['onecycle', 'linear', 'cosine']
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']
-  basic_lr_per_img: 0.00025 # basic lr: 0.001
+  basic_lr_per_img: 0.0083333 # basic lr: 0.01
   weight_decay: 0.0005
   momentum: 0.937
   lr_max_ds_scale: 0.01
@@ -73,7 +73,7 @@ optimizer_hyp:
 warm_up:
   do_warmup: true  # 是否开启预热训练
   warmup_epoch: 3
-  warmup_bias_max_lr: 0.1  # warmup 期间bias部分参数可以取到的最大lr(warmup_bias_max_lr >= hyp['lr'])
+  warmup_bias_max_lr: 0.05  # warmup 期间bias部分参数可以取到的最大lr(warmup_bias_max_lr >= hyp['lr'])
   warmup_momentum: 0.8
 
 data_hyp:
@@ -98,7 +98,7 @@ data_hyp:
 
 nms_hyp:
   cen_threshold: 0.05
-  iou_threshold: 0.6
+  iou_threshold: 0.25
   cls_threshold: 0.05
   max_predictions_per_img: 100
   min_prediction_box_wh: 2

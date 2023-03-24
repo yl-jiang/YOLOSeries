@@ -360,6 +360,6 @@ class FCOSEvaluator:
             if len(x) == 0:
                 outputs.append(None)
                 continue
-            
+
             outputs.append(x)
         return outputs

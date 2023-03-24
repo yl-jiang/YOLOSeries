@@ -30,13 +30,14 @@ class FCOSLoss:
         cls_pos_weight = torch.tensor(hyp["cls_pos_weight"], device=self.device)
         cen_pos_weight = torch.tensor(hyp['cen_pos_weight'], device=self.device)
         self.bce_cls = nn.BCEWithLogitsLoss(pos_weight=cls_pos_weight, reduction='none').to(self.device)
-        self.bce_cen = nn.BCEWithLogitsLoss(pos_weight=cen_pos_weight, reduction='mean').to(self.device)
+        self.bce_cen = nn.BCEWithLogitsLoss(pos_weight=cen_pos_weight, reduction='none').to(self.device)
+        self.l1_reg = nn.L1Loss()
         self.input_img_size = hyp['input_img_size']
         self.cen_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
         self.cls_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
         self.reg_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
         self.num_stage = stage_num
-        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce(0.01)
+        self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce(0.0)
         self.radius = hyp['center_sampling_radius']
         self.grids = None
 
@@ -45,7 +46,12 @@ class FCOSLoss:
         Inputs:
             pred: (m, 4) / [l, t, r, b]
             tar: (m, 4) / [l, t, r, b]
+            weight: (m,)
         """
+        assert pred.size(0) == tar.size(0)
+        if weight is not None:
+            assert pred.size(0) == len(weight)
+
         pred_left   = pred[:, 0]  # (m,)
         pred_top    = pred[:, 1]  # (m,)
         pred_right  = pred[:, 2]  # (m,)
@@ -81,7 +87,7 @@ class FCOSLoss:
             return (losses * weight).sum() / weight.sum()
         else:
             assert losses.numel() != 0
-            return losses.mean()
+            return losses.sum()
 
     def __call__(self, cls_fms, reg_fms, cen_fms, targets_batch):
         """
@@ -118,12 +124,12 @@ class FCOSLoss:
                 pred_cen = cen_fms[s][b]  # (1, h, w)
                 tar_box = targets[b, targets[b, :, 4] >= 0, :4]  # (n, 4)
                 tar_cls = targets[b, targets[b, :, 4] >= 0, 4]  # (n,)
+                N = tar_cls.size(0)
                 reg_obj_size = self.object_sizes_of_interest[s]
                 # pos_idx: tuple; reg_tar: (m, 4); cls_tar: (m,); cen_tar: (m,); pos_num: m
                 pos_idx, reg_tar, cls_tar, cen_tar, pos_num = self.build_targets(grid, tar_box, tar_cls, reg_obj_size, stride)
                 target_num += pos_num
                 
-                # --------------------------------------------------------------------------------- classification loss
                 tmp_pred_cls = pred_cls.permute(1, 2, 0)  # (h, w, num_class)
                 tmp_pred_cen = pred_cen.permute(1, 2, 0) # (h, w, 1)
                 tmp_pred_reg = pred_reg.permute(1, 2, 0)  # (h, w, 4)
@@ -132,19 +138,17 @@ class FCOSLoss:
                     # --------------------------------------------------------------------------------- centerness loss
                     tmp_tars_cen = torch.zeros_like(tmp_pred_cen)
                     tmp_tars_cen[(pos_idx[0], pos_idx[1])] = cen_tar.unsqueeze(dim=-1).type_as(tmp_pred_cen)
-                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)))
+                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)).sum() / pos_num)
 
                     # --------------------------------------------------------------------------------- regression loss
-                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, cen_tar) / pos_num)
+                    weight = cen_tar
+                    # weight = None
+                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, weight) / pos_num)
                     
                     # --------------------------------------------------------------------------------- classification loss
                     tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls  # foreground class
-                    negative_sample_idx = tmp_pred_cls.new_ones(tmp_pred_cls.size(0), tmp_pred_cls.size(1))  # (h, w)
-                    negative_sample_idx[(pos_idx[0], pos_idx[1])] = 0.0
-                    negative_sample_idx = negative_sample_idx.to(torch.bool)
-                    tmp_tars_cls[negative_sample_idx][:, 0] = self.positive_smooth_cls  # background class
-                    assert (tmp_tars_cls[negative_sample_idx][:, 1:] > self.negative_smooth_cls).sum() == 0
                 else:
+                    # --------------------------------------------------------------------------------- classification loss
                     stage_cen_loss.append(tmp_pred_cen.new_tensor(0.0))
                     stage_reg_loss.append(tmp_pred_reg.new_tensor(0.0))
 
@@ -152,7 +156,7 @@ class FCOSLoss:
                                                tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
                 cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), 
                                         tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
-                cls_loss = (cls_loss * focal).sum() / (pos_num + batch_size)
+                cls_loss = (cls_loss * focal).sum() / (pos_num + N)
                 stage_cls_loss.append(cls_loss)
 
             balance_reg_loss, balance_cen_loss, balance_cls_loss = self.compute_balance_losses(s, 
@@ -165,15 +169,16 @@ class FCOSLoss:
 
         self.update_balances() 
 
-        scale = batch_size
-        tot_loss = (torch.stack(tot_cen_loss, dim=0).mean() * self.hyp['cen_loss_weight'] + \
-                    torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight'] + \
-                    torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']) * scale
+        scale = 1
+        cen_loss_out = torch.stack(tot_cen_loss, dim=0).sum() * self.hyp['cen_loss_weight']
+        cls_loss_out = torch.stack(tot_cls_loss, dim=0).sum() * self.hyp['cls_loss_weight']
+        reg_loss_out = torch.stack(tot_reg_loss, dim=0).sum() * self.hyp['reg_loss_weight']
+        tot_loss = (cen_loss_out + cls_loss_out + reg_loss_out) * scale
         
         return {'tot_loss': tot_loss, 
-                'cen_loss': (torch.stack(tot_cen_loss, dim=0).mean() * self.hyp['cen_loss_weight']).detach().item() * scale, 
-                'cls_loss': (torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight']).detach().item() * scale, 
-                'reg_loss': (torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']).detach().item() * scale, 
+                'cen_loss': cen_loss_out.detach().item() * scale, 
+                'cls_loss': cls_loss_out.detach().item() * scale, 
+                'reg_loss': reg_loss_out.detach().item() * scale, 
                 'tar_nums': target_num}
     
     def compute_balance_losses(self, stage, stage_reg_loss, stage_cen_loss, stage_cls_loss):
@@ -227,9 +232,9 @@ class FCOSLoss:
         # ------------------------------------------------------------------------------ negative & positive samples assignment
         # is location in origin target boxes
         # (h, w, 1, 4) & (1, 1, n, 4) -> (h, w, n, 4)
-        reg_targets = g + tar[None, None]  # [x-xmin, y-ymin, xmax-x, ymax-y] / [l, t, r, b]
+        reg_targets = g + tar[None, None].contiguous()  # [x-xmin, y-ymin, xmax-x, ymax-y] / [l, t, r, b]
         # (h, w, n, 4) -> (h, w, n)
-        is_in_tar_boxes = (reg_targets > 0).all(dim=-1)  # (h, w, n)
+        is_in_tar_boxes = (reg_targets > 0.).all(dim=-1)  # (h, w, n)
 
         # center sampling
         if self.hyp['do_center_sampling']:
@@ -237,12 +242,10 @@ class FCOSLoss:
         
         # filter target box by the maximum corrdinate that feature level i needs to regress
         max_reg_tar = reg_targets.max(dim=-1)[0]  # (h, w, n)
-        is_cared_in_the_level = (max_reg_tar > reg_obj_size[0]) & (max_reg_tar < reg_obj_size[1])  # (h, w, n)
+        is_cared_in_the_level = (max_reg_tar >= reg_obj_size[0]) & (max_reg_tar <= reg_obj_size[1])  # (h, w, n)
 
         # make sure each positive location match no more than one target box
         match_matrix = self.select_unique_by_tar_box_area(tar_box, is_in_tar_boxes, is_cared_in_the_level)
-        assert (match_matrix.sum(dim=-1) >= 2).sum() == 0, \
-            f"each location should match no more than one target!{match_matrix.sum(dim=-1).shape}\n{(match_matrix.sum(dim=-1) >= 2).sum()}"
 
         # ------------------------------------------------------------------------------ build targets
         positive_samples_num = match_matrix.sum()
@@ -306,22 +309,22 @@ class FCOSLoss:
             is_in_tar_boxes: (h, w, n) / n is the number of gt
             is_cared_in_the_level: (h, w, n)
         """
-        if is_in_tar_boxes.sum() > 0 and is_cared_in_the_level.sum() > 0:
+
+        if torch.stack((is_in_tar_boxes, is_cared_in_the_level), dim=-1).all(dim=-1).any():
+        # if is_in_tar_boxes.sum() > 0 or is_cared_in_the_level.sum() > 0:
             h, w, n = is_in_tar_boxes.shape
             tar_xywh = xyxy2xywh(tar_box)
             tar_box_area = torch.prod(tar_xywh[:, [2, 3]], dim=-1)  # (n,)
             tar_box_area = tar_box_area.repeat(h, w, 1)  # (h, w, n)
             tar_box_area[~is_in_tar_boxes] = INF
             tar_box_area[~is_cared_in_the_level] = INF
-            min_idx = torch.min(tar_box_area, dim=-1)[1]  # (h, w)
-            min_idx = F.one_hot(min_idx, tar_box.size(0)).to(torch.bool)  # (h, w, n)
-            min_idx[tar_box_area == INF] = False
-            location2gt_mask = torch.zeros_like(tar_box_area, dtype=torch.bool)
-            location2gt_mask[min_idx] = True  # (h, w, n)
+            min_area_idx = torch.min(tar_box_area, dim=-1)[1]  # (h, w)
+            min_area_idx = F.one_hot(min_area_idx, tar_box.size(0)).to(torch.bool)  # (h, w, n)
+            min_area_idx[tar_box_area == INF] = False
 
             # 确保每个location都最多只有一个gt与之对应
-            assert (location2gt_mask.sum(dim=-1) >= 2).sum() == 0
-            return location2gt_mask
+            assert (min_area_idx.sum(dim=-1) >= 2).sum() == 0, f"each location should match no more than one target!{min_area_idx.sum(dim=-1).shape}\n{(min_area_idx.sum(dim=-1) >= 2).sum()}"
+            return min_area_idx
         return torch.zeros_like(is_in_tar_boxes, dtype=torch.bool)
 
     def get_regression_range_of_each_level(self, num_level):

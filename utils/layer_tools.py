@@ -726,7 +726,6 @@ class RetinaNetRegression(nn.Module):
         out = torch.reshape(out, shape=(b, -1, 4))
         return out
 
-
 class RetinaNetClassification(nn.Module):
 
     def __init__(self, in_channels, inner_channels, num_anchor, num_class):
@@ -766,7 +765,6 @@ class RetinaNetClassification(nn.Module):
         # (b, hxwx9, 80)
         out = torch.reshape(out, shape=(b, -1, self.num_class)).contiguous()
         return out
-
 
 class RetinaNetPyramidFeatures(nn.Module):
 

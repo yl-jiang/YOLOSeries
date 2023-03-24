@@ -8,6 +8,141 @@ from functools import partial
 __all__ = ['FCOSBaseline']
 
 
+class BasicBlock(nn.Module):
+
+    expansion = 1
+
+    def __init__(self, in_channels, out_channels, stride, downsample=None):
+        super(BasicBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=(3, 3), stride=stride, padding=1, bias=False)
+        self.bn1 = nn.GroupNorm(32, out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(3, 3), stride=(1, 1), padding=1, bias=False)
+        self.bn2 = nn.GroupNorm(32, out_channels)
+        self.downsample = downsample
+
+    def forward(self, x):
+        identify = x
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        if self.downsample is not None:
+            out = self.downsample(out)
+        out += identify
+        return self.relu(out)
+
+
+class Bottleneck(nn.Module):
+
+    expansion = 4
+
+    def __init__(self, in_channels, out_channels, stride, downsample=None):
+        super(Bottleneck, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=(1, 1), stride=(1, 1), padding=0, bias=False)
+        self.bn1 = nn.GroupNorm(32, out_channels)
+        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(3, 3), stride=stride, padding=1, bias=False)
+        self.bn2 = nn.GroupNorm(32, out_channels)
+        self.conv3 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels*self.expansion, kernel_size=(1, 1), stride=(1, 1), padding=0, bias=False)
+        self.bn3 = nn.GroupNorm(32, out_channels*self.expansion)
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+
+    def forward(self, x):
+        identify = x
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        if self.downsample is not None:
+            identify = self.downsample(x)
+        out += identify
+        return self.relu(out)
+
+class GroupNormResNet(nn.Module):
+
+    def __init__(self, inplane, layers, block):
+        super(GroupNormResNet, self).__init__()
+        assert isinstance(layers, list) and len(layers) == 4
+        self.inplane_upd = inplane
+        self.layers = layers
+
+        # head layers
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=inplane, kernel_size=(7, 7), stride=(2, ), padding=3, bias=False)
+        self.bn1 = nn.GroupNorm(32, inplane, 1e-5)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        # residual blocks
+        self.layer1 = self._make_layer(block, inplane*1, self.layers[0], 1)
+        self.layer2 = self._make_layer(block, inplane*2, self.layers[1], 2)
+        self.layer3 = self._make_layer(block, inplane*4, self.layers[2], 2)
+        self.layer4 = self._make_layer(block, inplane*8, self.layers[3], 2)
+
+        # initialization
+        self._initialize(self)
+        self._initialize_last_bn(self)
+
+    def _initialize(self, modules):
+        """
+        ordinary model initialization.
+        :param modules:
+        :return:
+        """
+        for m in modules.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.GroupNorm):
+                nn.init.constant_(m.bias, 0.)
+
+    def _initialize_last_bn(self, modules):
+        """
+        Zero-initialize the last BN in each residual branch,
+        so that the residual branch starts with zeros, and each residual block behaves like an identity.
+        This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
+
+        :param modules:
+        :return:
+        """
+        for m in modules.modules():
+            if isinstance(m, Bottleneck):
+                nn.init.constant_(m.bn3.weight, 0.)
+            elif isinstance(m, BasicBlock):
+                nn.init.constant_(m.bn2.weight, 0.)
+
+    def _make_layer(self, block, planes, block_num, stride):
+        # stride = 1的Bottleneck会扩充channel，stride = 2的Bottleneck会downsample image且会扩充channel
+        if stride != 1 or self.inplane_upd != planes * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(in_channels=self.inplane_upd, out_channels=planes*block.expansion, kernel_size=(1, 1), stride=stride, padding=0, bias=False),
+                nn.GroupNorm(32, planes*block.expansion))
+        else:
+            downsample = None
+
+        layers = [block(self.inplane_upd, planes, stride, downsample)]
+        self.inplane_upd = planes * block.expansion
+        for _ in range(1, block_num):
+            layers.append(block(self.inplane_upd, planes, stride=1))
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.maxpool(x)
+
+        x1 = self.layer1(x)
+        x2 = self.layer2(x1)
+        x3 = self.layer3(x2)
+        x4 = self.layer4(x3)
+
+        return x2, x3, x4
+
+
+def groupnorm_resnet(inplane=64, layers=None, block=None):
+    if layers is None:
+        layers = [3, 4, 6, 3]
+    if block is None:
+        block = Bottleneck
+    model = GroupNormResNet(inplane, layers, block)
+    return model
+
+
 class FCOSFPN(nn.Module):
 
     def __init__(self, c3_size, c4_size, c5_size, feature_size):
@@ -50,23 +185,23 @@ class FCOSFPN(nn.Module):
 
 class FCOSHead(nn.Module):
 
-    def __init__(self, in_channels, num_class, head_norm_layer_type='group_norm', enable_head_scale=False):
+    def __init__(self, in_channels, num_class, norm_layer_type='group_norm', enable_head_scale=False):
         super(FCOSHead, self).__init__()
 
         cls_layers, reg_layers = [], []
-        if head_norm_layer_type.lower() == "batch_norm":
+        if norm_layer_type.lower() == "batch_norm":
             NormLayer = nn.BatchNorm2d
-        elif head_norm_layer_type.lower() == 'group_norm':
+        elif norm_layer_type.lower() == 'group_norm':
             NormLayer = partial(nn.GroupNorm, num_groups=32)
         else:
-            raise RuntimeError(f'unknow head_norm_layer_type {head_norm_layer_type}, must be "batch_norm" or "group_norm".')
+            raise RuntimeError(f'unknow head_norm_layer_type {norm_layer_type}, must be "batch_norm" or "group_norm".')
         
         for _ in range(4):
             cls_layers.append(nn.Sequential(nn.Conv2d(in_channels, in_channels, 3, 1, 1, bias=False), 
-                                            NormLayer(num_channels=in_channels) if head_norm_layer_type == 'group_norm' else NormLayer(num_features=in_channels), 
+                                            NormLayer(num_channels=in_channels) if norm_layer_type == 'group_norm' else NormLayer(num_features=in_channels), 
                                             nn.ReLU(inplace=True)))
             reg_layers.append(nn.Sequential(nn.Conv2d(in_channels, in_channels, 3, 1, 1, bias=False), 
-                                            NormLayer(num_channels=in_channels) if head_norm_layer_type == 'group_norm' else NormLayer(num_features=in_channels), 
+                                            NormLayer(num_channels=in_channels) if norm_layer_type == 'group_norm' else NormLayer(num_features=in_channels), 
                                             nn.ReLU(inplace=True)))
 
         self.cls_layers = nn.Sequential(*cls_layers)
@@ -126,13 +261,16 @@ class FCOSHead(nn.Module):
 
 class FCOSBaseline(nn.Module):
 
-    def __init__(self, num_class, resnet_layers=[3, 4, 6, 3], freeze_bn=False, head_norm_layer_type='group_norm', enable_head_scale=False):
+    def __init__(self, num_class, resnet_layers=[3, 4, 6, 3], freeze_bn=False, norm_layer_type='group_norm', enable_head_scale=False):
         super(FCOSBaseline, self).__init__()
 
         if resnet_layers is None:
             resnet_layers = [3, 4, 6, 3]
+        if norm_layer_type == "batch_norm":
+            self.backbone = resnet50(inplane=64, layers=resnet_layers)
+        elif norm_layer_type == 'group_norm':
+            self.backbone = groupnorm_resnet(inplane=64, layers=resnet_layers)
 
-        self.backbone = resnet50(inplane=64, layers=resnet_layers)
         self.use_pretrained_resnet = False
 
         fpn_size = [self.backbone.layer2[resnet_layers[1]-1].conv3.out_channels,
@@ -141,16 +279,18 @@ class FCOSBaseline(nn.Module):
 
         self.fpn = FCOSFPN(c3_size=fpn_size[0], c4_size=fpn_size[1], c5_size=fpn_size[2], feature_size=256)
         # 增加一个背景类
-        self.head = FCOSHead(in_channels=256, num_class=num_class, head_norm_layer_type=head_norm_layer_type, enable_head_scale=enable_head_scale)
+        self.head = FCOSHead(in_channels=256, num_class=num_class, norm_layer_type=norm_layer_type, enable_head_scale=enable_head_scale)
+
+        self._init_weights()
 
         if freeze_bn:  # only do this for training
             self._freeze_bn()
 
     def _init_weights(self):
         # initialization
-        for modules in [self.cls_tower, self.bbox_tower,
-                        self.cls_logits, self.bbox_pred,
-                        self.centerness]:
+        for modules in [self.head.cls_layers, self.head.reg_layers,
+                        self.head.ctr_out_layer, self.head.reg_out_layer,
+                        self.head.cls_out_layer]:
             for l in modules.modules():
                 if isinstance(l, nn.Conv2d):
                     torch.nn.init.normal_(l.weight, std=0.01)

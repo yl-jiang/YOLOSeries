@@ -41,7 +41,7 @@ from models import FCOSBaseline, FCOSCSPNet
 from utils import (configure_nccl, configure_omp, get_local_rank, print_config, 
                    get_rank, get_world_size, occupy_mem, padding, MeterBuffer, 
                    all_reduce_norm, is_parallel, adjust_status, synchronize, 
-                   configure_module, launch)
+                   configure_module, launch, check_parameters_no_used)
 import torch.distributed as dist
 import gc
 
@@ -181,7 +181,7 @@ class Training:
         torch.cuda.set_device(self.local_rank)
         model = self.select_model(self.hyp["num_class"], 
                                   freeze_bn=self.hyp['freeze_bn'], 
-                                  head_norm_layer_type=self.hyp['head_norm_layer_type'],
+                                  norm_layer_type=self.hyp['norm_layer_type'],
                                   enable_head_scale=self.hyp['enable_head_scale'])
         ModelSummary(model, 
                      input_size=(1, 3, self.hyp['input_img_size'][0], 
@@ -241,7 +241,7 @@ class Training:
             if hasattr(m, "bias") and isinstance(m.bias, nn.Parameter):
                 param_group_bias.append(m.bias)
             
-            if isinstance(m, nn.BatchNorm2d):
+            if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.GroupNorm):
                 param_group_other.append(m.weight)
             elif hasattr(m, 'weight') and isinstance(m.weight, nn.Parameter):
                 param_group_weight.append(m.weight)
@@ -314,6 +314,7 @@ class Training:
 
                 # backward
                 self.scaler.scale(tot_loss).backward()
+                check_parameters_no_used(self.model)
 
                 end_iter_t = time_synchronize()
                 loss_dict.update({'tot_loss': tot_loss.detach().item() / get_world_size()})
