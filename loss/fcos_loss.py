@@ -263,7 +263,7 @@ class FCOSLoss:
 
             return positive_location_idx, reg_tars_out, cls_tars_out, cen_tars_out, positive_samples_num
         
-        return None, None, tar_cls.new_tensor([-1]), None, 0
+        return None, None, None, None, 0
     
     def center_sampling(self, grid, tar_box, stride):
         """
