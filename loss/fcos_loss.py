@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from utils import xyxy2xywhn, xyxy2xywh, xywh2xyxy
+from utils import xyxy2xywhn, xyxy2xywh, xywh2xyxy, reduce_mean, gather, get_local_rank
 from utils import gpu_CIoU
 from utils import gpu_iou, gpu_DIoU, gpu_Giou
 from torch.nn import functional as F
@@ -83,10 +83,9 @@ class FCOSLoss:
         else:
             raise NotImplementedError
 
-        if weight is not None and weight.sum() > 0:
-            return (losses * weight).sum() / weight.sum()
+        if weight is not None :
+            return (losses * weight).sum()
         else:
-            assert losses.numel() != 0
             return losses.sum()
 
     def __call__(self, cls_fms, reg_fms, cen_fms, targets_batch):
@@ -124,7 +123,6 @@ class FCOSLoss:
                 pred_cen = cen_fms[s][b]  # (1, h, w)
                 tar_box = targets[b, targets[b, :, 4] >= 0, :4]  # (n, 4)
                 tar_cls = targets[b, targets[b, :, 4] >= 0, 4]  # (n,)
-                N = tar_cls.size(0)
                 reg_obj_size = self.object_sizes_of_interest[s]
                 # pos_idx: tuple; reg_tar: (m, 4); cls_tar: (m,); cen_tar: (m,); pos_num: m
                 pos_idx, reg_tar, cls_tar, cen_tar, pos_num = self.build_targets(grid, tar_box, tar_cls, reg_obj_size, stride)
@@ -138,12 +136,12 @@ class FCOSLoss:
                     # --------------------------------------------------------------------------------- centerness loss
                     tmp_tars_cen = torch.zeros_like(tmp_pred_cen)
                     tmp_tars_cen[(pos_idx[0], pos_idx[1])] = cen_tar.unsqueeze(dim=-1).type_as(tmp_pred_cen)
-                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)).sum() / pos_num)
+                    stage_cen_loss.append(self.bce_cen(tmp_pred_cen.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)).sum() / max(pos_num, 1.0))
 
                     # --------------------------------------------------------------------------------- regression loss
-                    weight = cen_tar
-                    # weight = None
-                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, weight) / pos_num)
+                    ctrness_targets_sum = cen_tar.sum()
+                    loss_denorm = max(ctrness_targets_sum.item(), 1e-6)
+                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, cen_tar) / loss_denorm)
                     
                     # --------------------------------------------------------------------------------- classification loss
                     tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls  # foreground class
@@ -156,7 +154,7 @@ class FCOSLoss:
                                                tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
                 cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), 
                                         tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
-                cls_loss = (cls_loss * focal).sum() / (pos_num + N)
+                cls_loss = (cls_loss * focal).sum() / max(pos_num, 1.0)
                 stage_cls_loss.append(cls_loss)
 
             balance_reg_loss, balance_cen_loss, balance_cls_loss = self.compute_balance_losses(s, 
@@ -170,9 +168,9 @@ class FCOSLoss:
         self.update_balances() 
 
         scale = 1
-        cen_loss_out = torch.stack(tot_cen_loss, dim=0).sum() * self.hyp['cen_loss_weight']
-        cls_loss_out = torch.stack(tot_cls_loss, dim=0).sum() * self.hyp['cls_loss_weight']
-        reg_loss_out = torch.stack(tot_reg_loss, dim=0).sum() * self.hyp['reg_loss_weight']
+        cen_loss_out = torch.stack(tot_cen_loss, dim=0).mean() * self.hyp['cen_loss_weight']
+        cls_loss_out = torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight']
+        reg_loss_out = torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']
         tot_loss = (cen_loss_out + cls_loss_out + reg_loss_out) * scale
         
         return {'tot_loss': tot_loss, 
@@ -265,7 +263,7 @@ class FCOSLoss:
 
             return positive_location_idx, reg_tars_out, cls_tars_out, cen_tars_out, positive_samples_num
         
-        return None, None, None, None, positive_samples_num
+        return None, None, tar_cls.new_tensor([-1]), None, 0
     
     def center_sampling(self, grid, tar_box, stride):
         """

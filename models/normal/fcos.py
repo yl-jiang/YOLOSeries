@@ -162,6 +162,14 @@ class FCOSFPN(nn.Module):
         self.p6 = nn.Conv2d(feature_size, feature_size, 3, 2, 1)
         self.p7 = nn.Conv2d(feature_size, feature_size, 3, 2, 1)
 
+        self._init_top_modules()
+
+    def _init_top_modules(self):
+        for m in [self.p6, self.p7]:
+            nn.init.kaiming_uniform_(m.weight, a=1)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
     def forward(self, x):
         assert len(x) == 3
 
@@ -179,7 +187,7 @@ class FCOSFPN(nn.Module):
         p3 = self.p3_2(p3)
 
         p6 = self.p6(p5)
-        p7 = self.p7(p6)
+        p7 = self.p7(F.relu(p6))
 
         return p3, p4, p5, p6, p7
 
@@ -278,7 +286,6 @@ class FCOSBaseline(nn.Module):
                     self.backbone.layer4[resnet_layers[3]-1].conv3.out_channels]
 
         self.fpn = FCOSFPN(c3_size=fpn_size[0], c4_size=fpn_size[1], c5_size=fpn_size[2], feature_size=256)
-        # 增加一个背景类
         self.head = FCOSHead(in_channels=256, num_class=num_class, norm_layer_type=norm_layer_type, enable_head_scale=enable_head_scale)
 
         self._init_weights()

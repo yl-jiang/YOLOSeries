@@ -299,34 +299,40 @@ class FCOSEvaluator:
             preds_out: (b, N, 85) / [xmin, ymin, xmax, ymax, centerness, cls1, cls2, cls3, ...]
         """
         preds_out = preds_out.float().cpu().numpy()
-        obj_conf_mask = preds_out[:, :, 4] > self.hyp['cen_threshold']  # (b, N)
+        pre_conf_mask = preds_out[:, :, 5:] > self.hyp['pre_nms_thresh']  # (b, N, num_class)
+        obj_conf_mask = pre_conf_mask.any(axis=-1)  # (b, N)
         outputs = []
         for i in range(preds_out.shape[0]):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
-            # x = preds_out[i]
             if len(x) == 0:
                 outputs.append(None)
                 continue
-            x[:, 5:] *= x[:, 4:5]  # cls_prob = cls * cen
+
+            x[:, 5:] = x[:, 5:] * x[:, 4:5] if self.hyp['thresh_with_ctr'] else x[:, 5:]  # cls_prob = cls * cen
             x[:, 5:] = np.sqrt(x[:, 5:])
             # [xmin, ymin, xmax, ymax]
             box = x[:, :4]
             if self.hyp['mutil_label']:
+                pre_nms_top_n = min(pre_conf_mask[i].sum(), self.hyp['pre_nms_topk'])
                 row_idx, col_idx = (x[:, 5:] > self.cls_threshold).nonzero()
                 # x: [xmin, ymin, xmax, ymax, cls_prob, cls_id]
                 x = np.concatenate((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].astype(np.float32)), axis=1)
             else:
+                pre_nms_top_n = min(obj_conf_mask[i].sum(), self.hyp['pre_nms_topk'])
                 cls_prob = x[:, 5:].max(axis=1)[:, None]
                 col_idx = x[:, 5:].argmax(axis=1)[:, None]
                 # [xmin, ymin, xmax, ymax, cls_prob, cls_id]
                 x = np.concatenate((box, cls_prob, col_idx.astype(np.float32)), axis=1)
-                cls_mask = np.ascontiguousarray(cls_prob.reshape(-1)) >= self.cls_threshold
+                cls_mask = np.ascontiguousarray(cls_prob.reshape(-1)) > self.cls_threshold
                 x = x[cls_mask]
 
             bbox_num = x.shape[0]
             if not bbox_num:
                 outputs.append(None)
                 continue
+
+            sort_idx = np.argsort(x[:, 4])[::-1]
+            x = x[sort_idx][:pre_nms_top_n]
 
             if self.hyp['agnostic']:  # 每张image的每个class之间的bbox进行nms
                 # 给每一个类别的bbox加上一个特殊的偏置，从而使得NMS时可以在每个类别间的bbox进行
@@ -360,6 +366,6 @@ class FCOSEvaluator:
             if len(x) == 0:
                 outputs.append(None)
                 continue
-
+            
             outputs.append(x)
         return outputs

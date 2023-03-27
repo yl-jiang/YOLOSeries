@@ -24,6 +24,8 @@ __all__ = [
     "gather",
     "all_gather",
     "torch_distributed_zero_first", 
+    "reduce_mean",
+    "reduce_sum"
 ]
 
 _LOCAL_PROCESS_GROUP = None
@@ -270,6 +272,22 @@ def time_synchronized():
     if torch.cuda.is_available():
         torch.cuda.synchronize()
     return time.time()
+
+
+def reduce_sum(tensor):
+    world_size = get_world_size()
+    if world_size < 2:
+        return tensor
+    tensor = tensor.clone()
+    dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+    synchronize()
+    return tensor
+
+
+def reduce_mean(tensor):
+    num_gpus = get_world_size()
+    total = reduce_sum(tensor)
+    return total.float() / num_gpus
 
 
 from contextlib import contextmanager
