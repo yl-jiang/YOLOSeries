@@ -16,6 +16,7 @@ class FCOSEvaluator:
         self.device = hyp['device']
         self.num_class = hyp['num_class']
         self.ds_scales = [8, 16, 32, 64, 128]
+        
         self.inp_h, self.inp_w = hyp['input_img_size']
         self.use_tta = hyp['use_tta']
         self.grid_coords = [self.make_grid(self.inp_h//s, self.inp_w//s, s).float() for s in self.ds_scales]
@@ -186,7 +187,6 @@ class FCOSEvaluator:
     @torch.no_grad()
     def do_inference(self, inputs):
         preds_out = []
-        input_img_h, input_img_w = inputs.size(2), inputs.size(3)
         # cls_fms: [(b, num_class, h/8, w/8), (b, num_class, h/16, w/16), (b, num_class, h/32, w/32), (b, num_class, h/64, w/64), (b, num_class, h/128, w/128)]
         # reg_fms: [(b, 4, h/8, w/8), (b, 4, h/16, w/16), (b, 4, h/32, w/32), (b, 4, h/64, w/64), (b, 4, h/128, w/128)]
         # cen_fms: [(b, 1, h/8, w/8), (b, 1, h/16, w/16), (b, 1, h/32, w/32), (b, 1, h/64, w/64), (b, 4, h/128, w/128)]
@@ -196,7 +196,7 @@ class FCOSEvaluator:
         # (1, 1, 1, 4)
         sig = (inputs.new_tensor([-1, -1, 1, 1])[None, None, None]).contiguous()
         for i in range(len(cls_fms)):  # feature level
-            level_i_stride = self.ds_scales[i]
+            level_i_stride = self.inp_h / cls_fms[i].size(2)
             level_i_pred_cls = cls_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, num_class)
             level_i_pred_reg = reg_fms[i].permute(0, 2, 3, 1).contiguous() * level_i_stride  # (b, h, w, 4) / [l, t, r, b]
             level_i_pred_cen = cen_fms[i].permute(0, 2, 3, 1).contiguous()  # (b, h, w, 1)
@@ -205,10 +205,7 @@ class FCOSEvaluator:
             fm_h, fm_w = level_i_pred_cls.size(1), level_i_pred_cls.size(2)
             
             # grid_coords: (1, h, w, 2) / 可以优化grid_coords的创建方式
-            if input_img_h == self.inp_h and input_img_w == self.inp_w:
-                level_i_grid = self.grid_coords[i].type_as(inputs)  # [x, y]
-            else:
-                level_i_grid = self.make_grid(fm_h, fm_w, level_i_stride).type_as(inputs)
+            level_i_grid = self.make_grid(fm_h, fm_w, level_i_stride).type_as(inputs)
             level_i_grid = level_i_grid.repeat(1, 1, 1, 2)  # (1, h, w, 2) -> (1, h, w, 4) / [x, y, x, y]
             
             # [x-l, y-t, x+r, y+b] -> [xmin, ymin, xmax, ymax] / (b, h, w, 4)
@@ -309,7 +306,7 @@ class FCOSEvaluator:
                 continue
 
             x[:, 5:] = x[:, 5:] * x[:, 4:5] if self.hyp['thresh_with_ctr'] else x[:, 5:]  # cls_prob = cls * cen
-            x[:, 5:] = np.sqrt(x[:, 5:])
+            
             # [xmin, ymin, xmax, ymax]
             box = x[:, :4]
             if self.hyp['mutil_label']:
@@ -340,6 +337,8 @@ class FCOSEvaluator:
             else:
                 box_offset = x[:, 5] * 0.
             bboxes_offseted = x[:, :4] + box_offset[:, None]  # M
+
+            x[:, 4] = np.sqrt(x[:, 4])
             scores = x[:, 4]
             keep_index = numba_nms(bboxes_offseted, scores, self.iou_threshold)
 

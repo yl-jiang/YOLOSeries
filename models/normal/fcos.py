@@ -220,19 +220,7 @@ class FCOSHead(nn.Module):
 
         self.scales = nn.ModuleList([Scale(init_value=1.0) for _ in range(5)]) if enable_head_scale else None
         self.enable_head_scale = enable_head_scale
-        self._init_weights()
 
-    def _init_weights(self):
-        for l in self.modules():
-            if isinstance(l, nn.Conv2d):
-                torch.nn.init.normal_(l.weight, std=0.01)
-                if l.bias is not None:
-                    torch.nn.init.constant_(l.bias, 0)
-
-        # initialize the bias for focal loss
-        prior_prob = 0.01
-        bias_value = -math.log((1 - prior_prob) / prior_prob)
-        torch.nn.init.constant_(self.cls_out_layer.bias, bias_value)
 
     def forward(self, x):
         """
@@ -303,6 +291,11 @@ class FCOSBaseline(nn.Module):
                     torch.nn.init.normal_(l.weight, std=0.01)
                     if l.bias is not None:
                         torch.nn.init.constant_(l.bias, 0)
+
+        # initialize the bias for focal loss
+        prior_prob = 0.01
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        torch.nn.init.constant_(self.head.cls_out_layer.bias, bias_value)
 
     def _freeze_bn(self):
         """

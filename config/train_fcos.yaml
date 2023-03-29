@@ -1,50 +1,50 @@
 loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
-  focal_loss_gamma: 2.0 # focal loss参数
+  focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
   reg_loss_weight: 2.0  # 回归损失（bbox损失）权重
   cls_loss_weight: 1.0  # 分类损失权重
-  cen_loss_weight: 1.0  # 置信度损失权重
-  class_smooth_factor: 1.0 # 标签平滑
+  ctr_loss_weight: 0.3  # 置信度损失权重
+  class_smooth_factor: 0.1 # 标签平滑
   cls_pos_weight: 1.0  # 
-  cen_pos_weight: 1.0  # 
+  ctr_pos_weight: 1.0  # 
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "/E/JYL/Datasets/GlobalWheatDetection/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "/E/JYL/Datasets/GlobalWheatDetection/train/lab"  # 存放训练label的文件夹路径
-  name_path: "/E/JYL/Datasets/GlobalWheatDetection/train/names.txt"
-  test_img_dir: "./result/wheat_test_imgs"  # for test
-  val_img_dir: "/E/JYL/Datasets/GlobalWheatDetection/val/img"  # validation image dir
-  val_lab_dir: "/E/JYL/Datasets/GlobalWheatDetection/val/lab"  # validation label dir
+  train_img_dir: "/E/JYL/Datasets/VOC/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/E/JYL/Datasets/VOC/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/E/JYL/Datasets/VOC/train/names.txt"
+  test_img_dir: "./result/coco_test_imgs"  # for test
+  val_img_dir: "/E/JYL/Datasets/VOC/val/img"  # validation image dir
+  val_lab_dir: "/E/JYL/Datasets/VOC/val/lab"  # validation label dir
   aspect_ratio: false  
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 200000
   input_img_size:  # 输入训练网络的图片大小
-    - 640
-    - 640
+    - 768
+    - 768
   resnet_layers: 
     - 3
     - 4
     - 6
     - 3
   enable_head_scale: false
-  norm_layer_type: 'group_norm'  # ['batch_norm', 'group_norm']
+  norm_layer_type: 'batch_norm'  # ['batch_norm', 'group_norm']
   freeze_bn: false
-  batch_size: 4
+  batch_size: 24
   drop_last: true  # DataLoader
   pin_memory: true  # DataLoader
   random_seed: 7
   shuffle: false  # DataLoader
   num_workers: 0  # DataLoader
   start_epoch: 0
-  total_epoch: 100
+  total_epoch: 300
   device: "gpu"  # 是否使用GPU进行训练['gpu', 'cpu']
-  accumulate_loss_step: 4  # 累积梯度下降
+  accumulate_loss_step: 48  # 累积梯度下降
   do_ema: true
   validation_every: 1  # 每隔多少个epoch validate一次
-  use_tta: true  # validation时是否使用TTA
+  use_tta: false  # validation时是否使用TTA
   mutil_scale_training: false 
   calculate_map_every: 50  # 每个多少个epoch计算一次map
   save_ckpt_every: 2  # 每隔多少个epoch保存一次模型
@@ -52,8 +52,8 @@ train_hyp:
   use_auxiliary_classifier: false 
   enable_tensorboard: true
   log_identifier: 'fcos_debug'
-  save_log_every: 2
-  no_data_aug_epoch: 5
+  save_log_every: 1
+  no_data_aug_epoch: 15
   center_sampling_radius: 1.5
   iou_type: 'giou'  # ['iou', 'giou', 'linear_iou']
   do_center_sampling: true
@@ -65,10 +65,10 @@ train_hyp:
 optimizer_hyp:
   scheduler_type: 'linear'  # ['onecycle', 'linear', 'cosine']
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']
-  basic_lr_per_img: 0.0025 # basic lr: 0.01
-  weight_decay: 0.00001
+  basic_lr_per_img: 0.00025 # basic lr: 0.01
+  weight_decay: 0.0001
   momentum: 0.937
-  lr_max_ds_scale: 0.01
+  lr_max_ds_scale: 0.001
 
 warm_up:
   do_warmup: true  # 是否开启预热训练
@@ -78,7 +78,7 @@ warm_up:
 
 data_hyp:
   data_aug_prespective_p: 1.0
-  data_aug_scale: 0.5
+  data_aug_scale: 0.2
   data_aug_shear: 0.0
   data_aug_translate: 0.2
   data_aug_degree: 0.0
@@ -91,7 +91,7 @@ data_hyp:
   data_aug_fliplr_p: 0.5
   data_aug_flipud_p: 0.1
   data_aug_fill_value: 114
-  data_aug_mosaic_p: 1.0
+  data_aug_mosaic_p: 0.3
   data_aug_cutout_p: 0.0
   data_aug_cutout_iou_thr: 0.3  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）
   data_aug_scale_jitting_p: 0.1
@@ -101,7 +101,7 @@ nms_hyp:
   pre_nms_topk: 1000
   pre_nms_thresh: 0.05
   iou_threshold: 0.3
-  cls_threshold: 0.0
+  cls_threshold: 0.05
   max_predictions_per_img: 100
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096
