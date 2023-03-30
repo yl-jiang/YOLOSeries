@@ -100,7 +100,7 @@ nms_hyp:
   thresh_with_ctr: true
   pre_nms_topk: 1000
   pre_nms_thresh: 0.05
-  iou_threshold: 0.3
+  iou_threshold: 0.5
   cls_threshold: 0.05
   max_predictions_per_img: 100
   min_prediction_box_wh: 2
