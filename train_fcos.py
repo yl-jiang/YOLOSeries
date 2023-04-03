@@ -109,7 +109,7 @@ class Training:
 
     @property
     def select_model(self):
-        # return FCOSCSPNet
+        return FCOSCSPNet
         return FCOSBaseline
 
     def _init_logger(self):

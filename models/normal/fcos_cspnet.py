@@ -11,7 +11,7 @@ __all__ = ['FCOSCSPNet']
 
 class FCOSCSPNet(nn.Module):
 
-    def __init__(self, num_class, in_channel=3, head_norm_layer_type='group_norm', enable_head_scale=False, freeze_bn=False):
+    def __init__(self, num_class, in_channel=3, norm_layer_type='group_norm', enable_head_scale=False, freeze_bn=False):
         super(FCOSCSPNet, self).__init__()
         self.num_class = num_class
 
@@ -43,10 +43,12 @@ class FCOSCSPNet(nn.Module):
         self.head_stage4_bscp = C3BottleneckCSP(512, 512, shortcut=False, num_block=1)
 
         # detect layers
-        self.detect = FCOSHead(num_stage=3, in_channels=[128, 256, 512], num_class=num_class, head_norm_layer_type=head_norm_layer_type, enable_head_scale=enable_head_scale)
+        self.detect = FCOSHead(num_stage=3, in_channels=[128, 256, 512], num_class=num_class, norm_layer_type=norm_layer_type, enable_head_scale=enable_head_scale)
         
         if freeze_bn:  # only do this for training
             self._freeze_bn()
+
+        self._init_weights()
 
     def _freeze_bn(self):
         """
@@ -60,6 +62,22 @@ class FCOSCSPNet(nn.Module):
                 if hasattr(m, 'bias'):
                     m.bias.requires_grad_(False)
                 m.eval()
+
+    def _init_weights(self):
+        # initialization
+        for modules in [self.detect.cls_layers, self.detect.reg_layers,
+                        self.detect.ctr_out_layer, self.detect.reg_out_layer,
+                        self.detect.cls_out_layer]:
+            for l in modules.modules():
+                if isinstance(l, nn.Conv2d):
+                    torch.nn.init.normal_(l.weight, std=0.01)
+                    if l.bias is not None:
+                        torch.nn.init.constant_(l.bias, 0)
+
+        # initialize the bias for focal loss
+        prior_prob = 0.01
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        torch.nn.init.constant_(self.detect.cls_out_layer.bias, bias_value)
 
     def forward(self, x):
         """
@@ -95,31 +113,31 @@ class FCOSCSPNet(nn.Module):
 
 class FCOSHead(nn.Module):
 
-    def __init__(self, num_stage, in_channels, num_class, head_norm_layer_type='group_norm', enable_head_scale=False):
+    def __init__(self, num_stage, in_channels, num_class, norm_layer_type='group_norm', enable_head_scale=False):
         super(FCOSHead, self).__init__()
 
-        if head_norm_layer_type.lower() == "batch_norm":
+        if norm_layer_type.lower() == "batch_norm":
             NormLayer = nn.BatchNorm2d
-        elif head_norm_layer_type.lower() == 'group_norm':
+        elif norm_layer_type.lower() == 'group_norm':
             NormLayer = partial(nn.GroupNorm, num_groups=32)
         else:
-            raise RuntimeError(f'unknow head_norm_layer_type {head_norm_layer_type}, must be "batch_norm" or "group_norm".')
+            raise RuntimeError(f'unknow head_norm_layer_type {norm_layer_type}, must be "batch_norm" or "group_norm".')
         cls_layers, reg_layers = [], []
         self.head_stem = nn.ModuleList()
         
         feat_plane = 256
         for i in range(num_stage):
             self.head_stem.append(nn.Sequential(nn.Conv2d(in_channels[i], feat_plane, 1, 1, 0, bias=False), 
-                                                NormLayer(num_channels=feat_plane) if head_norm_layer_type == 'group_norm' else NormLayer(num_features=feat_plane), 
+                                                NormLayer(num_channels=feat_plane) if norm_layer_type == 'group_norm' else NormLayer(num_features=feat_plane), 
                                                 nn.ReLU(inplace=True)))
             
         for _ in range(4):
             cls_layers.append(nn.Sequential(nn.Conv2d(feat_plane, feat_plane, 3, 1, 1, bias=False), 
-                                            NormLayer(num_channels=feat_plane) if head_norm_layer_type == 'group_norm' else NormLayer(num_features=feat_plane), 
+                                            NormLayer(num_channels=feat_plane) if norm_layer_type == 'group_norm' else NormLayer(num_features=feat_plane), 
                                             nn.ReLU(inplace=True)))
             
             reg_layers.append(nn.Sequential(nn.Conv2d(feat_plane, feat_plane, 3, 1, 1, bias=False), 
-                                            NormLayer(num_channels=feat_plane) if head_norm_layer_type == 'group_norm' else NormLayer(num_features=feat_plane), 
+                                            NormLayer(num_channels=feat_plane) if norm_layer_type == 'group_norm' else NormLayer(num_features=feat_plane), 
                                             nn.ReLU(inplace=True)))
             
         self.cls_layers = nn.Sequential(*cls_layers)
@@ -130,19 +148,7 @@ class FCOSHead(nn.Module):
 
         self.scales = nn.ModuleList([Scale(init_value=1.0) for _ in range(num_stage)]) if enable_head_scale else None
         self.enable_head_scale = enable_head_scale
-        self._init_weights()
 
-    def _init_weights(self):
-        for l in self.modules():
-            if isinstance(l, nn.Conv2d):
-                torch.nn.init.normal_(l.weight, std=0.01)
-                if l.bias is not None:
-                    torch.nn.init.constant_(l.bias, 0)
-
-        # initialize the bias for focal loss
-        prior_prob = 0.01
-        bias_value = -math.log((1 - prior_prob) / prior_prob)
-        torch.nn.init.constant_(self.cls_out_layer.bias, bias_value)
 
     def forward(self, x):
         """
