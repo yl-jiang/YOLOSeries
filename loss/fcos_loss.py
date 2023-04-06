@@ -150,7 +150,6 @@ class FCOSLoss:
 
                 focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
                 cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
-                # cls_loss = (cls_loss * focal).sum() / max(pos_num, tar_box.size(0))
                 cls_loss = (cls_loss * focal).mean()
                 stage_cls_loss.append(cls_loss)
 

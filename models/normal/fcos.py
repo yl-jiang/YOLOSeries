@@ -30,7 +30,6 @@ class BasicBlock(nn.Module):
         out += identify
         return self.relu(out)
 
-
 class Bottleneck(nn.Module):
 
     expansion = 4
@@ -78,7 +77,6 @@ class GroupNormResNet(nn.Module):
 
         # initialization
         self._initialize(self)
-        self._initialize_last_bn(self)
 
     def _initialize(self, modules):
         """
@@ -92,20 +90,6 @@ class GroupNormResNet(nn.Module):
             elif isinstance(m, nn.GroupNorm):
                 nn.init.constant_(m.bias, 0.)
 
-    def _initialize_last_bn(self, modules):
-        """
-        Zero-initialize the last BN in each residual branch,
-        so that the residual branch starts with zeros, and each residual block behaves like an identity.
-        This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
-
-        :param modules:
-        :return:
-        """
-        for m in modules.modules():
-            if isinstance(m, Bottleneck):
-                nn.init.constant_(m.bn3.weight, 0.)
-            elif isinstance(m, BasicBlock):
-                nn.init.constant_(m.bn2.weight, 0.)
 
     def _make_layer(self, block, planes, block_num, stride):
         # stride = 1的Bottleneck会扩充channel，stride = 2的Bottleneck会downsample image且会扩充channel
@@ -162,13 +146,14 @@ class FCOSFPN(nn.Module):
         self.p6 = nn.Conv2d(feature_size, feature_size, 3, 2, 1)
         self.p7 = nn.Conv2d(feature_size, feature_size, 3, 2, 1)
 
-        self._init_top_modules()
+        self._init_weights()
 
-    def _init_top_modules(self):
-        for m in [self.p6, self.p7]:
-            nn.init.kaiming_uniform_(m.weight, a=1)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.normal_(m.weight, mean=0.0, std=0.001)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         assert len(x) == 3
@@ -220,6 +205,24 @@ class FCOSHead(nn.Module):
 
         self.scales = nn.ModuleList([Scale(init_value=1.0) for _ in range(5)]) if enable_head_scale else None
         self.enable_head_scale = enable_head_scale
+
+        self._init_weights()
+
+    def _init_weights(self):
+        # initialization
+        for modules in [self.cls_layers, self.reg_layers,
+                        self.ctr_out_layer, self.reg_out_layer,
+                        self.cls_out_layer]:
+            for l in modules.modules():
+                if isinstance(l, nn.Conv2d):
+                    nn.init.kaiming_uniform_(l.weight, nonlinearity='relu', mode='fan_out')
+                    if l.bias is not None:
+                        torch.nn.init.constant_(l.bias, 0)
+
+        # initialize the bias for focal loss
+        prior_prob = 0.01
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        torch.nn.init.constant_(self.cls_out_layer.bias, bias_value)
 
 
     def forward(self, x):
@@ -276,26 +279,8 @@ class FCOSBaseline(nn.Module):
         self.fpn = FCOSFPN(c3_size=fpn_size[0], c4_size=fpn_size[1], c5_size=fpn_size[2], feature_size=256)
         self.head = FCOSHead(in_channels=256, num_class=num_class, norm_layer_type=norm_layer_type, enable_head_scale=enable_head_scale)
 
-        self._init_weights()
-
         if freeze_bn:  # only do this for training
             self._freeze_bn()
-
-    def _init_weights(self):
-        # initialization
-        for modules in [self.head.cls_layers, self.head.reg_layers,
-                        self.head.ctr_out_layer, self.head.reg_out_layer,
-                        self.head.cls_out_layer]:
-            for l in modules.modules():
-                if isinstance(l, nn.Conv2d):
-                    torch.nn.init.normal_(l.weight, std=0.01)
-                    if l.bias is not None:
-                        torch.nn.init.constant_(l.bias, 0)
-
-        # initialize the bias for focal loss
-        prior_prob = 0.01
-        bias_value = -math.log((1 - prior_prob) / prior_prob)
-        torch.nn.init.constant_(self.head.cls_out_layer.bias, bias_value)
 
     def _freeze_bn(self):
         """
