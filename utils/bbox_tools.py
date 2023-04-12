@@ -308,7 +308,8 @@ def gpu_CIoU(bbox1, bbox2):
     intersection_h = torch.clamp(intersection_ymax - intersection_ymin, min=0.)  # (N,)
     intersection_area = intersection_w * intersection_h  # (N,)
 
-    union_area = bbox1_area + bbox2_area - intersection_area + 1e-16  # (N,)
+    union_area = bbox1_area + bbox2_area - intersection_area  # (N,)
+    union_area = torch.clamp(union_area, min=1e-6)
     iou = intersection_area / union_area  # (N,)
 
     c_xmin = torch.min(bbox1[:, 0], bbox2[:, 0])  # (N,)
@@ -317,7 +318,8 @@ def gpu_CIoU(bbox1, bbox2):
     c_ymax = torch.max(bbox1[:, 3], bbox2[:, 3])  # (N,)
     c_hs = c_ymax - c_ymin  # (N,)
     c_ws = c_xmax - c_xmin  # (N,)
-    c_diagonal = torch.pow(c_ws, 2) + torch.pow(c_hs, 2) + 1e-16  # (N,)
+    c_diagonal = torch.pow(c_ws, 2) + torch.pow(c_hs, 2)  # (N,)
+    
 
     # compute center coordinate of bboxes
     bbox1_ctr_x = (bbox1[:, 2] + bbox1[:, 0]) / 2  # (N,)
@@ -328,10 +330,11 @@ def gpu_CIoU(bbox1, bbox2):
     ctr_hs = bbox1_ctr_y - bbox2_ctr_y  # (N,)
     # ctr_distance: distance of two bbox center
     ctr_distance = torch.pow(ctr_hs, 2) + torch.pow(ctr_ws, 2)  # (N,)
-    v = (4 / (np.pi ** 2)) * torch.pow(torch.atan(w2 / h2) - torch.atan(w1 / h1), 2)  # (N,)
+    v = (4 / (np.pi ** 2)) * torch.pow(torch.atan(w2 / torch.clamp(h2, min=1e-6)) - torch.atan(w1 / torch.clamp(h1, min=1e-6)), 2)  # (N,)
 
     with torch.no_grad():
-        alpha = v / (1 - iou + v + 1e-16)
+        alpha = v / torch.clamp(1 - iou + v, min=1e-6)
+    c_diagonal = torch.clamp(c_diagonal, min=1e-6)
     ciou = iou - (ctr_distance / c_diagonal + v * alpha)  # (N,)
     return ciou
 

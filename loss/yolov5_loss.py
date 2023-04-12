@@ -108,6 +108,7 @@ class YOLOV5Loss:
                 pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box)
                 # iou: (N,)
                 iou = gpu_CIoU(pred_box, tar_box)
+                # iou = gpu_Giou(pred_box, tar_box)
                 iou_loss += (1.0 - iou).mean()
                 # t_cof: (bn, 3, h, w) / 所有grid均参与confidence loss的计算
                 t_cof[img_idx, anc_idx, gy, gx] = iou.detach().clamp(0).type_as(t_cof)
