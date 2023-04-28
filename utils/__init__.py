@@ -5,7 +5,6 @@ from .nms import *
 
 from .visualizer import *
 
-from .mAP import mAP
 from .weighted_fusion_bbox import weighted_fusion_bbox
 from .mAP import mAP_v2
 

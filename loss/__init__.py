@@ -4,3 +4,4 @@ from .yolox_loss import YOLOXLoss
 from .yolov7_loss import YOLOV7Loss
 from .retinanet_loss_experiment import *
 from .fcos_loss import *
+from .yolov8_loss import *

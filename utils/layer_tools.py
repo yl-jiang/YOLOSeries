@@ -8,7 +8,7 @@ __all__ = ['freeze_bn', 'fuse_conv_bn', 'Concat', 'autopad', 'ConvBnAct', 'Basic
            'Focus', 'SPP', 'FastSPP', 'CSPCSPP', 'RepConv', 'ImplicitAdd', 'ImplicitMul', 
            'Upsample', 'Detect', 'DepthWiseConvBnAct', 'DepthWiseBasicBottleneck', 'DepthWiseBottleneckCSP', 
            'DepthWiseC3BottleneckCSP', 'BasicBlock', 'Bottleneck', 'ResNet', 'resnet50', 'RetinaNetRegression', 
-           'RetinaNetClassification', 'RetinaNetPyramidFeatures', 'ELANBlock', 'Scale']
+           'RetinaNetClassification', 'RetinaNetPyramidFeatures', 'ELANBlock', 'Scale', 'C2f', 'DistributionFocalLoss']
 
 def freeze_bn(m):
     """
@@ -81,7 +81,7 @@ def autopad(kernel, padding):
 
 class ConvBnAct(nn.Module):
 
-    def __init__(self, in_channel, out_channel, kernel, stride, padding=0, groups=1, bias=False, act=True, inplace=True):
+    def __init__(self, in_channel, out_channel, kernel, stride, padding=None, groups=1, bias=False, act=True, inplace=True):
         super(ConvBnAct, self).__init__()
         self.conv = nn.Conv2d(in_channel, out_channel, kernel, stride, padding=autopad(kernel, padding), groups=groups, bias=bias)
         self.bn = nn.BatchNorm2d(out_channel, eps=1e-3, momentum=0.03)
@@ -269,7 +269,7 @@ class SPP(nn.Module):
 
 class FastSPP(nn.Module):
     """
-    FastSPP与SPP的区别是，SPP是直接对输入x进行kernel分别为5，9，13的maxpooling，然后再将不同感受野的特征进行整合。
+    FastSPP与SPP的区别是, SPP是直接对输入x进行kernel分别为5, 9, 13的maxpooling, 然后再将不同感受野的特征进行整合。
     FastSPP是仿照卷积通过层级关系的堆叠从而间接达到提取不同感受野特征的目的。
     """
     def __init__(self, in_channel, out_channel, kernel=5):
@@ -592,6 +592,7 @@ class Bottleneck(nn.Module):
 
     def forward(self, x):
         identify = x
+        
         out = self.relu(self.bn1(self.conv1(x)))
         out = self.relu(self.bn2(self.conv2(out)))
         out = self.bn3(self.conv3(out))
@@ -660,7 +661,7 @@ class ResNet(nn.Module):
                 nn.init.constant_(m.bn2.weight, 0.)
 
     def _make_layer(self, block, planes, block_num, stride):
-        # stride = 1的Bottleneck会扩充channel，stride = 2的Bottleneck会downsample image且会扩充channel
+        # stride = 1的Bottleneck会扩充channel, stride = 2的Bottleneck会downsample image且会扩充channel
         if stride != 1 or self.inplane_upd != planes * block.expansion:
             downsample = nn.Sequential(
                 nn.Conv2d(in_channels=self.inplane_upd, out_channels=planes*block.expansion, kernel_size=(1, 1), stride=stride, padding=0, bias=False),
@@ -698,7 +699,6 @@ def resnet50(inplane=64, layers=None, block=None, num_class=None):
         block = Bottleneck
     model = ResNet(inplane, layers, block, num_class)
     return model
-
 
 class RetinaNetRegression(nn.Module):
 
@@ -865,3 +865,58 @@ class ELANBlock(nn.Module):
         feat_list.append(x)
         feat = self.cba10(self.cat(feat_list[::-1]))  # 24
         return feat
+
+
+# -------------------------------------- yolov8 layers --------------------------------------
+
+class ConciseBottleneck(nn.Module):
+
+    def __init__(self, in_channel, out_channel, stride=1, kernel_size=(3, 3), shortcut=True, group=1, expansion=0.5):
+        super(ConciseBottleneck, self).__init__()
+        assert len(kernel_size) == 2
+        mid_channel = int(out_channel * expansion)
+        self.conv1 = ConvBnAct(in_channel, mid_channel, kernel_size[0], stride)
+        self.conv2 = ConvBnAct(mid_channel, out_channel, kernel_size[1], stride, groups=group)
+        self.shortcut = shortcut and in_channel == out_channel
+
+    def forward(self, x):
+        
+        return x + self.conv2(self.conv1(x)) if self.shortcut else self.conv2(self.conv1(x))
+
+class C2f(nn.Module):
+    def __init__(self, in_channel, out_channel, num_block, shortcut=False, group=1, expansion=0.5) -> None:
+        super().__init__()
+        mid_channel = int(out_channel * expansion)
+        self.conv1 = ConvBnAct(in_channel, mid_channel * 2, 1, 1)
+        self.conv2 = ConvBnAct(mid_channel*(2+num_block), out_channel, 1, 1)
+        self.block = nn.ModuleList(ConciseBottleneck(mid_channel, mid_channel, 1, (3, 3), shortcut, group, 1.0) for _ in range(num_block))
+
+    def forward(self, x):
+        """
+        Inputs:
+            x: (b, in_ch, h, w)
+        Outputs:
+            y: (b, out_ch, h, w)
+        """
+        y = list(self.conv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.block)
+        return self.conv2(torch.cat(y, 1))
+    
+
+class DistributionFocalLoss(nn.Module):
+    # Integral module of Distribution Focal Loss (DFL)
+    # Proposed in Generalized Focal Loss https://ieeexplore.ieee.org/document/9792391
+    def __init__(self, c1=16):
+        super().__init__()
+        self.conv = nn.Conv2d(c1, 1, 1, bias=False).requires_grad_(False)
+        x = torch.arange(c1, dtype=torch.float)
+        self.conv.weight.data[:] = nn.Parameter(x.view(1, c1, 1, 1))
+        self.c1 = c1
+
+    def forward(self, x):
+        """
+        Inputs:
+            x: (b, num_class+4*reg, h*w)
+        """
+        b, c, n = x.shape  # batch, channels=4*reg, h*w
+        return self.conv(x.view(b, 4, self.c1, n).transpose(2, 1).softmax(1)).view(b, 4, n)

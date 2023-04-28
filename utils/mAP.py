@@ -1,18 +1,19 @@
 import sys
 from pathlib import Path
-
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import defaultdict
-from numpy.lib.arraysetops import unique
-
+import gc
 import seaborn as sn
-from numpy.matrixlib import matrix
 current_work_directionary = Path('__file__').parent.absolute()
 sys.path.insert(0, str(current_work_directionary))
 
 from .common import maybe_mkdir
-
+def smooth(y, f=0.05):
+    # Box filter of fraction f
+    nf = round(len(y) * f * 2) // 2 + 1  # number of filter elements (must be odd)
+    p = np.ones(nf // 2)  # ones padding
+    yp = np.concatenate((p * y[0], y, p * y[-1]), 0)  # y padded
+    return np.convolve(yp, np.ones(nf) / nf, mode='valid')  # y-smoothed
 
 def iou(box1, box2):
     """
@@ -35,167 +36,47 @@ def iou(box1, box2):
     # [M, N] & [M, N] -> [M, N]
     intersection_w = np.maximum(0., intersection_xmax - intersection_xmin)
     intersection_h = np.maximum(0., intersection_ymax - intersection_ymin)
-    intersection_area = intersection_w * intersection_h + 1e-16
+    intersection_area = intersection_w * intersection_h
     # [M, N] & [M, 1] & [N,] & [M, N] -> [M, N]
-    ious = intersection_area / (box1_area + box2_area - intersection_area + 1e-16)
+    ious = intersection_area / np.clip(box1_area + box2_area - intersection_area, a_min=1e-6, a_max= 10000000)
     return ious
-
-class mAP:
-
-    def __init__(self, predict, ground_truth, iou_threshold=0.5):
-        """
-        :param predict: [batch_size, ]
-            目标检测算法的输出(已经经过NMS等一系列处理)，对一张图片而言，算法可能会输出M个预测框
-            every element in predict has shape [M, 5], here number 5 represent [xim, ymin, xmax, ymax, conf]
-        :param ground_truth: [batch_size, ]
-            与predict一一对应的每张图片的ground truth bbox，GT_bbox的数目很可能与算法预测的不一致
-            every element in ground_truth has shape [N, 4], here number 4 represent [xmin, ymin, xmax, ymax]
-        :param iou_threshold: scalar
-            对于elevenInterpolation，iou_threshold一般取0.5
-            对于everyInterpolation，iou_threshold可以取任意[0, 1]之间的数
-        """
-        assert len(predict) == len(ground_truth)
-        self.pred, self.gt_box = [], []
-
-        # 剔除ground_truth为空的数据
-        for i in range(len(ground_truth)):
-            if len(ground_truth[i]) > 0:
-                self.gt_box.append(ground_truth[i])
-                self.pred.append(predict[i])
-                
-        del predict, ground_truth
-
-        self.iou_threshold = iou_threshold
-        self.ap_dict = self.make_ap_dict()
-        self.precision, self.recall = self.compute_pr(self.ap_dict)
-        self.elevenPointAP = self.elevenPointInterpolation()
-        self.everyPointAP = self.everyPointInterpolation()
-
-    def make_ap_dict(self):
-        ap_dict = defaultdict(list)
-        for pred, gt_box in zip(self.pred, self.gt_box):
-            if len(pred) > 0:  # 如果预测框不为空（gt box不肯能为空，因为在__init__中已经将可能为空的gt box过滤掉了）
-                pred, gt_box = np.asarray(pred), np.asarray(gt_box)
-                tpfp, conf, gt_num = self.get_tpfp(pred[:, 4], pred[:, 0:4], gt_box)
-                ap_dict['tpfp'].extend(tpfp)
-                ap_dict['conf'].extend(conf)
-                ap_dict['gt_num'].append(gt_num)
-            else:
-                ap_dict['tpfp'].append(0)
-                ap_dict['conf'].append(0)
-                ap_dict['gt_num'].append(gt_box.shape[0])
-        return ap_dict
-
-    def get_tpfp(self, pred_conf, pred_box, gt_box):
-        """
-        每次调用只处理一张图片的预测结果，主要功能是判断该张图片中每个预测框为TP还是FP
-        :param pred_conf: [M, 1]
-        :param pred_box: [M, 4]
-        :param gt_box: [N, 4]
-        :return:
-        """
-        assert pred_conf.shape[0] == pred_box.shape[0]
-        gt_num = gt_box.shape[0]
-        # [M, 4] & [N, 4] -> [M, N]
-        ious = iou(pred_box, gt_box)
-        tp_num, descend_index = self.make_pr_mask(pred_conf, ious)
-        conf = pred_conf[descend_index]
-        return tp_num, conf, gt_num
-
-    def make_pr_mask(self, pred_conf, ious):
-        """
-        每次调用只处理一张图片的预测结果，主要功能是确保每个预测框最多只负责一个gt_box的预测
-        :param pred_conf:
-        :param pred2gt_mask:
-        :return:
-        """
-        tpfp_list, gt_list = [], []
-        descend_index = np.argsort(pred_conf)[::-1]
-        for i in descend_index:
-            if np.max(ious[i]) >= self.iou_threshold:  # 确保每个预测框最多只能匹配一个gt box
-                gt_index = np.argmax(ious[i])
-                if gt_index not in gt_list:  #  一个gt box最多只能被一个预测框预测到
-                    tpfp_list.append(1)
-                    gt_list.append(gt_index)
-                else:
-                    tpfp_list.append(0)
-            else:
-                tpfp_list.append(0)
-        
-        return tpfp_list, descend_index
-
-    @staticmethod
-    def compute_pr(ap_dict):
-        """
-        对得到的tpfp_list按照pred_conf降序排序后，分别计算每个位置的precision和recall
-        :param ap_dict:
-        :return:
-        """
-        sorted_order = np.argsort(ap_dict['conf'])[::-1]
-        all_gt_num = np.sum(ap_dict['gt_num'])
-        ordered_tpfp = np.array(ap_dict['tpfp'])[sorted_order]
-        recall = np.cumsum(ordered_tpfp) / all_gt_num
-        ones = np.ones_like(recall)
-        precision = np.cumsum(ordered_tpfp) / np.cumsum(ones)
-        return precision, recall
-
-    def elevenPointInterpolation(self):
-        precision_list = []
-        recall_thres = np.arange(0, 1.1, 0.1)
-        for thres in recall_thres:
-            index = np.greater(self.recall, thres)
-            if index.sum() > 0:
-                precision_list.append(np.max(self.precision[self.recall >= thres]))
-            else:
-                precision_list.append(0.)
-        return np.mean(precision_list)
-
-    def everyPointInterpolation(self):
-        last_recall = 0.
-        auc = 0.
-        for recall in self.recall:
-            precision = np.max(self.precision[self.recall >= recall])
-            auc += (recall - last_recall) * precision
-            last_recall = recall
-        return auc
-
 
 class mAP_v2:
 
-    def __init__(self, ground_truth, predict, plot_save_dir):
+    def __init__(self, ground_truth, predict, plot_save_dir, type='coco'):
         """
-        :param predict: [batch_size, ]
-            目标检测算法的输出(已经经过NMS等一系列处理)，对一张图片而言，算法可能会输出M个预测框
-            every element in predict has shape [M, 6], here number 5 represent [xim, ymin, xmax, ymax, conf, cls]
-        :param ground_truth: [batch_size, ]
-            与predict一一对应的每张图片的ground truth bbox，GT_bbox的数目很可能与算法预测的不一致
-            every element in ground_truth has shape [N, 5], here number 4 represent [xmin, ymin, xmax, ymax, cls]
-        :param iou_threshold: scalar
-            对于elevenInterpolation，iou_threshold一般取0.5
-            对于everyInterpolation，iou_threshold可以取任意[0, 1]之间的数
+        Inputs:
+            predict: [batch_size, ]
+                目标检测算法的输出(已经经过NMS等一系列处理), 对一张图片而言, 算法可能会输出M个预测框
+                every element in predict has shape [M, 6], the last dimension represent [xim, ymin, xmax, ymax, conf, cls]
+            ground_truth: [batch_size, ]
+                与predict一一对应的每张图片的ground truth bbox, GT_bbox的数目很可能与算法预测的不一致
+                every element in ground_truth has shape [N, 5], the last dimension represent [xmin, ymin, xmax, ymax, cls]
         """
         assert len(predict) == len(ground_truth)
         self.pred, self.gt = [], []
 
         # 剔除ground_truth为空的数据
         for i in range(len(ground_truth)):
-            if len(ground_truth[i]) > 0:
+            if len(ground_truth[i]) > 0 and len(predict[i]) > 0:
                 self.gt.append(ground_truth[i])
                 self.pred.append(predict[i])
 
         self.iou_thr = np.linspace(0.5, 0.95, 10)
         self.save_dir = Path(plot_save_dir)
+        self.type = type
         maybe_mkdir(self.save_dir)
-        del predict, ground_truth
 
     def compute_tp(self, gt, pred):
         """
         compute tp for single image.
-        Arguments:
+        Inputs:
             gt: length N; element formate is (xmin, ymin, xmax, ymax, cls)
-            pred: length M; element formate is (xmin, ymin, xmax, ymax, conf, cls)
+            pred: length M; element formate is (xmin, ymin, xmax, ymax, score, cls)
+        Outputs:
+            tp: (M, 10) / bool
         """
-        # (M, 1 or 10)
+        # (M, 10)
         tp = np.zeros(shape=(pred.shape[0], len(self.iou_thr)), dtype=bool)
         # (N, 4) & (M, 4) -> (N, M)
         ious = iou(gt[:, :4], pred[:, :4]) 
@@ -208,6 +89,7 @@ class mAP_v2:
             match_iou = ious[mask]
             match = np.concatenate((np.stack((gt_i, pred_i), axis=1), match_iou[:, None]), axis=1)  # (X, 3) / [gt, pred, iou]
             if mask.sum() > 1:  # 只有一个元素的情况下不需要排序和筛选
+                # 根据iou从大到小排序
                 match = match[match[:, 2].argsort()[::-1]]
                 # 一个预测框只负责一个gt
                 match = match[np.unique(match[:, 1], return_index=True)[1]]  # (Y, 3)
@@ -223,12 +105,13 @@ class mAP_v2:
         """
         tps = []
         for gt, pred in zip(self.gt, self.pred):
-            tps.append(self.compute_tp(gt, pred))
+            tps.append(self.compute_tp(gt, pred))  # [(m1, 10), (m2, 10), ...]
 
-        tps = np.concatenate(tps, axis=0)  # (M, X)
-        pred_all = np.concatenate(self.pred, axis=0)
-        gt_all = np.concatenate(self.gt, axis=0)
+        tps = np.concatenate(tps, axis=0)  # (M, 10)
+        pred_all = np.concatenate(self.pred, axis=0)  # (M, 6)
         assert len(tps) == len(pred_all)
+
+        gt_all = np.concatenate(self.gt, axis=0)  # (N, 5)
         
         pred_confs = pred_all[:, 4]  # (M,)
         pred_cls = pred_all[:, 5]  # (M,)
@@ -236,40 +119,40 @@ class mAP_v2:
 
         # 按照从大到小的顺序进行排列
         sort_i = np.argsort(pred_confs)[::-1]
-        tps = tps[sort_i]
-        pred_confs = pred_confs[sort_i]
-        pred_cls = pred_cls[sort_i]
+        sorted_tps = tps[sort_i]  # (M, 10)
+        sorted_cof = pred_confs[sort_i]  # (M,)
+        sorted_cls = pred_cls[sort_i]  # (M,)
 
-        unique_tar_cls = np.unique(tar_cls)
+        tot_cls = np.unique(tar_cls)  # (num_class,)
         # ap for each iou threshold
-        ap = np.zeros((len(unique_tar_cls), tps.shape[1]))
+        ap = np.zeros((len(tot_cls), sorted_tps.shape[1]))  # (num_class, 10)
         # precision for each class
-        precision = np.zeros(shape=[len(unique_tar_cls), 1000])
+        precision = np.zeros(shape=[len(tot_cls), 1000])
         # recall for each class
-        recall = np.zeros(shape=[len(unique_tar_cls), 1000])
+        recall = np.zeros(shape=[len(tot_cls), 1000])
         # precision-recall for mAP@0.5
         xs, pr = np.linspace(0, 1, 1000), []
 
-        for i, c in enumerate(unique_tar_cls):  # each class
-            match_i = pred_cls == c  # current class mask
+        for i, c in enumerate(tot_cls):  # each class
+            match_i = sorted_cls == c  # current class mask
             num_tar = (tar_cls == c).sum()  # TP of current class
             if match_i.sum() > 0 and num_tar > 0:
-                cumsum_fp = (~tps[match_i]).cumsum(0)  # (M, X)
-                cumsum_tp = tps[match_i].cumsum(0)  # (M, X)
-                # 随着测试的case增多，recall越来越大， precision越来越小（因为同一class的num_tar是固定的）
-                cumsum_recall = cumsum_tp / (num_tar + 1e-16) 
-                cumsum_precision = cumsum_tp / (cumsum_tp + cumsum_fp + 1e-16)
-                # 将np.interp的前两个参数取负号，主要是为了照顾使用np.interp方法插值时x超出xp两端时默认值设置的问题
-                recall[i] = np.interp(-xs, -pred_confs[match_i], cumsum_recall[:, 0], left = 0)  # recall of curremt class
-                precision[i] = np.interp(-xs, -pred_confs[match_i], cumsum_precision[:, 0], left = 1)  # precision of current class
-                for j in range(tps.shape[1]):  # each iou threshold
-                    ap[i, j], rec, pre = self.compute_ap(cumsum_recall[:, j], cumsum_precision[:, j])  # average precision with each iou threshold of current class
+                cumsum_fp = (~sorted_tps[match_i]).cumsum(0)  # (X, 10)
+                cumsum_tp = sorted_tps[match_i].cumsum(0)  # (X, 10)
+                # 随着测试的case增多, recall越来越大,  precision越来越小（因为同一class的num_tar是固定的）
+                cumsum_recall = cumsum_tp / (num_tar + 1e-16)   # (X, 10)
+                cumsum_precision = cumsum_tp / (cumsum_tp + cumsum_fp + 1e-16)  # (X, 10)
+                # 将np.interp的前两个参数取负号, 主要是为了照顾使用np.interp方法插值时x超出xp两端时默认值设置问题
+                recall[i] = np.interp(-xs, -sorted_cof[match_i], cumsum_recall[:, 0], left = 0)  # recall of curremt class
+                precision[i] = np.interp(-xs, -sorted_cof[match_i], cumsum_precision[:, 0], left = 1)  # precision of current class
+                for j in range(sorted_tps.shape[1]):  # each iou threshold
+                    ap[i, j], rec, pre = self.compute_ap(cumsum_recall[:, j], cumsum_precision[:, j], self.type)  # average precision with each iou threshold of current class
                     if j == 0:  # only mAP@0.5
                         pr.append(np.interp(xs, rec, pre))  # precision-recall curve of 0.5 iou of current class  
             else:
                 continue
         f1_score = 2 * precision * recall / (precision + recall + 1e-16)
-
+        best_i = smooth(f1_score.mean(0), 0.1).argmax()
         try:
             self.plot_curve(xs, precision, self.save_dir/"Precision.png", "Precision", "Precision-Confidence")
             self.plot_curve(xs, recall, self.save_dir/"Recall.png", "Recall", 'Recall-Conficence')
@@ -278,28 +161,31 @@ class mAP_v2:
         except Exception as err:
             print(err)
 
-        best_i = f1_score.mean(axis=0).argmax(axis=0)
-        metrics = {"precision": precision[:, best_i], 
-                   "recall": recall[:, best_i], 
-                   "ap": ap, 
-                   "f1": f1_score[:, best_i], 
-                   "unique_cls": unique_tar_cls}
+        metrics = {"precision": precision[:, best_i],   # (num_class,)
+                   "recall": recall[:, best_i],   # (num_class,)
+                   "ap": ap,   # (num_class, 10)
+                   "f1": f1_score[:, best_i],   # (num_class,)
+                   "unique_cls": tot_cls}
         return metrics
 
-    def compute_ap(self, recall, precision):
+    def compute_ap(self, recall, precision, type):
+        """
+        Inputs:
+            recall: (X,)
+            precision: (X,)
+        """
         rec = np.concatenate(([0.], recall, [1.]))
         pre = np.concatenate(([1.], precision, [0.]))
 
         pre = np.flip(np.maximum.accumulate(np.flip(pre)))
 
-        method = 'coco'
-        if method == 'coco':
+        if type == 'coco':
             xs = np.linspace(0, 1, 101)
             # 计算每个recall和precision刻度围成的梯形面积之和
             ap = np.trapz(y=np.interp(xs, rec, pre), x=xs)
         else:  # continous
-            i = np.nonzero(rec[1:], rec[:-1])
-            ap = np.sum(rec[i+1] - rec[i]) * pre[i+1]
+            i = np.where(rec[1:] != rec[:-1])[0]  # points where x axis (recall) changes
+            ap = np.sum((rec[i+1] - rec[i]) * pre[i+1])
         return ap, rec, pre
     
     @staticmethod
@@ -308,7 +194,7 @@ class mAP_v2:
         plot Precision-Confidence, Recall-Confidence, F1-Confidence curve.
         """
         fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
-        ax.plot(xs, ys.T, linewidth=1, color='grey')
+        ax.plot(xs, ys.T, linewidth=1, color='gray')
         my = ys.mean(0)
         ax.plot(xs, my, linewidth=2, color='red', label='all classes')
         ax.set_ylabel(ylabel)
@@ -318,7 +204,10 @@ class mAP_v2:
         ax.set_title(title)
         plt.legend(loc=0)
         fig.savefig(str(save_path), dpi=300)
-        plt.close()
+        plt.close('all')
+        fig.clear()
+        del fig, ax
+        gc.collect()
 
     @staticmethod
     def plot_pr_curve(xs, ys, ap, save_path):
@@ -341,15 +230,45 @@ class mAP_v2:
         fig.savefig(str(save_path), dpi=300)
         plt.close()
 
+    def plot_ap_per_class(self, apm, cls2lab=None):
+        """
+        Inputs:
+            ap: (num_class,)
+            cls2id: dict like {0: 'person', 1: 'bus', ...}
+
+        """
+        clsid = np.arange(len(apm))
+        sorted_i = np.argsort(apm)
+        fig = plt.figure(figsize=[10, 10])
+        category_colors = plt.colormaps['RdYlGn'](np.linspace(0.15, 0.85, len(apm)))
+        if cls2lab is None:
+            plt.barh([str(i) for i in clsid[sorted_i]], apm[sorted_i], height=0.8, align='center', color=category_colors)
+        else:
+            labs = [cls2lab[i] for i in sorted_i]
+            plt.barh(labs, apm[sorted_i], height=0.8, align='center', color=category_colors)
+
+        for i, score in enumerate(apm[sorted_i]):
+            plt.text(score, i, f"{score:.3f}", fontweight='bold')
+
+        plt.xlabel('mAP', fontdict={'fontsize': 14, 'fontweight': 'bold'})
+        plt.ylabel('Category', fontdict={'fontsize': 14, 'fontweight': 'bold'})
+        plt.title(f"mAP {apm.mean():.3f}", fontdict={'fontsize': 14, 'fontweight': 'bold'})
+        plt.tight_layout()
+        plt.savefig(str(self.save_dir / 'AP_Per_Class.png'), dpi=300)
+        fig.clear()
+        plt.close('all')
+        del fig
+        gc.collect()
+
     def get_mean_metrics(self):
         metrics = self.compute_ap_per_class()
-        ap = metrics['ap']
-        ap50 = ap[:, 0]
-        apm = ap.mean(axis=1)
-        map50 = ap50.mean()
+        ap = metrics['ap']  # (num_class, 10)
+        apm = ap.mean(axis=1)  # (num_class,)
+        map50 = ap[:, 0].mean()
         map = apm.mean()
         mp = metrics['precision'].mean()
         mr = metrics['recall'].mean()
+        self.plot_ap_per_class(apm)
         return map, map50, mp, mr
 
 
@@ -358,14 +277,14 @@ class ConfusionMatrix:
     def __init__(self, predict, ground_truth, conf_thres, num_class, iou_thres) -> None:
         """
         :param predict: [batch_size, ]
-            目标检测算法的输出(已经经过NMS等一系列处理)，对一张图片而言，算法可能会输出M个预测框
+            目标检测算法的输出(已经经过NMS等一系列处理), 对一张图片而言, 算法可能会输出M个预测框
             every element in predict has shape [M, 6], here number 5 represent [xim, ymin, xmax, ymax, conf, cls]
         :param ground_truth: [batch_size, ]
-            与predict一一对应的每张图片的ground truth bbox，GT_bbox的数目很可能与算法预测的不一致
+            与predict一一对应的每张图片的ground truth bbox, GT_bbox的数目很可能与算法预测的不一致
             every element in ground_truth has shape [N, 5], here number 4 represent [xmin, ymin, xmax, ymax, cls]
         :param iou_threshold: scalar
-            对于elevenInterpolation，iou_threshold一般取0.5
-            对于everyInterpolation，iou_threshold可以取任意[0, 1]之间的数
+            对于elevenInterpolation, iou_threshold一般取0.5
+            对于everyInterpolation, iou_threshold可以取任意[0, 1]之间的数
         """
         assert len(predict) == len(ground_truth)
         self.preds, self.gts = [], []
@@ -416,13 +335,13 @@ class ConfusionMatrix:
             gt_mi, pred_mi, ious = match_i.astype(np.int16).transpose()
             for i, c in enumerate(gt_cls):
                 match = gt_mi == i
-                # sum(match) == 1是因为：如果一个gt有与之匹配的预测框，那么该gt能且只能被匹配一次
+                # sum(match) == 1是因为：如果一个gt有与之匹配的预测框, 那么该gt能且只能被匹配一次
                 if len(match_i) > 0 and sum(match) == 1:  
                     matrix[pred_cls[pred_mi[match]], c] += 1
                 else:
-                    matrix[-1, c] += 1  # FP(在某一张image的预测中，模型输出了gt cls中没有的类别)
+                    matrix[-1, c] += 1  # FP(在某一张image的预测中, 模型输出了gt cls中没有的类别)
 
-            if len(match_i) == 0:  # 所有的gt都没有与之匹配的预测框，意味着如果模型有输出，那么其输出的pred都是错的
+            if len(match_i) == 0:  # 所有的gt都没有与之匹配的预测框, 意味着如果模型有输出, 那么其输出的pred都是错的
                 for i, c in enumerate(pred_cls):
                     if not any(pred_mi == i):
                         matrix[c, -1] += 1  # FN
@@ -456,22 +375,31 @@ class ConfusionMatrix:
 
 
 if __name__ == "__main__":
-    import pickle
-    all_gts = pickle.load(open("/pkl/gt_bbox.pkl", 'rb'))
-    all_preds = pickle.load(open("/pkl/pred_coco_bbox_640_xlarge.pkl", 'rb'))
-    names = pickle.load(open("/pkl/label_names.pkl", 'rb'))['coco']
-    names = list(names.values())
-
+    # all_gts = [np.array(
+    #      [[2  , 10 , 173, 238, 0],
+    #       [439, 157, 556, 241, 1],
+    #       [437, 246, 518, 351, 1],
+    #       [272, 190, 316, 259, 2]])]
     
-    mapv2 = mAP_v2(all_gts, all_preds, "/result/curve")
-    mapv2.compute_ap_per_class()
+    # all_preds = [np.array(
+    #         [[0  , 13 , 174, 244, 0.471781, 0],
+    #          [274, 226, 301, 265, 0.414941, 3],
+    #          [429, 219, 528, 247, 0.460851, 1],
+    #          [0  , 199, 88 , 436, 0.292345, 4],
+    #          [433, 260, 506, 336, 0.269833, 1]])]
 
+    import pickle
+
+    all_gts = pickle.load(open('/E/JYL/Git/mAP/input/gt.pkl', 'rb'))
+    all_preds = pickle.load(open('/E/JYL/Git/mAP/input/pr.pkl', 'rb'))
+    
+    mapv2 = mAP_v2(all_gts, all_preds, "/home/uih/JYL/GitHub/YOLOSeries/result/curve", 'coco')
     map, map50, mp, mr = mapv2.get_mean_metrics()
     print(f'mAP = {map:.3f}')
-    print(f'mAP@0.5 = {map50 * 100:.1f}')
-    print(f'mp = {mp * 100:.1f}')
-    print(f'mr = {mr * 100:.1f}')
+    print(f'mAP@0.5 = {map50:.3f}')
+    print(f'mp = {mp:.3f}')
+    print(f'mr = {mr:.3f}')
 
-    cm = ConfusionMatrix(all_preds, all_gts, 0.25, len(names), 0.45)
-    cm.compute_matrix()
-    cm.plot(names, "/utils/confusion-matrix.png")
+    # cm = ConfusionMatrix(all_preds, all_gts, 0.25, len(names), 0.45)
+    # cm.compute_matrix()
+    # cm.plot(names, "/utils/confusion-matrix.png")

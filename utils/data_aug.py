@@ -708,7 +708,7 @@ def debug(img, bboxes, labels, iou):
 
 def mixup(img1, bbox1, label1, img2, bbox2, label2):
     """
-    使用不同的透明度混合两张图像(保持两张图像的target box)。
+    使用不同的透明度混合两张图像(保持两张图像的target box)
 
     :param bbox2:
     :param bbox1:
