@@ -12,12 +12,12 @@ loss_hyp:
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/train/lab"  # 存放训练label的文件夹路径
-  name_path: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/train/names.txt"
+  train_img_dir: "/E/JYL/Datasets/GlobalWheat/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/E/JYL/Datasets/GlobalWheat/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/E/JYL/Datasets/GlobalWheat/train/names.txt"
   test_img_dir: "./result/wheat_test_imgs"  # for test
-  val_img_dir: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/val/img"  # validation image dir
-  val_lab_dir: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/val/lab"  # validation label dir
+  val_img_dir: "/E/JYL/Datasets/GlobalWheat/val/img"  # validation image dir
+  val_lab_dir: "/E/JYL/Datasets/GlobalWheat/val/lab"  # validation label dir
   aspect_ratio: false  
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
@@ -52,8 +52,8 @@ train_hyp:
 
 optimizer_hyp:
   scheduler_type: 'linear'
-  optimizer: 'adam' # 优化器类别/['sgd' or 'adam']
-  basic_lr_per_img: 0.00025
+  optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
+  basic_lr_per_img: 0.0025
   weight_decay: 0.0005
   momentum: 0.937
   lr_max_ds_scale: 0.01
