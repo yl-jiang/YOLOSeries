@@ -309,17 +309,14 @@ class Training:
                 tot_loss = loss_dict['tot_loss']
 
                 # backward
-                try:
-                    self.scaler.scale(tot_loss).backward()
-                except RuntimeError as err:
-                    a = 1
+                self.scaler.scale(tot_loss).backward()
                 end_iter_t = time_synchronize()
                 loss_dict.update({'tot_loss': tot_loss.detach().item()})
 
                 # optimize
                 if step_in_epoch % self.accumulate == 0:
                     self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5.0)
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()
@@ -395,21 +392,21 @@ class Training:
                 self.logger.info(f"[{cur_epoch:>03d}/{self.hyp['total_epoch']:>03d}]" + " " + log_msg.format(**show_dict))
 
     def update_meter(self, cur_epoch, step_in_epoch, step_in_total, input_dim, batch_size, iter_time, data_time, loss_dict, is_best):
-        self.meter.update(iter_time  = float(iter_time), 
-                          data_time  = float(data_time), 
-                          input_dim  = int(input_dim),
-                          percentage = float(step_in_epoch / len(self.train_dataloader)),
+        self.meter.update(iter_time       = float(iter_time), 
+                          data_time       = float(data_time), 
+                          input_dim       = int(input_dim),
+                          percentage      = float(step_in_epoch / len(self.train_dataloader)),
                           step_in_epoch   = int(step_in_epoch), 
                           step_in_total   = int(step_in_total), 
-                          cur_epoch  = int(cur_epoch), 
-                          batch_size = int(batch_size),
-                          is_best    = is_best, 
-                          accumulate = int(self.accumulate),   
-                          allo_mem   = torch.cuda.memory_allocated() / 2 ** 30 if self.use_cuda else 0.0,
-                          cach_mem   = torch.cuda.memory_reserved() / 2 ** 30  if self.use_cuda else 0.0,
-                          lr         = float([x['lr'] for x in self.optimizer.param_groups][0]), 
-                          mp     = self.meter.get_filtered_meter('mp')['mp'].global_avg if len(self.meter.get_filtered_meter('mp')) > 0 else 0.0, 
-                          map50  = self.meter.get_filtered_meter('map50')['map50'].global_avg if len(self.meter.get_filtered_meter('map50')) > 0 else 0.0, 
+                          cur_epoch       = int(cur_epoch), 
+                          batch_size      = int(batch_size),
+                          is_best         = is_best, 
+                          accumulate      = int(self.accumulate),   
+                          allo_mem        = torch.cuda.memory_allocated() / 2 ** 30 if self.use_cuda else 0.0,
+                          cach_mem        = torch.cuda.memory_reserved() / 2 ** 30  if self.use_cuda else 0.0,
+                          lr              = float([x['lr'] for x in self.optimizer.param_groups][0]), 
+                          mp              = self.meter.get_filtered_meter('mp')['mp'].global_avg if len(self.meter.get_filtered_meter('mp')) > 0 else 0.0, 
+                          map50           = self.meter.get_filtered_meter('map50')['map50'].global_avg if len(self.meter.get_filtered_meter('map50')) > 0 else 0.0, 
                           **loss_dict)
 
     def warmup(self, step_in_total):
@@ -465,8 +462,8 @@ class Training:
                 pred[:, [0, 2]] -= pad_left
                 pred[:, [1, 3]] -= pad_top
                 pred[:, [0, 1, 2, 3]] /= scale
-                pred[:, [0, 2]] = pred[:, [0, 2]].clamp(1, org_w - 1)
-                pred[:, [1, 3]] = pred[:, [1, 3]].clamp(1, org_h - 1)
+                pred[:, [0, 2]] = pred[:, [0, 2]].clamp(0, org_w - 1)
+                pred[:, [1, 3]] = pred[:, [1, 3]].clamp(0, org_h - 1)
                 if self.hyp['use_auxiliary_classifier']:
                     # 将每个预测框中的物体抠出来, 放到一个额外的分类器再进行预测一次是否存在对象
                     pass

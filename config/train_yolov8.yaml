@@ -2,22 +2,22 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  iou_loss_scale: 7.5  # 回归损失（bbox损失）权重
-  cls_loss_scale: 0.5  # 分类损失权重
-  dfl_loss_scale: 1.5
+  iou_loss_scale: 3.5  # 回归损失（bbox损失）权重
+  cls_loss_scale: 0.2  # 分类损失权重
+  dfl_loss_scale: 0.5
   anchor_match_thr: 4.0  # 该参数用于过滤预测框与标签框之间匹配的阈值
   cls_pos_weight: 1.0  # 
-  alpha: 1.0
+  alpha: 0.5
   beta: 6.0
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "/E/JYL/Datasets/GlobalWheat/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "/E/JYL/Datasets/GlobalWheat/train/lab"  # 存放训练label的文件夹路径
-  name_path: "/E/JYL/Datasets/GlobalWheat/train/names.txt"
+  train_img_dir: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/train/names.txt"
   test_img_dir: "./result/wheat_test_imgs"  # for test
-  val_img_dir: "/E/JYL/Datasets/GlobalWheat/val/img"  # validation image dir
-  val_lab_dir: "/E/JYL/Datasets/GlobalWheat/val/lab"  # validation label dir
+  val_img_dir: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/val/img"  # validation image dir
+  val_lab_dir: "/home/uih/JYL/Dataset/Others/GlobalWheatDetection/val/lab"  # validation label dir
   aspect_ratio: false  
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
@@ -40,23 +40,23 @@ train_hyp:
   use_tta: true  # validation时是否使用TTA
   mutil_scale_training: false 
   calculate_map_every: 50  # 每个多少个epoch计算一次map
-  save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
+  save_ckpt_every: 2  # 每隔多少个epoch保存一次模型
   model_type: 'middle'
   use_auxiliary_classifier: false 
   enable_tensorboard: true
   log_identifier: 'v8'
   save_log_every: 2
   no_data_aug_epoch: 10
-  topk: 13
+  topk: 10
   reg: 16  # distribution focal loss
 
 optimizer_hyp:
   scheduler_type: 'linear'
-  optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
-  basic_lr_per_img: 0.05
-  weight_decay: 0.0001
+  optimizer: 'adam' # 优化器类别/['sgd' or 'adam']
+  basic_lr_per_img: 0.00025
+  weight_decay: 0.0005
   momentum: 0.937
-  lr_max_ds_scale: 0.001
+  lr_max_ds_scale: 0.01
 
 warm_up:
   do_warmup: true  # 是否开启预热训练
@@ -75,12 +75,12 @@ data_hyp:
   data_aug_hsv_hgain: 0.015
   data_aug_hsv_sgain: 0.7
   data_aug_hsv_vgain: 0.4
-  data_aug_mixup_p: 0.3
-  data_aug_fliplr_p: 0.3
+  data_aug_mixup_p: 0.0
+  data_aug_fliplr_p: 0.5
   data_aug_flipud_p: 0.0
   data_aug_fill_value: 114
   data_aug_mosaic_p: 1.0
-  data_aug_cutout_p: 0.3
+  data_aug_cutout_p: 0.1
   data_aug_cutout_iou_thr: 0.3  # 若随机产生的mask与target任一bbox的iou值大于该阈值，则会采取一些行动避免这种情况发生（默认操作是舍弃该mask）
   data_aug_scale_jitting_p: 0.0
 
@@ -95,13 +95,6 @@ nms_hyp:
   mutil_label: false  # 一个object是否可以有多个标签
   agnostic: true  # 是否在同类别的bbox之间进行NMS
   postprocess_bbox: true  # 是否对预测框进行调优
-  wfb: false  # use NMS or Weighted Fusion Bbox
-  wfb_weights: 
-    - 1
-    - 1
-    - 1
-  wfb_iou_threshold: 0.5
-  wfb_skip_box_threshold: 0.001
 
 val_hyp:
   save_gt_bbox: false  # 计算map后，是否保存gt

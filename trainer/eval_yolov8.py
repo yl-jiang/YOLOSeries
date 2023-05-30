@@ -33,61 +33,9 @@ class YOLOV8Evaluator:
         torch.cuda.empty_cache()
         if self.use_tta:
             merge_preds_out, inpendent_preds_out = self.test_time_augmentation(inputs)  # (bs, N, 84)
-            if self.hyp["wfb"]:
-                return self.do_wfb(inpendent_preds_out)
         else:
             merge_preds_out = self.do_inference(inputs)  # (bs, N, 85)
         return [torch.from_numpy(x) if x is not None else None for x in self.numba_nms(merge_preds_out) ]
-
-    def do_wfb(self, preds_out):
-        """
-        weighted fusion bbox
-        :param preds_out: [(batch_size, X, 85), (batch_size, Y, 85), (batch_size, Z, 85)]
-        :return:
-        """
-        bs = preds_out[0].size(0)
-        output = []
-        out_dict = defaultdict(list)
-
-        # preprocess data
-        for i, preds in enumerate(preds_out):
-            weight = self.hyp.get("wfb_weights", [1. for _ in range(len(preds_out))])[i]
-            obj_conf_mask = preds[:, :, 4] > self.hyp['wfb_skip_box_threshold']
-            for j in range(preds.size(0)):  # do nms for each image
-                x = preds[j][obj_conf_mask[j]]
-                if x.size(0) == 0:
-                    continue
-                x[:, 5:] *= x[:, 4:5]  # conf = cls_conf * obj_conf
-                # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
-                box = xywh2xyxy(x[:, :4])
-                if self.hyp['mutil_label']:
-                    row_idx, col_idx = (x[:, 5:] > self.hyp['wfb_skip_box_threshold']).nonzero(as_tuple=True)
-                    # x: [xmin, ymin, xmax, ymax, conf, cls_id]
-                    x = torch.cat((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].float()), dim=1)
-                else:
-                    cls_conf, col_idx = x[:, 5:].max(dim=1, keepdim=True)
-                    # [xmin, ymin, xmax, ymax, conf, cls_id]
-                    x = torch.cat((box, cls_conf, col_idx.float()), dim=1)
-                    cls_conf_mask = cls_conf.view(-1).contiguous() > self.hyp['wfb_skip_box_threshold']
-                    x = x[cls_conf_mask]
-
-                bbox_num = x.size(0)
-                if not bbox_num:
-                    continue
-                weight_to_fill = torch.full(size=(bbox_num, 1), fill_value=weight)
-                x = torch.cat((x, weight_to_fill), dim=-1)
-                out_dict[j].append(x.cpu().numpy())
-
-        # WFB
-        for b in range(bs):
-            # 如果该张图片有预测框
-            if out_dict[b]:
-                bbox_list = np.vstack(out_dict[b])
-                _, fusion_bbox = weighted_fusion_bbox(bbox_list, self.hyp['wfb_iou_threshold'])
-                output.append(fusion_bbox)
-            else:
-                output.append(None)
-        return output
 
     def do_nms(self, preds_out):
         """
@@ -178,12 +126,13 @@ class YOLOV8Evaluator:
 
     @torch.no_grad()
     def post_processing(self, pred_reg:torch.Tensor):
-        b = pred_reg.size(0)
+        b, N, c = pred_reg.size()
         conv = nn.Conv2d(self.reg, 1, 1, bias=False).requires_grad_(False)
         x = torch.arange(self.reg, dtype=torch.float)
         conv.weight.data[:] = nn.Parameter(x.view(1, self.reg, 1, 1))
-        # (b, N, 4*reg) -> (b, N, 4, reg) -> (b, reg, 4, N) & convolution -> (b, 1, 4, N) / [t, b, l, r]
-        pred_reg = conv(pred_reg.cpu().reshape(b, pred_reg.size(1), 4, pred_reg.size(2)//4).permute(0, 3, 2, 1).contiguous().softmax(1)).permute(0, 3, 2, 1).squeeze(-1)
+        # (b, N, 4*reg) -> (b, N, 4, reg) -> (b, reg, 4, N) & convolution -> (b, 1, 4, N) -> (b, N, 4, 1) -> (b, N, 4) / [t, b, l, r]
+        # pred_reg = conv(pred_reg.cpu().reshape(b, N, 4, c//4).permute(0, 3, 2, 1).contiguous().softmax(1)).permute(0, 3, 2, 1).contiguous().squeeze(-1)
+        pred_reg = pred_reg.reshape(b, pred_reg.size(1), 4, -1).cpu().softmax(-1).matmul(x)
         return pred_reg  # (b, N, 4)
 
     @torch.no_grad()
@@ -195,13 +144,13 @@ class YOLOV8Evaluator:
             fm_shapes = [[f.size(2), f.size(3)] for f in preds.values()]
             strides = [h/f.size(2) for f in preds.values()]
             self.grids, self.strides = self.make_grid(fm_shapes, strides, self.device)  # grids: (N, 2), strides: (N, 1)
-        f = list(preds.values())[0].size(1)
-        all_preds = torch.cat([x.reshape(b, f, -1) for x in preds.values()], dim=2).permute(0, 2, 1).contiguous()  # (b, 160*160+80*80+40*40*20*20=N, num_class+4*reg)
+        sf = list(preds.values())[0].size(1)
+        all_preds = torch.cat([x.reshape(b, sf, -1) for x in preds.values()], dim=2).permute(0, 2, 1).contiguous()  # (b, 160*160+80*80+40*40*20*20=N, num_class+4*reg)
         pred_reg, pred_cls = all_preds.split((4*self.reg, self.num_class), -1)  # (b, N, 4*reg); (b, N, num_class)
         pred_reg = self.post_processing(pred_reg)  # (b, N, 4) / [t, b, l, r]
-        pred_xyxy = tblr2xyxy(pred_reg.to(self.device), self.grids) * self.strides[None]  # (b, N, 4) & (1, N, 4) -> (b, N, 4)
+        pred_xyxy = tblr2xyxy(pred_reg.to(self.device), self.grids) * self.strides.unsqueeze(0)  # (b, N, 4) & (1, N, 1) -> (b, N, 4)
         # (b, N, num_class+4)
-        return torch.cat((pred_xyxy, pred_cls), dim=-1).contiguous()
+        return torch.cat((pred_xyxy, pred_cls.sigmoid()), dim=-1).contiguous()
 
     @staticmethod
     def scale_img(img, scale_factor):

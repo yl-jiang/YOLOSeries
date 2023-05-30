@@ -398,14 +398,11 @@ def tblr2xyxy(tblr: torch.Tensor, grid: torch.Tensor):
         xyxy: (b, N, 4) / [xmin, ymin, xmax, ymax]
     """
     assert tblr.ndim == 3 and tblr.size(1) == grid.size(0)
-    t = tblr[:, :, 0]  # (b, N)
-    b = tblr[:, :, 1]  # (b, N)
-    l = tblr[:, :, 2]  # (b, N)
-    r = tblr[:, :, 3]  # (b, N)
-    xmin = grid[:, 0][None, :] - l  # (1, N) & (b, N) -> (b, N)
-    ymin = grid[:, 1][None, :] - t  # (1, N) & (b, N) -> (b, N)
-    xmax = grid[:, 0][None, :] + r  # (1, N) & (b, N) -> (b, N)
-    ymax = grid[:, 1][None, :] + b  # (1, N) & (b, N) -> (b, N)
+    t, b, l, r = tblr.chunk(4, -1)  # (b, N, 1)
+    xmin = grid[:, 0].unsqueeze(0) - l.squeeze(-1)  # (1, N) & (b, N) -> (b, N)
+    ymin = grid[:, 1].unsqueeze(0) - t.squeeze(-1)  # (1, N) & (b, N) -> (b, N)
+    xmax = grid[:, 0].unsqueeze(0) + r.squeeze(-1)  # (1, N) & (b, N) -> (b, N)
+    ymax = grid[:, 1].unsqueeze(0) + b.squeeze(-1)  # (1, N) & (b, N) -> (b, N)
     
     return torch.stack((xmin, ymin, xmax, ymax), dim=-1)  # (b, N, 4)
 
@@ -418,12 +415,13 @@ def xyxy2tblr(xyxy:torch.Tensor, grid:torch.Tensor):
     Outputs:
         tblr: (b, N, M, 4) / [t, b, l, r]
     """
-    xmin, ymin, xmax, ymax = xyxy.chunk(4, -1)  # (b, N, M)
-    gx, gy = grid.chunk(2, -1)
-    t = gy[None, :, None] - ymin
-    b = ymax - gy[None, :, None]
-    l = gx[None, :, None] - xmin
-    r = xmax - gx[None, :, None]
+    xmin, ymin, xmax, ymax = xyxy.chunk(4, -1)  # (b, N, M, 1)
+    gx, gy = grid.chunk(2, -1)  # (N, 1)
+    # (1, N, 1) & (b, N, M)
+    t = gy[None, ...] - ymin.squeeze_(-1)
+    b = ymax.squeeze_(-1) - gy[None, ...]
+    l = gx[None, ...] - xmin.squeeze_(-1)
+    r = xmax.squeeze_(-1) - gx[None, ...]
 
     return torch.stack((t, b, l, r), dim=-1).clamp(min=0.).contiguous()  # (b, N, M, 4)
 
