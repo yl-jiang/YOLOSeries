@@ -93,5 +93,6 @@ def all_reduce_norm(module):
     All reduce norm statistics in different devices.
     """
     states = get_async_norm_states(module)
-    states = all_reduce(states, op="mean")
-    module.load_state_dict(states, strict=False)
+    if len(states) > 0:
+        states = all_reduce(states, op="mean")
+        module.load_state_dict(states, strict=False)

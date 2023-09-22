@@ -65,6 +65,7 @@ def configure_module(ulimit_value=8192):
 
     else:
         rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+        ulimit_value = min(ulimit_value, rlimit[1])
         resource.setrlimit(resource.RLIMIT_NOFILE, (ulimit_value, rlimit[1]))
 
     # cv2

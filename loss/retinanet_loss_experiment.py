@@ -161,10 +161,11 @@ class RetinaNetLossExperiment:
                 if self.cof_loss_scale > 0.0:
                     iou_loss = self.compute_iou_loss(keep_preds, tars_box, self.iou_type)
                     target_cof[positive_indices] = iou_loss
-                    cof_losses.append(self.bce_cof(pred_cof, target_cof))
             else:
                 l1_losses.append(torch.tensor(0., dtype=gt_ann.dtype, device=self.device))
-                cof_losses.append(torch.tensor(0., dtype=gt_ann.dtype, device=self.device))
+            
+            # compute confidence loss
+            cof_losses.append(self.bce_cof(pred_cof, target_cof))
 
         tot_l1_loss  = torch.stack(l1_losses).mean()  * self.l1_loss_scale
         tot_cof_loss = torch.tensor(0., dtype=alpha_factor.dtype, device=self.device)

@@ -4,39 +4,39 @@ loss_hyp:
   focal_loss_alpha: 0.25  # focal loss参数
   iou_loss_scale: 0.05  # 回归损失（bbox损失）权重
   use_l1: true  # compute L1 norm regression loss
-  l1_loss_scale: 0.01 # L1 loss损失权重
-  cls_loss_scale: 0.5  # 分类损失权重
-  cof_loss_scale: 1.0  # 置信度损失权重
+  l1_loss_scale: 0.05 # L1 loss损失权重
+  cls_loss_scale: 0.3  # 分类损失权重
+  cof_loss_scale: 0.7  # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 计算分类损失时，对类别为1的loss乘以该权重
   cof_pos_weight: 1.0  # 计算分类损失时，对类别为1的loss乘以该权重
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "../../Dataset/COCO/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "../../Dataset/COCO/train/lab"  # 存放训练label的文件夹路径
-  name_path: "../../Dataset/COCO/train/names.txt"
+  train_img_dir: "/E/JYL/Datasets/VOC/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/E/JYL/Datasets/VOC/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/E/JYL/Datasets/VOC/train/names.txt"
   test_img_dir: "./result/coco_test_imgs"  # for test
-  val_img_dir: "../../Dataset/COCO/val/img"  # validation image dir
-  val_lab_dir: "../../Dataset/COCO/val/lab"  # validation label dir
+  val_img_dir: "/E/JYL/Datasets/VOC/val/img"  # validation image dir
+  val_lab_dir: "/E/JYL/Datasets/VOC/val/lab"  # validation label dir 
   enable_data_aug: true
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
   aspect_ratio_path: ""  # 训练数据集中每张图片的长宽比（用于根据图像长宽比的一定顺序输入网络进行训练）
   cache_num: 20000000  # 将cache_num数量的训练数据存放到内存中（加速训练）
   input_img_size:  # 输入训练网络的图片大小
-    - 512
-    - 512
-  batch_size: 64
+    - 640
+    - 640
+  batch_size: 32
   random_seed: 7
   drop_last: true  # Pytorch DataLoader参数
   pin_memory: false  # Pytorch DataLoader参数
   shuffle: true  # Pytorch DataLoader参数
   num_workers: 0  # Pytorch DataLoader参数
   start_epoch: 0
-  total_epoch: 300
+  total_epoch: 100
   num_anchors: 1  # 每个grid给出多少个预测框
   device: "gpu"  # 是否使用GPU进行训练 / ['gpu', 'cpu']中的一种
-  accumulate_loss_step: 64  # 累积梯度下降
+  accumulate_loss_step: 128  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
   weight_init_prior_prob: 0.01  # 用于网络中的bias参数初始化
   validation_every: 1  # 每隔多少个epoch testing一次
@@ -45,8 +45,8 @@ train_hyp:
   use_tta: true  # validation时是否使用TTA
   mutil_scale_training: false  # 是否使用多尺度训练
   calculate_map_every: 299  # 每隔多少个epoch计算一次验证数据集的map
-  save_ckpt_every: 1  # 每隔多少个epoch保存一次模型
-  model_type: 'small'  # 使用模型类型
+  save_ckpt_every: 2  # 每隔多少个epoch保存一次模型
+  model_type: 'middle'  # 使用模型类型
   use_auxiliary_classifier: false # 是否使用额外的分类器对预测结果进行调优
   iou_type: 'ciou'  # 计算回归损失时使用的iou类型 / ['iou', 'giou', 'ciou']中的一种
   no_data_aug_epoch: 10
@@ -62,16 +62,16 @@ warmup_hyp:
 optimizer_hyp:
   scheduler_type: 'linear'
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']中的一种
-  basic_lr_per_img: 0.003125
-  weight_decay: 0.00001
-  momentum: 0.98
-  lr_max_ds_scale: 0.0001
+  basic_lr_per_img: 0.003125 # 0.1 / 32
+  weight_decay: 0.00005
+  momentum: 0.937
+  lr_max_ds_scale: 0.1
 
 data_hyp:
   data_aug_prespective_p: 1.0
-  data_aug_scale: 0.5
+  data_aug_scale: 0.9
   data_aug_shear: 0.0
-  data_aug_translate: 0.1
+  data_aug_translate: 0.3
   data_aug_degree: 0.0
   data_aug_prespective: 0.0
   data_aug_hsv_p: 1.0
@@ -81,7 +81,7 @@ data_hyp:
   data_aug_mixup_p: 0.0
   data_aug_fliplr_p: 0.5
   data_aug_flipud_p: 0.0
-  data_aug_fill_value: 128
+  data_aug_fill_value: 114
   data_aug_mosaic_p: 1.0
   data_aug_cutout_p: 1.0
   data_aug_cutout_iou_thr: 0.3

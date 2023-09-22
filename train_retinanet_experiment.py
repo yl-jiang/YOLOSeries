@@ -133,7 +133,8 @@ class Training:
 
     def _init_scheduler(self):
         if self.hyp['scheduler_type'].lower() == "onecycle":   # onecycle lr scheduler
-            scheduler = lr_scheduler.OneCycleLR(self.optimizer, max_lr=0.01, epochs=self.hyp['total_epoch'], steps_per_epoch=len(self.train_dataloader), three_phase=True)
+            one_cycle_lr = lambda epoch: ((1.0 - math.cos(epoch * math.pi / self.hyp['total_epoch'])) / 2) * (self.hyp['lr_max_ds_scale'] - 1.0) + 1.0
+            scheduler = lr_scheduler.LambdaLR(self.optimizer, lr_lambda=one_cycle_lr)
         elif self.hyp['scheduler_type'].lower() == 'linear':  # linear lr scheduler
             lr_max_ds_scale = self.hyp['lr_max_ds_scale']
             linear_lr = lambda epoch: (1 - epoch / (self.hyp['total_epoch'] - 1)) * (1. - lr_max_ds_scale) + lr_max_ds_scale  # lr_bias越大lr的下降速度越慢,整个epoch跑完最后的lr值也越大
@@ -254,22 +255,6 @@ class Training:
         del param_group_weight, param_group_bias, param_group_other
         return optimizer
 
-    def _init_bias(self):
-        """
-        初始化模型参数, 主要是对detection layers的bias参数进行特殊初始化, 参考RetinaNet那篇论文, 这种初始化方法可让网络较容易度过前期训练困难阶段
-        (使用该初始化方法可能针对coco数据集有效, 在对global wheat数据集的测试中, 该方法根本train不起来)
-        """
-        for m in self.model.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.BatchNorm2d):
-                m.eps = 1e-3
-                m.momentum = 0.03
-            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6)):
-                m.inplace = True
-
     def before_epoch(self, cur_epoch):
         torch.cuda.empty_cache()
         gc.collect()
@@ -348,22 +333,16 @@ class Training:
                 self.update_tbar(self.tbar)
                 self.update_summarywriter()
                 self.update_logger(step_in_total)
-                self.save_model(cur_epoch+1, step_in_epoch=step_in_epoch, loss_dict=loss_dict)
+                self.save_model(cur_epoch+1, step_in_total=step_in_total, loss_dict=loss_dict)
                 self.test(step_in_total)
                 self.calculate_metric(step_in_total)
 
-                # onecycle scheduler需要在iter尺度update
-                if self.hyp['scheduler_type'].lower() == "onecycle":
-                    self.lr_scheduler.step()  # 因为self.accumulate会从1开始增长, 因此第一次执行训练时self.optimizer.step()一定会在self.lr_scheduler.step()之前被执行
-                
                 del x, img, ann, tot_loss, pred_cls, pred_reg, loss_dict
 
                 if self.rank == 0 and self.tbar is not None:
                     self.tbar.update()
 
-            # 其余scheduler在epoch尺度update
-            if self.hyp['scheduler_type'].lower() != "onecycle":
-                self.lr_scheduler.step()
+            self.lr_scheduler.step()
             epoch_time = time_synchronize() - start_epoch_t
             self.logger.info(f'\n\n{"-" * 600}\n')
 
@@ -531,7 +510,7 @@ class Training:
         """
         if self.hyp['mutil_scale_training']:
             input_img_size = max(self.hyp['input_img_size'])
-            random_shape = random.randrange(input_img_size * 0.5, input_img_size * 1. + 32) // 32 * 32
+            random_shape = random.randrange(input_img_size * 0.5, input_img_size * 1.5 + 32) // 32 * 32
             scale = random_shape / max(imgs.shape[2:])
             if scale != 1.:
                 new_shape = [math.ceil(x * scale / 32) * 32 for x in imgs.shape[2:]]
@@ -543,7 +522,6 @@ class Training:
         """
         load pretrained model, EMA model, optimizer(注意: __init_weights()方法并不适用于所有数据集)
         """
-        # self._init_bias()
         if self.hyp.get("pretrained_model_path", None):
             model_path = self.hyp["pretrained_model_path"]
             if Path(model_path).exists():
@@ -586,7 +564,6 @@ class Training:
                         self.logger.info(f'load lr_scheduler from: {model_path}')
                         print(f'load lr_scheduler from: {model_path}')
 
-
                     del state_dict
 
             else:
@@ -598,10 +575,10 @@ class Training:
         
         self.logger.info(f"\n{'-' * 300}\n")
 
-    def save_model(self, cur_epoch, filename=None, step_in_epoch=None, loss_dict=None, save_optimizer=True):
-        if step_in_epoch is None:
-            step_in_epoch = self.meter.get_filtered_meter('step_in_epoch')['step_in_epoch'].latest
-        if self.rank == 0 and step_in_epoch % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
+    def save_model(self, cur_epoch, filename=None, step_in_total=None, loss_dict=None, save_optimizer=True):
+        if step_in_total is None:
+            step_in_total = self.meter.get_filtered_meter('step_in_total')['step_in_total'].latest
+        if self.rank == 0 and step_in_total % int(self.hyp['save_ckpt_every'] * len(self.train_dataloader)) == 0:
             if filename is None:
                 save_path = str(self.cwd / 'checkpoints' / f'retinanet_epoch_{cur_epoch}.pth')  
             else:
@@ -618,7 +595,7 @@ class Training:
                 "lr_scheduler_state_dict": self.lr_scheduler.state_dict(),
                 "loss": loss_dict,
                 "epoch": cur_epoch,
-                "step": step_in_epoch, 
+                "step": step_in_total, 
                 "ema": self.ema_model.ema.state_dict() if self.hyp['do_ema'] else None, 
                 "ema_update_num": self.ema_model.update_num  if self.hyp['do_ema'] else 0, 
                 "hyp": self.hyp, 
@@ -796,7 +773,7 @@ class Training:
                         if preds[k] is None:
                             cv2_save_img(imgs[k], [], [], [], save_path)
                         else:
-                            preds_lab = [self.train_dataset.cls2lab[c] for c in preds[k][:, 5].astype(np.uint8)]
+                            preds_lab = [self.train_dataset.cls2lab[c] for c in preds[k][:, 5].astype(np.int32)]
                             cv2_save_img(imgs[k], preds[k][:, :4], preds_lab, preds[k][:, 4], save_path)
                     del y, inp, info, imgs, preds, output
                 del validater

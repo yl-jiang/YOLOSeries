@@ -9,7 +9,8 @@ import numpy as np
 
 
 __all__ = ["padding", 'is_parallel', 'catch_warnnings', 'numba_clip', 'maybe_mkdir', 'time_synchronize', 
-          'is_exists', 'clear_dir', 'compute_resize_scale', 'compute_featuremap_shape']
+          'is_exists', 'clear_dir', 'compute_resize_scale', 'compute_featuremap_shape', 'check_parameters_no_used', 
+          'dummy_context']
           
 
 def padding(hw, factor=32):
@@ -104,3 +105,20 @@ def compute_featuremap_shape(img_shape, pyramid_level):
     fm_shape = (img_shape - 1) // (2**pyramid_level) + 1
     return fm_shape
 
+
+def check_parameters_no_used(model: torch.nn.Module):
+    for name, param in model.named_parameters():
+        if param.grad is None:
+            print(name)
+
+
+class dummy_context:
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def step(self):
+        pass

@@ -25,6 +25,22 @@ class RetinaNet(nn.Module):
 
         if freeze_bn:  # only do this for training
             self._freeze_bn()
+            
+        self._init_weights()
+
+    def _init_weights(self):
+        """
+        初始化模型参数, 主要是对detection layers的bias参数进行特殊初始化, 参考RetinaNet那篇论文, 这种初始化方法可让网络较容易度过前期训练困难阶段
+        (使用该初始化方法可能针对coco数据集有效, 在对global wheat数据集的测试中, 该方法根本train不起来)
+        """
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                m.eps = 1e-3
+                m.momentum = 0.03
+            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.ReLU6)):
+                m.inplace = True
 
     def _freeze_bn(self):
         """

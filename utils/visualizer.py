@@ -94,6 +94,7 @@ def plt_save_img(img, bboxes, labels, scores, save_path):
     fig.clf()
     fig.close()
     plt.close('all')
+    del fig, ax
     gc.collect()
 
 
@@ -255,8 +256,11 @@ def plt_plot_img(img, bboxes, labels, scores):
                     bbox={'facecolor': 'y', 'alpha': 0.8, 'pad': 3})
     ax.set_axis_off()
     plt.show()
+    fig.clear()
     plt.clf()
     plt.close('all')
+    del fig, ax
+    gc.collect()
 
 
 def plt_plot_all(img, pred_bboxes, pred_labels, pred_scores, gt_bboxes, gt_labels):
@@ -321,3 +325,6 @@ def plt_plot_all(img, pred_bboxes, pred_labels, pred_scores, gt_bboxes, gt_label
     plt.show()
     plt.clf()
     plt.close('all')
+    fig.clear()
+    del fig, ax
+    gc.collect()

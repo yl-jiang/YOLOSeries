@@ -8,7 +8,7 @@ __all__ = ['freeze_bn', 'fuse_conv_bn', 'Concat', 'autopad', 'ConvBnAct', 'Basic
            'Focus', 'SPP', 'FastSPP', 'CSPCSPP', 'RepConv', 'ImplicitAdd', 'ImplicitMul', 
            'Upsample', 'Detect', 'DepthWiseConvBnAct', 'DepthWiseBasicBottleneck', 'DepthWiseBottleneckCSP', 
            'DepthWiseC3BottleneckCSP', 'BasicBlock', 'Bottleneck', 'ResNet', 'resnet50', 'RetinaNetRegression', 
-           'RetinaNetClassification', 'RetinaNetPyramidFeatures', 'ELANBlock']
+           'RetinaNetClassification', 'RetinaNetPyramidFeatures', 'ELANBlock', 'Scale', 'C2f', 'DistributionFocalLoss']
 
 def freeze_bn(m):
     """
@@ -53,6 +53,13 @@ def fuse_conv_bn(conv_layer, bn_layer):
     return fuseconv
 
 
+class Scale(nn.Module):
+    def __init__(self, init_value=1.0):
+        super(Scale, self).__init__()
+        self.scale = nn.Parameter(torch.FloatTensor([init_value]))
+
+    def forward(self, input):
+        return input * self.scale
 
 class Concat(nn.Module):
 
@@ -74,7 +81,7 @@ def autopad(kernel, padding):
 
 class ConvBnAct(nn.Module):
 
-    def __init__(self, in_channel, out_channel, kernel, stride, padding=0, groups=1, bias=False, act=True, inplace=True):
+    def __init__(self, in_channel, out_channel, kernel, stride, padding=None, groups=1, bias=False, act=True, inplace=True):
         super(ConvBnAct, self).__init__()
         self.conv = nn.Conv2d(in_channel, out_channel, kernel, stride, padding=autopad(kernel, padding), groups=groups, bias=bias)
         self.bn = nn.BatchNorm2d(out_channel, eps=1e-3, momentum=0.03)
@@ -262,7 +269,7 @@ class SPP(nn.Module):
 
 class FastSPP(nn.Module):
     """
-    FastSPP与SPP的区别是，SPP是直接对输入x进行kernel分别为5，9，13的maxpooling，然后再将不同感受野的特征进行整合。
+    FastSPP与SPP的区别是, SPP是直接对输入x进行kernel分别为5, 9, 13的maxpooling, 然后再将不同感受野的特征进行整合。
     FastSPP是仿照卷积通过层级关系的堆叠从而间接达到提取不同感受野特征的目的。
     """
     def __init__(self, in_channel, out_channel, kernel=5):
@@ -585,6 +592,7 @@ class Bottleneck(nn.Module):
 
     def forward(self, x):
         identify = x
+        
         out = self.relu(self.bn1(self.conv1(x)))
         out = self.relu(self.bn2(self.conv2(out)))
         out = self.bn3(self.conv3(out))
@@ -621,8 +629,8 @@ class ResNet(nn.Module):
             self.fc = nn.Linear(in_features=self.inplane_upd, out_features=num_class)
 
         # initialization
-        # self._initialize(self)
-        # self._initialize_last_bn(self)
+        self._initialize(self)
+        self._initialize_last_bn(self)
 
     def _initialize(self, modules):
         """
@@ -653,7 +661,7 @@ class ResNet(nn.Module):
                 nn.init.constant_(m.bn2.weight, 0.)
 
     def _make_layer(self, block, planes, block_num, stride):
-        # stride = 1的Bottleneck会扩充channel，stride = 2的Bottleneck会downsample image且会扩充channel
+        # stride = 1的Bottleneck会扩充channel, stride = 2的Bottleneck会downsample image且会扩充channel
         if stride != 1 or self.inplane_upd != planes * block.expansion:
             downsample = nn.Sequential(
                 nn.Conv2d(in_channels=self.inplane_upd, out_channels=planes*block.expansion, kernel_size=(1, 1), stride=stride, padding=0, bias=False),
@@ -692,7 +700,6 @@ def resnet50(inplane=64, layers=None, block=None, num_class=None):
     model = ResNet(inplane, layers, block, num_class)
     return model
 
-
 class RetinaNetRegression(nn.Module):
 
     def __init__(self, in_channels, inner_channels, num_anchor):
@@ -719,7 +726,6 @@ class RetinaNetRegression(nn.Module):
         out = torch.reshape(out, shape=(b, -1, 4))
         return out
 
-
 class RetinaNetClassification(nn.Module):
 
     def __init__(self, in_channels, inner_channels, num_anchor, num_class):
@@ -735,7 +741,16 @@ class RetinaNetClassification(nn.Module):
         self.output = nn.Conv2d(inner_channels, num_anchor * num_class, 3, 1, 1)
 
         self.relu = nn.ReLU(inplace=True)
-        # self.sigmoid = nn.Sigmoid()
+        self._init_bias()
+
+    def _init_bias(self):
+        # initialize the bias for focal loss
+        prior_prob = 0.01
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                if m.bias is not None:
+                    torch.nn.init.constant_(m.bias, bias_value)
 
     def forward(self, x):
         out = self.relu(self.conv1(x))
@@ -743,16 +758,13 @@ class RetinaNetClassification(nn.Module):
         out = self.relu(self.conv3(out))
         out = self.relu(self.conv4(out))
         out = self.output(out)
-        # out = self.sigmoid(self.output(out))
-        # print(f'cls: {out.shape}')
         # (b, 80x9, h, w)
         b, c, h, w = out.size()
         # (b, h, w, 720)
         out = out.permute(0, 2, 3, 1)
         # (b, hxwx9, 80)
-        out = torch.reshape(out, shape=(b, -1, self.num_class))
+        out = torch.reshape(out, shape=(b, -1, self.num_class)).contiguous()
         return out
-
 
 class RetinaNetPyramidFeatures(nn.Module):
 
@@ -853,3 +865,58 @@ class ELANBlock(nn.Module):
         feat_list.append(x)
         feat = self.cba10(self.cat(feat_list[::-1]))  # 24
         return feat
+
+
+# -------------------------------------- yolov8 layers --------------------------------------
+
+class ConciseBottleneck(nn.Module):
+
+    def __init__(self, in_channel, out_channel, stride=1, kernel_size=(3, 3), shortcut=True, group=1, expansion=0.5):
+        super(ConciseBottleneck, self).__init__()
+        assert len(kernel_size) == 2
+        mid_channel = int(out_channel * expansion)
+        self.conv1 = ConvBnAct(in_channel, mid_channel, kernel_size[0], stride)
+        self.conv2 = ConvBnAct(mid_channel, out_channel, kernel_size[1], stride, groups=group)
+        self.shortcut = shortcut and in_channel == out_channel
+
+    def forward(self, x):
+        
+        return x + self.conv2(self.conv1(x)) if self.shortcut else self.conv2(self.conv1(x))
+
+class C2f(nn.Module):
+    def __init__(self, in_channel, out_channel, num_block, shortcut=False, group=1, expansion=0.5) -> None:
+        super().__init__()
+        mid_channel = int(out_channel * expansion)
+        self.conv1 = ConvBnAct(in_channel, mid_channel * 2, 1, 1)
+        self.conv2 = ConvBnAct(mid_channel*(2+num_block), out_channel, 1, 1)
+        self.block = nn.ModuleList(ConciseBottleneck(mid_channel, mid_channel, 1, (3, 3), shortcut, group, 1.0) for _ in range(num_block))
+
+    def forward(self, x):
+        """
+        Inputs:
+            x: (b, in_ch, h, w)
+        Outputs:
+            y: (b, out_ch, h, w)
+        """
+        y = list(self.conv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.block)
+        return self.conv2(torch.cat(y, 1))
+    
+
+class DistributionFocalLoss(nn.Module):
+    # Integral module of Distribution Focal Loss (DFL)
+    # Proposed in Generalized Focal Loss https://ieeexplore.ieee.org/document/9792391
+    def __init__(self, c1=16):
+        super().__init__()
+        self.conv = nn.Conv2d(c1, 1, 1, bias=False).requires_grad_(False)
+        x = torch.arange(c1, dtype=torch.float)
+        self.conv.weight.data[:] = nn.Parameter(x.view(1, c1, 1, 1))
+        self.c1 = c1
+
+    def forward(self, x):
+        """
+        Inputs:
+            x: (b, num_class+4*reg, h*w)
+        """
+        b, c, n = x.shape  # batch, channels=4*reg, h*w
+        return self.conv(x.view(b, 4, self.c1, n).transpose(2, 1).softmax(1)).view(b, 4, n)

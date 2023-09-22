@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from utils import ConvBnAct, Upsample, Concat, Detect, C3BottleneckCSP, FastSPP
 from collections import OrderedDict
+import math
 
 __all__ = ['YOLOXMiddle']
 
@@ -141,10 +142,38 @@ class Detect(nn.Module):
 
 class YOLOXMiddle(nn.Module):
 
-    def __init__(self, num_anchors=1, in_channel=3, num_classes=80):
+    def __init__(self, num_anchors=1, in_channel=3, num_classes=80, prior_prob=0.01):
         super().__init__()
         self.neck = MiddleYOLOXBackboneAndNeck(in_channel)
         self.detect = Detect(num_anchors=num_anchors, in_channels=[192, 384, 768], mid_channel=192, wid_mul=1.0, num_classes=num_classes)
+        self.num_anchor = num_anchors
+        self._init_bias(prior_prob)
+
+    def _init_bias(self, p):
+        """
+        初始化模型参数, 主要是对detection layers的bias参数进行特殊初始化, 参考RetinaNet那篇论文, 这种初始化方法可让网络较容易度过前期训练困难阶段
+        (使用该初始化方法可能针对coco数据集有效, 在对global wheat数据集的测试中, 该方法根本train不起来)
+        """
+        cls_layer = [self.detect.pred_small['cls'],
+                     self.detect.pred_middle['cls'],
+                     self.detect.pred_large['cls']]
+
+        reg_layer = [self.detect.pred_small['reg'],
+                     self.detect.pred_middle['reg'],
+                     self.detect.pred_large['reg']]
+        
+        for layer in cls_layer:
+            for m in layer:
+                if isinstance(m, nn.Conv2d):
+                    bias = m.bias.view(self.num_anchor, -1) 
+                    bias.data.fill_(-math.log((1-p) / p))
+                    m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
+
+        for m in reg_layer:
+            if isinstance(m, nn.Conv2d):
+                bias = m.bias.view(self.num_anchor, -1) 
+                bias.data.fill_(-math.log((1-p) / p))
+                m.bias = torch.nn.Parameter(bias.view(-1), requires_grad=True)
 
     def forward(self, x):
         # backbone & neck

@@ -201,21 +201,28 @@ class Training:
                         print(f"can't load pretrained model from {model_path}")
     
                     else:  # load pretrained model
-                        self.model.load_state_dict(state_dict["model_state_dict"])
-                        print(f"use pretrained model {model_path}")
+                        try:
+                            self.model.load_state_dict(state_dict["model_state_dict"])
+                        except Exception as err:
+                            print(f"can't load pretrained model from {model_path}")
+                        else:
+                            self.model = None
+                            print(f"use pretrained model {model_path}")
 
                     if self.ema_model is not None and "ema" in state_dict:  # load EMA model
-                        self.ema_model.ema.load_state_dict(state_dict['ema'])
-                        print(f"use pretrained EMA model from {model_path}")
+                        try:
+                            self.model.load_state_dict(state_dict['ema'])
+                        except Exception as err:
+                            self.ema_model.ema = None
+                            print(f"can't load EMA model from {model_path}")
+                        else:
+                            self.ema_model.ema = self.model
+                            print(f"use pretrained EMA model from {model_path}")
                     else:
                         print(f"can't load EMA model from {model_path}")
 
-                    if self.ema_model is not None and 'ema_update_num' in state_dict:
-                        self.ema_model.update_num = state_dict['ema_update_num']
-
                     del state_dict
-        else:
-            print('training from stratch!')
+
         
     def gt_bbox_postprocess(self, anns, infoes):
         """
@@ -273,7 +280,7 @@ class Training:
         pred_bboxes, pred_classes, pred_confidences, pred_labels, gt_bboxes, gt_classes = [], [], [], [], [], []
         iters_num = len(self.val_dataloader)
 
-        if self.hyp['do_ema']:
+        if self.hyp['do_ema'] and self.ema_model.eam is not None:
             eval_model = self.ema_model.ema
         else:
             eval_model = self.model

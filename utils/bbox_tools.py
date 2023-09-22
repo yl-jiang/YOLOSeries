@@ -5,7 +5,7 @@ import numpy as np
 __all__ = ['letter_resize_bbox', 'minmax_bbox_resize', 
            'cpu_iou', 'xyxy2xywh', 'xyxy2xywhn', 'xywh2xyxy', 'numba_xywh2xyxy', 
            'gpu_iou', 'gpu_Giou', 'gpu_CIoU', 'gpu_DIoU', 'box_candidates', 
-           'valid_bbox', 'numba_iou']
+           'valid_bbox', 'numba_iou', 'numba_xyxy2xywh', 'tblr2xyxy', 'xyxy2tblr']
 
 
 @numba.njit
@@ -78,7 +78,7 @@ def cpu_iou(bbox1, bbox2):
     intersection_w = np.maximum(0., intersection_xmax - intersection_xmin)
     intersection_h = np.maximum(0., intersection_ymax - intersection_ymin)
     intersection_area = intersection_w * intersection_h
-    iou_out = intersection_area / (bbox1_area + bbox2_area - intersection_area)
+    iou_out = intersection_area / np.clip(bbox1_area + bbox2_area - intersection_area, a_min=1e-6)
 
     return iou_out
 
@@ -146,6 +146,19 @@ def numba_xywh2xyxy(bboxes):
     return bbox_out
 
 
+@numba.njit
+def numba_xyxy2xywh(bboxes):
+    """
+    [xmin, ymin, xmax, ymax] -> [center_x, center_y, w, h]
+    :param bboxes:
+    """
+    bbox_out = np.zeros_like(bboxes)
+    bbox_out[:, 0] = (bboxes[:, 0] + bboxes[:, 2]) / 2
+    bbox_out[:, 1] = (bboxes[:, 1] + bboxes[:, 3]) / 2
+    bbox_out[:, 2] = bboxes[:, 2] - bboxes[:, 0]
+    bbox_out[:, 3] = bboxes[:, 3] - bboxes[:, 1]
+    return bbox_out
+
 def gpu_iou(bbox1, bbox2):
     """
     :param bbox1: [[xmin, ymin, xmax, ymax], ...] / type: torch.Tensor / (N, 4)
@@ -170,7 +183,7 @@ def gpu_iou(bbox1, bbox2):
     intersection_w = torch.clamp(intersection_xmax - intersection_xmin, min=0.0)  # (N, M)
     intersection_h = torch.clamp(intersection_ymax - intersection_ymin, min=0.0)  # (N, M)
     intersection_area = intersection_w * intersection_h  # (N, M)
-    iou = intersection_area / (bbox1_area[:, None] + bbox2_area - intersection_area + 1e-16)  # (N, M)
+    iou = intersection_area / (bbox1_area[:, None] + bbox2_area - intersection_area).clamp(1e-6)  # (N, M)
 
     return iou  # (N, M)
 
@@ -200,16 +213,16 @@ def gpu_Giou(bbox1, bbox2):
     intersection_h = (intersection_ymax - intersection_ymin).clamp(0)
     intersection_area = intersection_w * intersection_h
 
-    union_area = bbox1_area + bbox2_area - intersection_area + 1e-16
-    iou = intersection_area / union_area
+    union_area = bbox1_area + bbox2_area - intersection_area
+    iou = intersection_area / union_area.clamp(min=1e-6)
 
     c_xmin = torch.min(bbox1[:, 0], bbox2[:, 0])
     c_xmax = torch.max(bbox1[:, 2], bbox2[:, 2])
     c_ymin = torch.min(bbox1[:, 1], bbox2[:, 1])
     c_ymax = torch.max(bbox1[:, 3], bbox2[:, 3])
 
-    c_area = (c_xmax - c_xmin) * (c_ymax - c_ymin) + 1e-16
-    g_iou = iou - torch.abs(c_area - union_area) / torch.abs(c_area)
+    c_area = (c_xmax - c_xmin) * (c_ymax - c_ymin)
+    g_iou = iou - torch.abs(c_area - union_area) / torch.abs(c_area.clamp(1e-6))
 
     return g_iou
 
@@ -240,8 +253,8 @@ def gpu_DIoU(bbox1, bbox2):
     intersection_h = torch.clamp(intersection_ymax - intersection_ymin, min=0.)
     intersection_area = intersection_w * intersection_h
 
-    union_area = bbox1_area + bbox2_area - intersection_area + 1e-16
-    iou = intersection_area / union_area
+    union_area = bbox1_area + bbox2_area - intersection_area
+    iou = intersection_area / union_area.clamp(min=1e-6)
 
     c_xmin = torch.min(bbox1[:, 0], bbox2[:, 0])
     c_xmax = torch.max(bbox1[:, 2], bbox2[:, 2])
@@ -251,7 +264,7 @@ def gpu_DIoU(bbox1, bbox2):
     c_ws = c_xmax - c_xmin
     assert torch.sum(c_hs > 0) > 0
     assert torch.sum(c_ws > 0) > 0
-    c_diagonal = torch.pow(c_ws, 2) + torch.pow(c_hs, 2) + 1e-16
+    c_diagonal = torch.pow(c_ws, 2) + torch.pow(c_hs, 2)
 
     # compute center coordinate of bboxes
     bbox1_ctr_x = (bbox1[:, 2] + bbox1[:, 0]) / 2
@@ -262,7 +275,7 @@ def gpu_DIoU(bbox1, bbox2):
     ctr_ws = bbox1_ctr_y - bbox2_ctr_y
     ctr_distance = torch.pow(ctr_hs, 2) + torch.pow(ctr_ws, 2)
 
-    d_iou = iou - (ctr_distance / c_diagonal)
+    d_iou = iou - (ctr_distance / c_diagonal.clamp(min=1e-6))
     d_iou = torch.clamp(d_iou, -1, 1)
 
     return d_iou
@@ -295,7 +308,8 @@ def gpu_CIoU(bbox1, bbox2):
     intersection_h = torch.clamp(intersection_ymax - intersection_ymin, min=0.)  # (N,)
     intersection_area = intersection_w * intersection_h  # (N,)
 
-    union_area = bbox1_area + bbox2_area - intersection_area + 1e-16  # (N,)
+    union_area = bbox1_area + bbox2_area - intersection_area  # (N,)
+    union_area = torch.clamp(union_area, min=1e-6)
     iou = intersection_area / union_area  # (N,)
 
     c_xmin = torch.min(bbox1[:, 0], bbox2[:, 0])  # (N,)
@@ -304,7 +318,8 @@ def gpu_CIoU(bbox1, bbox2):
     c_ymax = torch.max(bbox1[:, 3], bbox2[:, 3])  # (N,)
     c_hs = c_ymax - c_ymin  # (N,)
     c_ws = c_xmax - c_xmin  # (N,)
-    c_diagonal = torch.pow(c_ws, 2) + torch.pow(c_hs, 2) + 1e-16  # (N,)
+    c_diagonal = torch.pow(c_ws, 2) + torch.pow(c_hs, 2)  # (N,)
+    
 
     # compute center coordinate of bboxes
     bbox1_ctr_x = (bbox1[:, 2] + bbox1[:, 0]) / 2  # (N,)
@@ -314,11 +329,12 @@ def gpu_CIoU(bbox1, bbox2):
     ctr_ws = bbox1_ctr_x - bbox2_ctr_x  # (N,)
     ctr_hs = bbox1_ctr_y - bbox2_ctr_y  # (N,)
     # ctr_distance: distance of two bbox center
-    ctr_distance = torch.pow(ctr_hs, 2) + torch.pow(ctr_ws, 2)  # (N,)
-    v = (4 / (np.pi ** 2)) * torch.pow(torch.atan(w2 / h2) - torch.atan(w1 / h1), 2)  # (N,)
+    ctr_distance = ctr_hs.pow_(2) + ctr_ws.pow_(2)  # (N,)
+    v = (4 / (np.pi ** 2)) * (torch.atan(w2 / torch.clamp(h2, min=1e-6)) - torch.atan(w1 / torch.clamp(h1, min=1e-6))).pow_(2)  # (N,)
 
     with torch.no_grad():
-        alpha = v / (1 - iou + v + 1e-16)
+        alpha = v / torch.clamp(1 - iou + v, min=1e-6)
+    c_diagonal = torch.clamp(c_diagonal, min=1e-6)
     ciou = iou - (ctr_distance / c_diagonal + v * alpha)  # (N,)
     return ciou
 
@@ -371,4 +387,41 @@ def valid_bbox(bboxes, box_type='xyxy', wh_thr=2, ar_thr=10, area_thr=16):
     valid_inx = np.all(valid_idx, axis=1)
 
     return valid_inx
+
+
+def tblr2xyxy(tblr: torch.Tensor, grid: torch.Tensor):
+    """
+    Inputs:
+        tblr: (b, N, 4) / [t, b, l, r]
+        grid: (N, 2) / [x, y]
+    Outputs:
+        xyxy: (b, N, 4) / [xmin, ymin, xmax, ymax]
+    """
+    assert tblr.ndim == 3 and tblr.size(1) == grid.size(0)
+    t, b, l, r = tblr.chunk(4, -1)  # (b, N, 1)
+    xmin = grid[:, [0]][None] - l  # (1, N, 1) & (b, N, 1) -> (b, N, 1)
+    ymin = grid[:, [1]][None] - t  # (1, N, 1) & (b, N, 1) -> (b, N, 1)
+    xmax = grid[:, [0]][None] + r  # (1, N, 1) & (b, N, 1) -> (b, N, 1)
+    ymax = grid[:, [1]][None] + b  # (1, N, 1) & (b, N, 1) -> (b, N, 1)
+    
+    return torch.cat((xmin, ymin, xmax, ymax), dim=-1).contiguous()  # (b, N, 4)
+
+
+def xyxy2tblr(xyxy:torch.Tensor, grid:torch.Tensor):
+    """
+    Inputs:
+        xyxy: (b, N, 4) / [xmin, ymin, xmax, ymax]
+        grid: (N, 2) / [x, y]
+    Outputs:
+        tblr: (b, N, 4) / [t, b, l, r]
+    """
+    xmin, ymin, xmax, ymax = xyxy.chunk(4, -1)  # (b, N, 1)
+    gx, gy = grid.chunk(2, -1)  # (N, 1)
+    # (1, N, 1) & (b, N, 1)
+    t = gy[None] - ymin
+    b = ymax - gy[None]
+    l = gx[None] - xmin
+    r = xmax - gx[None]
+
+    return torch.cat((t, b, l, r), dim=-1).contiguous()  # (b, N, 4)
 

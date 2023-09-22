@@ -43,6 +43,7 @@ def occupy_mem(cuda_device, mem_ratio=0.9):
     block_mem = max_mem - used
     x = torch.cuda.FloatTensor(256, 1024, block_mem)
     del x
+    torch.cuda.empty_cache()
     time.sleep(5)
 
 
