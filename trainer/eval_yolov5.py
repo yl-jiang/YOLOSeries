@@ -170,9 +170,15 @@ class YOLOV5Evaluator:
             ripe_preds = self.do_inference(img)
             ripe_preds[..., :4] /= s
             if f == 2:  # flip axis y
-                ripe_preds[..., 1] = img_h - ripe_preds[..., 1]
+                ymin = img_h - ripe_preds[..., 3]
+                ymax = img_h - ripe_preds[..., 1]
+                ripe_preds[..., 1] = ymin
+                ripe_preds[..., 3] = ymax
             if f == 3:  # flip axis x
-                ripe_preds[..., 0] = img_w - ripe_preds[..., 0]
+                xmin = img_w - ripe_preds[..., 2]
+                xmax = img_w - ripe_preds[..., 0]
+                ripe_preds[..., 0] = xmin
+                ripe_preds[..., 2] = xmax
             # [(bs, M, 85), (bs, N, 85), (bs, P, 85)]
             aug_preds.append(ripe_preds)
         # (bs, M+N+P, 85)

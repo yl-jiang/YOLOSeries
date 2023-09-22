@@ -329,8 +329,8 @@ def gpu_CIoU(bbox1, bbox2):
     ctr_ws = bbox1_ctr_x - bbox2_ctr_x  # (N,)
     ctr_hs = bbox1_ctr_y - bbox2_ctr_y  # (N,)
     # ctr_distance: distance of two bbox center
-    ctr_distance = torch.pow(ctr_hs, 2) + torch.pow(ctr_ws, 2)  # (N,)
-    v = (4 / (np.pi ** 2)) * torch.pow(torch.atan(w2 / torch.clamp(h2, min=1e-6)) - torch.atan(w1 / torch.clamp(h1, min=1e-6)), 2)  # (N,)
+    ctr_distance = ctr_hs.pow_(2) + ctr_ws.pow_(2)  # (N,)
+    v = (4 / (np.pi ** 2)) * (torch.atan(w2 / torch.clamp(h2, min=1e-6)) - torch.atan(w1 / torch.clamp(h1, min=1e-6))).pow_(2)  # (N,)
 
     with torch.no_grad():
         alpha = v / torch.clamp(1 - iou + v, min=1e-6)
@@ -399,29 +399,29 @@ def tblr2xyxy(tblr: torch.Tensor, grid: torch.Tensor):
     """
     assert tblr.ndim == 3 and tblr.size(1) == grid.size(0)
     t, b, l, r = tblr.chunk(4, -1)  # (b, N, 1)
-    xmin = grid[:, 0].unsqueeze(0) - l.squeeze(-1)  # (1, N) & (b, N) -> (b, N)
-    ymin = grid[:, 1].unsqueeze(0) - t.squeeze(-1)  # (1, N) & (b, N) -> (b, N)
-    xmax = grid[:, 0].unsqueeze(0) + r.squeeze(-1)  # (1, N) & (b, N) -> (b, N)
-    ymax = grid[:, 1].unsqueeze(0) + b.squeeze(-1)  # (1, N) & (b, N) -> (b, N)
+    xmin = grid[:, [0]][None] - l  # (1, N, 1) & (b, N, 1) -> (b, N, 1)
+    ymin = grid[:, [1]][None] - t  # (1, N, 1) & (b, N, 1) -> (b, N, 1)
+    xmax = grid[:, [0]][None] + r  # (1, N, 1) & (b, N, 1) -> (b, N, 1)
+    ymax = grid[:, [1]][None] + b  # (1, N, 1) & (b, N, 1) -> (b, N, 1)
     
-    return torch.stack((xmin, ymin, xmax, ymax), dim=-1)  # (b, N, 4)
+    return torch.cat((xmin, ymin, xmax, ymax), dim=-1).contiguous()  # (b, N, 4)
 
 
 def xyxy2tblr(xyxy:torch.Tensor, grid:torch.Tensor):
     """
     Inputs:
-        xyxy: (b, N, M, 4) / [xmin, ymin, xmax, ymax]
+        xyxy: (b, N, 4) / [xmin, ymin, xmax, ymax]
         grid: (N, 2) / [x, y]
     Outputs:
-        tblr: (b, N, M, 4) / [t, b, l, r]
+        tblr: (b, N, 4) / [t, b, l, r]
     """
-    xmin, ymin, xmax, ymax = xyxy.chunk(4, -1)  # (b, N, M, 1)
+    xmin, ymin, xmax, ymax = xyxy.chunk(4, -1)  # (b, N, 1)
     gx, gy = grid.chunk(2, -1)  # (N, 1)
-    # (1, N, 1) & (b, N, M)
-    t = gy[None, ...] - ymin.squeeze_(-1)
-    b = ymax.squeeze_(-1) - gy[None, ...]
-    l = gx[None, ...] - xmin.squeeze_(-1)
-    r = xmax.squeeze_(-1) - gx[None, ...]
+    # (1, N, 1) & (b, N, 1)
+    t = gy[None] - ymin
+    b = ymax - gy[None]
+    l = gx[None] - xmin
+    r = xmax - gx[None]
 
-    return torch.stack((t, b, l, r), dim=-1).clamp(min=0.).contiguous()  # (b, N, M, 4)
+    return torch.cat((t, b, l, r), dim=-1).contiguous()  # (b, N, 4)
 

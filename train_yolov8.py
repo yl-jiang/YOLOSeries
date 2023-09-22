@@ -26,6 +26,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
 from torch.nn.parallel import DistributedDataParallel as DDP
 from contextlib import nullcontext
+from torch import profiler
 
 from config import Config
 from loss import YOLOV8Loss as loss_fnc
@@ -41,7 +42,7 @@ from models import *
 from utils import (configure_nccl, configure_omp, get_local_rank, print_config, 
                    get_rank, get_world_size, occupy_mem, padding, MeterBuffer, 
                    all_reduce_norm, is_parallel, adjust_status, synchronize, 
-                   configure_module, launch)
+                   configure_module, launch, cv2_save_figs, dummy_context)
 import torch.distributed as dist
 import gc
 
@@ -282,72 +283,83 @@ class Training:
             else:
                 self.tbar = None
 
-            for i in range(one_epoch_iters):
-                start_iter = time_synchronize()
-                if self.use_cuda:
-                    x = self.train_prefetcher.next()
-                else:
-                    x = next(self.train_dataloader)
-                end_data_t = time_synchronize()
-                step_in_epoch = i + 1
-                step_in_total = one_epoch_iters * cur_epoch + i + 1
-                ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
-                img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
-                img, ann = self.mutil_scale_training(img, ann)
+            prof = profiler.profile(schedule=profiler.schedule(wait=1, warmup=1, active=3, repeat=2), 
+                                    on_trace_ready=profiler.tensorboard_trace_handler(str(self.cwd / 'log' / f'log_rank_{self.rank}')), 
+                                    record_shapes=True, 
+                                    profile_memory=True, 
+                                    with_stack=True) if self.hyp['enable_profiler'] else dummy_context()
+            with prof as profbar:
+                for i in range(one_epoch_iters):
+                    start_iter = time_synchronize()
+                    if self.use_cuda:
+                        x = self.train_prefetcher.next()
+                    else:
+                        x = next(self.train_dataloader)
+                    end_data_t = time_synchronize()
+                    step_in_epoch = i + 1
+                    step_in_total = one_epoch_iters * cur_epoch + i + 1
+                    # cv2_save_figs(x, "./result/debug")
+                    ann = x['ann'].to(self.hyp['device'])  # (bn, bbox_num, 6)
+                    img = x['img'].to(self.hyp['device'])  # (bn, 3, h, w)
+                    img, ann = self.mutil_scale_training(img, ann)
 
-                # warmup
-                self.warmup(step_in_total)
+                    # warmup
+                    self.warmup(step_in_total)
 
-                # forward
-                my_context = self.model.no_sync if self.is_distributed and step_in_epoch % self.accumulate != 0 else nullcontext
-                with my_context():
-                    with amp.autocast(enabled=self.use_cuda):
-                        stage_preds = self.model(img)
-                        loss_dict = self.loss_fcn(stage_preds, ann)
-                        loss_dict['tot_loss'] *= get_world_size()
+                    # forward
+                    my_context = self.model.no_sync if self.is_distributed and step_in_epoch % self.accumulate != 0 else nullcontext
+                    with my_context():
+                        with amp.autocast(enabled=self.use_cuda):
+                            stage_preds = self.model(img)
+                            loss_dict = self.loss_fcn(stage_preds, ann)
+                            loss_dict['tot_loss'] *= get_world_size()
 
-                tot_loss = loss_dict['tot_loss']
+                    tot_loss = loss_dict['tot_loss']
 
-                # backward
-                self.scaler.scale(tot_loss).backward()
-                end_iter_t = time_synchronize()
-                loss_dict.update({'tot_loss': tot_loss.detach().item()})
+                    # backward
+                    self.scaler.scale(tot_loss).backward()
+                    end_iter_t = time_synchronize()
+                    loss_dict.update({'tot_loss': tot_loss.detach().item()})
 
-                # optimize
-                if step_in_epoch % self.accumulate == 0:
-                    self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                    self.optimizer.zero_grad()
-                    # maintain a model and update it every time, but it only using for inference
-                    if self.hyp['do_ema']:
-                        self.ema_model.update(self.model)
+                    # optimize
+                    if step_in_epoch % self.accumulate == 0:
+                        self.scaler.unscale_(self.optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                        self.optimizer.zero_grad()
+                        # maintain a model and update it every time, but it only using for inference
+                        if self.hyp['do_ema']:
+                            self.ema_model.update(self.model)
 
-                data_time = end_data_t - start_iter
-                iter_time = end_iter_t - start_iter
-                is_best = tot_loss < tot_loss_before
-                tot_loss_before = tot_loss.item()
+                    data_time = end_data_t - start_iter
+                    iter_time = end_iter_t - start_iter
+                    is_best = tot_loss < tot_loss_before
+                    tot_loss_before = tot_loss.item()
 
-                self.update_meter(cur_epoch+1, step_in_epoch, step_in_total, img.size(2), img.size(0), iter_time, data_time, loss_dict, is_best)
-                self.update_tbar(self.tbar)
-                self.update_summarywriter()
-                self.update_logger(step_in_total)
-                self.save_model(cur_epoch+1, step_in_total=step_in_total, loss_dict=loss_dict)
-                self.test(step_in_total)
-                self.calculate_metric(step_in_total)
+                    self.update_meter(cur_epoch+1, step_in_epoch, step_in_total, img.size(2), img.size(0), iter_time, data_time, loss_dict, is_best)
+                    self.update_tbar(self.tbar)
+                    self.update_summarywriter()
+                    self.update_logger(step_in_total)
+                    self.save_model(cur_epoch+1, step_in_total=step_in_total, loss_dict=loss_dict)
+                    self.test(step_in_total)
+                    self.calculate_metric(step_in_total)
 
-                del x, img, ann, tot_loss, stage_preds, loss_dict
+                    del x, img, ann, tot_loss, stage_preds, loss_dict
+
+                    if self.rank == 0 and self.tbar is not None:
+                        self.tbar.update()
+                    
+                    if self.hyp['enable_profiler']:
+                        profbar.step()
+
+                self.lr_scheduler.step()
+                epoch_time = time_synchronize() - start_epoch_t
+                self.logger.info(f'\n\n{"-" * 600}\n')
 
                 if self.rank == 0 and self.tbar is not None:
-                    self.tbar.update()
-
-            self.lr_scheduler.step()
-            epoch_time = time_synchronize() - start_epoch_t
-            self.logger.info(f'\n\n{"-" * 600}\n')
-
-            if self.rank == 0 and self.tbar is not None:
-                self.tbar.close()
+                    self.tbar.close()
+                
 
     def tag2msg(self, tags, fmts, with_tag_name=False):
         assert len(tags) == len(fmts), f"length of tags and fmts should be the same, but got len(tags)={len(tags)} and len(fmts)={len(fmts)}"
@@ -830,12 +842,12 @@ if __name__ == '__main__':
 
     from utils import launch, get_num_devices
     import os
-    # os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+    os.environ['CUDA_VISIBLE_DEVICES'] = "1"
     num_gpu = get_num_devices()
     clear_dir(str(current_work_directionary / 'log'))
     launch(
         main, 
-        num_gpus_per_machine= num_gpu, 
+        num_gpus_per_machine= 1, 
         num_machines= 1, 
         machine_rank= 0, 
         backend= "nccl", 

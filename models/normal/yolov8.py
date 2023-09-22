@@ -22,36 +22,36 @@ class Detect(nn.Module):
                                                 ConvBnAct(in_channels[0]//4, in_channels[0]//4, 3, 1, 1), 
                                                 nn.Conv2d(in_channels[0]//4, 64               , 1, 1, 0))
         
-        self.detect_xsmall_cls = nn.Sequential(ConvBnAct(in_channels[0], 128      , 3, 1, 1), 
-                                               ConvBnAct(128           , 128      , 3, 1, 1),
-                                               nn.Conv2d(128           , num_class, 1, 1, 0))
+        self.detect_xsmall_cls  = nn.Sequential(ConvBnAct(in_channels[0], 128      , 3, 1, 1), 
+                                                ConvBnAct(128           , 128      , 3, 1, 1),
+                                                nn.Conv2d(128           , num_class, 1, 1, 0))
         
 
         self.detect_small_bbox = nn.Sequential(ConvBnAct(in_channels[1]   , in_channels[1]//4, 3, 1, 1), 
                                                ConvBnAct(in_channels[1]//4, in_channels[1]//4, 3, 1, 1), 
                                                nn.Conv2d(in_channels[1]//4, 64               , 1, 1, 0))
         
-        self.detect_small_cls = nn.Sequential(ConvBnAct(in_channels[1], 128      , 3, 1, 1), 
-                                              ConvBnAct(128           , 128      , 3, 1, 1),
-                                              nn.Conv2d(128           , num_class, 1, 1, 0))
+        self.detect_small_cls  = nn.Sequential(ConvBnAct(in_channels[1], 128      , 3, 1, 1), 
+                                               ConvBnAct(128           , 128      , 3, 1, 1),
+                                               nn.Conv2d(128           , num_class, 1, 1, 0))
         
         
         self.detect_mid_bbox = nn.Sequential(ConvBnAct(in_channels[2]   , in_channels[2]//4, 3, 1, 1), 
                                              ConvBnAct(in_channels[2]//4, in_channels[2]//4, 3, 1, 1), 
                                              nn.Conv2d(in_channels[2]//4, 64               , 1, 1, 0))
         
-        self.detect_mid_cls = nn.Sequential(ConvBnAct(in_channels[2], 128      , 3, 1, 1), 
-                                            ConvBnAct(128           , 128      , 3, 1, 1),
-                                            nn.Conv2d(128           , num_class, 1, 1, 0))
+        self.detect_mid_cls  = nn.Sequential(ConvBnAct(in_channels[2], 128      , 3, 1, 1), 
+                                             ConvBnAct(128           , 128      , 3, 1, 1),
+                                             nn.Conv2d(128           , num_class, 1, 1, 0))
         
         
         self.detect_large_bbox = nn.Sequential(ConvBnAct(in_channels[3]   , in_channels[3]//4, 3, 1, 1), 
                                                ConvBnAct(in_channels[3]//4, in_channels[3]//4, 3, 1, 1), 
                                                nn.Conv2d(in_channels[3]//4, 64               , 1, 1, 0))
         
-        self.detect_large_cls = nn.Sequential(ConvBnAct(in_channels[3], 128      , 3, 1, 1), 
-                                              ConvBnAct(128           , 128      , 3, 1, 1),
-                                              nn.Conv2d(128           , num_class, 1, 1, 0))
+        self.detect_large_cls  = nn.Sequential(ConvBnAct(in_channels[3], 128      , 3, 1, 1), 
+                                               ConvBnAct(128           , 128      , 3, 1, 1),
+                                               nn.Conv2d(128           , num_class, 1, 1, 0))
         
         self.bias_init()
         
@@ -61,7 +61,7 @@ class Detect(nn.Module):
         # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1
         # ncf = math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # nominal class frequency
         bbox_layers = [self.detect_xsmall_bbox, self.detect_small_bbox, self.detect_mid_bbox, self.detect_large_bbox]
-        cls_layers = [self.detect_xsmall_cls, self.detect_small_cls, self.detect_mid_cls, self.detect_large_cls]
+        cls_layers  = [self.detect_xsmall_cls, self.detect_small_cls, self.detect_mid_cls, self.detect_large_cls]
         
         for a, b, s in zip(bbox_layers, cls_layers, self.strides):  # from
             a[-1].bias.data[:] = 1.0  # box
@@ -75,9 +75,9 @@ class Detect(nn.Module):
         """
         ys = {}
         ys['pred_xs'] = torch.cat((self.detect_xsmall_bbox(xs[0]), self.detect_xsmall_cls(xs[0])), 1)
-        ys['pred_x'] = torch.cat((self.detect_small_bbox(xs[1]) , self.detect_small_cls(xs[1])) , 1)
-        ys['pred_m'] = torch.cat((self.detect_mid_bbox(xs[2])   , self.detect_mid_cls(xs[2]))   , 1)
-        ys['pred_l'] = torch.cat((self.detect_large_bbox(xs[3]) , self.detect_large_cls(xs[3])) , 1)
+        ys['pred_x']  = torch.cat((self.detect_small_bbox(xs[1]) , self.detect_small_cls(xs[1])) , 1)
+        ys['pred_m']  = torch.cat((self.detect_mid_bbox(xs[2])   , self.detect_mid_cls(xs[2]))   , 1)
+        ys['pred_l']  = torch.cat((self.detect_large_bbox(xs[3]) , self.detect_large_cls(xs[3])) , 1)
         return ys
 
 

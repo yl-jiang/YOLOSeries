@@ -45,7 +45,7 @@ class YOLOV8Evaluator:
         """
         obj_conf_mask = preds_out[:, :, 4] >= self.conf_threshold
         outputs = []
-        for i in range(preds_out.size(0)):  # do nms for each image
+        for i in range(preds_out.size(0)):  # each image
             x = preds_out[i][obj_conf_mask[i]]
             if x.size(0) == 0:
                 outputs.append(None)
@@ -116,9 +116,15 @@ class YOLOV8Evaluator:
             ripe_preds = self.do_inference(img)
             ripe_preds[..., :4] /= s
             if f == 2:  # flip axis y
-                ripe_preds[..., 1] = img_h - ripe_preds[..., 1]
+                ymin = img_h - ripe_preds[..., 3]
+                ymax = img_h - ripe_preds[..., 1]
+                ripe_preds[..., 1] = ymin
+                ripe_preds[..., 3] = ymax
             if f == 3:  # flip axis x
-                ripe_preds[..., 0] = img_w - ripe_preds[..., 0]
+                xmin = img_w - ripe_preds[..., 2]
+                xmax = img_w - ripe_preds[..., 0]
+                ripe_preds[..., 0] = xmin
+                ripe_preds[..., 2] = xmax
             # [(bs, M, 85), (bs, N, 85), (bs, P, 85)]
             aug_preds.append(ripe_preds)
         # (bs, M+N+P, 85)
@@ -132,7 +138,7 @@ class YOLOV8Evaluator:
         conv.weight.data[:] = nn.Parameter(x.view(1, self.reg, 1, 1))
         # (b, N, 4*reg) -> (b, N, 4, reg) -> (b, reg, 4, N) & convolution -> (b, 1, 4, N) -> (b, N, 4, 1) -> (b, N, 4) / [t, b, l, r]
         # pred_reg = conv(pred_reg.cpu().reshape(b, N, 4, c//4).permute(0, 3, 2, 1).contiguous().softmax(1)).permute(0, 3, 2, 1).contiguous().squeeze(-1)
-        pred_reg = pred_reg.reshape(b, pred_reg.size(1), 4, -1).cpu().softmax(-1).matmul(x)
+        pred_reg = pred_reg.view(b, pred_reg.size(1), 4, -1).cpu().softmax(-1).matmul(x)
         return pred_reg  # (b, N, 4)
 
     @torch.no_grad()
@@ -142,7 +148,7 @@ class YOLOV8Evaluator:
         preds = self.yolo(inputs)
         if self.grids is None:
             fm_shapes = [[f.size(2), f.size(3)] for f in preds.values()]
-            strides = [h/f.size(2) for f in preds.values()]
+            strides   = [h/f.size(2) for f in preds.values()]
             self.grids, self.strides = self.make_grid(fm_shapes, strides, self.device)  # grids: (N, 2), strides: (N, 1)
         sf = list(preds.values())[0].size(1)
         all_preds = torch.cat([x.reshape(b, sf, -1) for x in preds.values()], dim=2).permute(0, 2, 1).contiguous()  # (b, 160*160+80*80+40*40*20*20=N, num_class+4*reg)
@@ -150,7 +156,7 @@ class YOLOV8Evaluator:
         pred_reg = self.post_processing(pred_reg)  # (b, N, 4) / [t, b, l, r]
         pred_xyxy = tblr2xyxy(pred_reg.to(self.device), self.grids) * self.strides.unsqueeze(0)  # (b, N, 4) & (1, N, 1) -> (b, N, 4)
         # (b, N, num_class+4)
-        return torch.cat((pred_xyxy, pred_cls.sigmoid()), dim=-1).contiguous()
+        return torch.cat((pred_xyxy, pred_cls.sigmoid_()), dim=-1).contiguous()
 
     @staticmethod
     def scale_img(img, scale_factor):
