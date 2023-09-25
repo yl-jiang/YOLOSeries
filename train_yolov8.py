@@ -349,10 +349,8 @@ class Training:
 
                     if self.rank == 0 and self.tbar is not None:
                         self.tbar.update()
-                    
-                    if self.hyp['enable_profiler']:
                         profbar.step()
-
+                    
                 self.lr_scheduler.step()
                 epoch_time = time_synchronize() - start_epoch_t
                 self.logger.info(f'\n\n{"-" * 600}\n')

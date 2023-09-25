@@ -166,7 +166,7 @@ class FCOSLoss:
 
         self.update_balances() 
 
-        scale = 1
+        scale = batch_size
         ctr_loss_out = torch.stack(tot_ctr_loss, dim=0).mean() * self.hyp['ctr_loss_weight']
         cls_loss_out = torch.stack(tot_cls_loss, dim=0).mean() * self.hyp['cls_loss_weight']
         reg_loss_out = torch.stack(tot_reg_loss, dim=0).mean() * self.hyp['reg_loss_weight']

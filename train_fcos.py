@@ -109,8 +109,8 @@ class Training:
 
     @property
     def select_model(self):
-        # return FCOSCSPNet
-        return FCOSBaseline
+        return FCOSCSPNet
+        # return FCOSBaseline
 
     def _init_logger(self):
         # clear_dir(str(self.cwd / 'log'))  # 再写入log文件前先清空log文件夹

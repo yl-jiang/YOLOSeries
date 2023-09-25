@@ -216,17 +216,17 @@ class FCOSEvaluator:
             
             # [x-l, y-t, x+r, y+b] -> [xmin, ymin, xmax, ymax] / (b, h, w, 4)
             level_i_box = level_i_grid + level_i_pred_reg * sig  # (b, h, w, 4)
-            level_i_box = level_i_box.reshape(batch_size, -1, 4).contiguous()  # (b, h*w, 4)
+            level_i_box = level_i_box.reshape(batch_size, -1, 4)  # (b, h*w, 4)
 
-            level_i_cls = level_i_pred_cls.reshape(batch_size, -1, self.hyp['num_class']).contiguous()  # (b, h*w, num_class)
-            level_i_cen = level_i_pred_cen.reshape(batch_size, -1, 1).contiguous()  # (b, h*w, 1)
+            level_i_cls = level_i_pred_cls.reshape(batch_size, -1, self.hyp['num_class'])  # (b, h*w, num_class)
+            level_i_cen = level_i_pred_cen.reshape(batch_size, -1, 1)  # (b, h*w, 1)
 
             # [xmin, ymin, xmax, ymax, centerness, cls1, cls2, cls3, ...] / (b, h*w, 4+1+(80))
-            preds_out.append(torch.cat((level_i_box, level_i_cen, level_i_cls), dim=-1).contiguous())
+            preds_out.append(torch.cat((level_i_box, level_i_cen, level_i_cls), dim=-1))
 
         # [(b, h/8 * w/8, 85), (b, h/16 * w/16, 85), (b, h/32 * w/32, 85), (b, h/64 * w/64, 85), (b, h/128 * w/128, 85)]
         # (bs, h/8 * w/8 + h/16 * w/16 + h/32 * w32 + h/64 * w/64 + h/128 * w/128, 85)
-        return torch.cat(preds_out, dim=1).contiguous()
+        return torch.cat(preds_out, dim=1)
 
     @staticmethod
     def scale_img(img, scale_factor):
@@ -276,8 +276,8 @@ class FCOSEvaluator:
         interaction_xmax = torch.minimum(bbox1[:, 2][:, None], bbox2[:, 2])  # (N, M)
         interaction_ymin = torch.maximum(bbox1[:, 1][:, None], bbox2[:, 1])  # (N, M)
         interaction_ymax = torch.minimum(bbox1[:, 3][:, None], bbox2[:, 3])  # (N, M)
-        interaction_h = interaction_ymax - interaction_ymin
-        interaction_w = interaction_xmax - interaction_xmin
+        interaction_h = (interaction_ymax - interaction_ymin).clamp(0.0)
+        interaction_w = (interaction_xmax - interaction_xmin).clamp(0.0)
         interaction_area = interaction_w * interaction_h  # (N, M)
         iou = interaction_area / (area1[:, None] + area2 - interaction_area)  # (N, M)
         assert iou.size(0) == n and iou.size(1) == m
