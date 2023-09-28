@@ -76,7 +76,8 @@ class YOLOV8Evaluator:
     def post_processing(self, pred_reg:torch.Tensor):
         b, N, c = pred_reg.size()
         conv = nn.Conv2d(self.reg, 1, 1, bias=False).requires_grad_(False)
-        x = torch.arange(self.reg, dtype=torch.float)
+        # x = torch.arange(self.reg, dtype=torch.float)
+        x = torch.arange(1, self.reg+1, dtype=torch.float)
         conv.weight.data[:] = nn.Parameter(x.view(1, self.reg, 1, 1))
         # (b, N, 4*reg) -> (b, N, 4, reg) -> (b, reg, 4, N) & convolution -> (b, 1, 4, N) -> (b, N, 4, 1) -> (b, N, 4) / [t, b, l, r]
         # pred_reg = conv(pred_reg.cpu().reshape(b, N, 4, c//4).permute(0, 3, 2, 1).contiguous().softmax(1)).permute(0, 3, 2, 1).contiguous().squeeze(-1)

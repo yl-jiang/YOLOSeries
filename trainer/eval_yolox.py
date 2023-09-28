@@ -39,7 +39,6 @@ class YOLOXEvaluator:
         else:
             merge_preds_out = self.do_inference(inputs)  # (bs, N, 85)
 
-        # return self.do_nms(merge_preds_out)  # list of tensors
         return [torch.from_numpy(x) if x is not None else None for x in self.numba_nms(merge_preds_out) ]
 
     def do_wfb(self, preds_out):
@@ -92,64 +91,6 @@ class YOLOXEvaluator:
                 output.append(None)
         return output
 
-    def do_nms(self, preds_out):
-        """
-         Do NMS with torch
-        :param preds_out: (batch_size, X, 85)
-        :return: list / [(X, 6), ..., None, (Y, 6), None, ..., (Z, 6), ...]
-        """
-        obj_conf_mask = preds_out[:, :, 4] >= self.conf_threshold
-        outputs = []
-        for i in range(preds_out.size(0)):  # do nms for each image
-            x = preds_out[i][obj_conf_mask[i]]
-            if x.size(0) == 0:
-                outputs.append(None)
-                continue
-            x[:, 5:] *= x[:, 4:5]  # conf = cls_conf * obj_conf
-            # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
-            box = xywh2xyxy(x[:, :4])
-            if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] >= self.cls_threshold).nonzero(as_tuple=True)
-                # x: [xmin, ymin, xmax, ymax, conf, cls_id]
-                x = torch.cat((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].float()), dim=1)
-            else:
-                cls_conf, col_idx = x[:, 5:].max(dim=1, keepdim=True)
-                # [xmin, ymin, xmax, ymax, conf, cls_id]
-                x = torch.cat((box, cls_conf, col_idx.float()), dim=1)
-                cls_conf_mask = cls_conf.view(-1).contiguous() > self.cls_threshold
-                x = x[cls_conf_mask]
-
-            bbox_num = x.size(0)
-            if not bbox_num:
-                outputs.append(None)
-                continue
-
-            if self.hyp['agnostic']:  # 每张image的每个class之间的bbox进行nms
-                # 给每一个类别的bbox加上一个特殊的偏置，从而使得NMS时可以在每个类别间的bbox进行
-                box_offset = x[:, 5] * 4096
-            else:
-                box_offset = x[:, 5] * 0.
-            bboxes_offseted = x[:, :4] + box_offset[:, None]  # M
-            scores = x[:, 4]
-            keep_index = gpu_nms(bboxes_offseted, scores, self.hyp['nms_type'], self.iou_threshold)
-
-            if len(keep_index) > self.hyp['max_predictions_per_img']:
-                keep_index = keep_index[:self.hyp['max_predictions_per_img']]  # N
-
-            # 对每个bbox进行调优(每个最终输出的bbox都由与其iou大于iou threshold的一些bbox共同merge得到的)
-            if self.hyp['postprocess_bbox']:
-                if 1 < bbox_num < 3000:
-                    iou = self.bbox_iou(bboxes_offseted[keep_index], bboxes_offseted)  # (N, M)
-                    iou_mask = iou > self.iou_threshold  # (N, M)
-                    weights = iou_mask * scores[None, :]  # (N, M)
-                    # (N, M) & (M, 4) & (N, 1) -> (N, 4)
-                    bboxes_offseted[keep_index, :4] = torch.mm(weights, bboxes_offseted[:, :4]).float() / weights.sum(dim=1, keepdims=True)
-                    # 因为如果一个区域有物体，网络应该在这一区域内给出很多不同的预测框，我们再从这些预测框中选取一个最好的作为该处obj的最终输出；
-                    # 如果在某个grid处网络只给出了很少的几个预测框，则更倾向于认为这是网络预测错误所致
-                    keep_index = torch.tensor(keep_index)[iou_mask.float().sum(dim=1) > 1]
-            outputs.append(x[keep_index])
-        return outputs
-
     def test_time_augmentation(self, inputs):  # just for inference not training time
         """
 
@@ -169,21 +110,15 @@ class YOLOXEvaluator:
             img = self.scale_img(img, s)
             # (bs, M, 85)
             ripe_preds = self.do_inference(img)
-            ripe_preds[..., :4] /= s
+            ripe_preds[..., :4] /= s  # xywh
             if f == 2:  # flip axis y
-                ymin = img_h - ripe_preds[..., 3]
-                ymax = img_h - ripe_preds[..., 1]
-                ripe_preds[..., 1] = ymin
-                ripe_preds[..., 3] = ymax
+                ripe_preds[..., 1] = img_h - ripe_preds[..., 1]
             if f == 3:  # flip axis x
-                xmin = img_w - ripe_preds[..., 2]
-                xmax = img_w - ripe_preds[..., 0]
-                ripe_preds[..., 0] = xmin
-                ripe_preds[..., 2] = xmax
+                ripe_preds[..., 0] = img_w - ripe_preds[..., 0]
             # [(bs, M, 85), (bs, N, 85), (bs, P, 85)]
             aug_preds.append(ripe_preds)
         # (bs, M+N+P, 85)
-        return torch.cat(aug_preds, dim=1).contiguous(), aug_preds
+        return torch.cat(aug_preds, dim=1), aug_preds
 
     @logger.catch
     @torch.no_grad()
@@ -202,10 +137,9 @@ class YOLOXEvaluator:
             fm_h, fm_w = cur_preds.size(-2), cur_preds.size(-1)
             # cur_preds: (bn, num_anchors, 85, h, w) -> (bn, num_anchors, h, w, 85) / [center_x, center_y, w, h, cofidence, c1, c2, c3, ...]
             cur_preds = cur_preds.permute(0, 1, 3, 4, 2).contiguous()
-            cur_preds[..., 4:] = cur_preds[..., 4:].sigmoid()
-            # grid_coords: (1, h, w, 2) -> (1, num_anchors, h, w, 2) / 可以优化grid_coords的创建方式
-            grid_coords = self.make_grid(fm_h, fm_w).unsqueeze(1).repeat(1, self.hyp['num_anchors'], 1, 1, 1).contiguous().type_as(inputs)
-
+            cur_preds[..., 4:].sigmoid_()
+            # grid_coords: (h, w, 2) -> (1, h, w, 2) -> (num_anchors, h, w, 2) -> (1, num_anchors, h, w, 2) / 可以优化grid_coords的创建方式
+            grid_coords = self.make_grid(fm_h, fm_w).unsqueeze(0).expand(self.hyp['num_anchors'], -1, -1, -1).unsqueeze(0).type_as(inputs)
             # (bn, num_anchors, h, w, 2) & (1, num_anchors, h, w, 2) -> (bn, num_anchors, h, w, 2)
             cur_preds[..., [0, 1]] = (cur_preds[..., [0, 1]] + grid_coords) * (input_img_h / fm_h)
             # (bn, num_anchors, h, w, 2) -> (bn, num_anchors, h, w, 2)
@@ -235,10 +169,9 @@ class YOLOXEvaluator:
 
     def make_grid(self, row_num, col_num):
         y, x = torch.meshgrid([torch.arange(row_num, device=self.device), torch.arange(col_num, device=self.device)], indexing='ij')
-        # mesh_grid: (col_num, row_num, 2) -> (row_num, col_num, 2)
-        mesh_grid = torch.stack((x, y), dim=2).reshape(row_num, col_num, 2)
-        # (1, col_num, row_num, 2)
-        return mesh_grid[None,  ...].contiguous()
+        # (row_num, col_num, 2)
+        mesh_grid = torch.stack((y, x), dim=2).flip(dims=(-1,)).contiguous()
+        return mesh_grid
 
     @staticmethod
     def bbox_iou(bbox1, bbox2):
@@ -270,13 +203,15 @@ class YOLOXEvaluator:
         do NMS with numba
         """
         preds_out = preds_out.float().cpu().numpy()
-        obj_conf_mask = preds_out[:, :, 4] >= self.conf_threshold
+        preds_class_conf = np.max(preds_out[:, :, 5:], axis=-1)  # (b, X)
+        obj_conf_mask = (preds_out[:, :, 4] * preds_class_conf) >= self.conf_threshold  # (b, X)
         outputs = []
         for i in range(preds_out.shape[0]):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
             if len(x) == 0:
                 outputs.append(None)
                 continue
+
             x[:, 5:] *= x[:, 4:5]  # conf = cls_conf * obj_conf
             # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
             box = numba_xywh2xyxy(x[:, :4])
@@ -289,7 +224,7 @@ class YOLOXEvaluator:
                 col_idx = x[:, 5:].argmax(axis=1)[:, None]
                 # [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = np.concatenate((box, cls_conf, col_idx.astype(np.float32)), axis=1)
-                cls_conf_mask = np.ascontiguousarray(cls_conf.reshape(-1)) > self.cls_threshold
+                cls_conf_mask = np.ascontiguousarray(cls_conf.reshape(-1)) >= self.cls_threshold
                 x = x[cls_conf_mask]
 
             bbox_num = x.shape[0]
@@ -301,9 +236,9 @@ class YOLOXEvaluator:
                 # 给每一个类别的bbox加上一个特殊的偏置，从而使得NMS时可以在每个类别间的bbox进行
                 box_offset = x[:, 5] * 4096
             else:
-                box_offset = x[:, 5] * 0.
+                box_offset = x[:, 5] * 0.0
             bboxes_offseted = x[:, :4] + box_offset[:, None]  # M
-            scores = x[:, 4]
+            scores = x[:, 4] 
             keep_index = numba_nms(bboxes_offseted, scores, self.iou_threshold)
 
             if len(keep_index) > self.hyp['max_predictions_per_img']:

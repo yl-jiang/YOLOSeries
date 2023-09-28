@@ -26,7 +26,8 @@ class YOLOV8Loss:
         self.device = hyp['device']
         cls_pos_weight = torch.tensor(hyp.get("cls_pos_weight", 1.), device=self.device)
         self.bce_cls = nn.BCEWithLogitsLoss(pos_weight=cls_pos_weight, reduction='none').to(self.device)
-        self.dfl_project = torch.arange(hyp['reg'], device=self.device, dtype=torch.float32)
+        # self.dfl_project = torch.arange(hyp['reg'], device=self.device, dtype=torch.float32)
+        self.dfl_project = torch.arange(1, hyp['reg']+1, device=self.device, dtype=torch.float32)
         self.grids, self.strides = None, None
 
     def __call__(self, preds:Dict, tars:Tensor):

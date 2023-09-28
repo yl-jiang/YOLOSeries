@@ -2,22 +2,22 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  reg_loss_weight: 2.0  # 回归损失（bbox损失）权重
-  cls_loss_weight: 1.0  # 分类损失权重
-  ctr_loss_weight: 1.0  # 置信度损失权重
+  reg_loss_weight: 1.0  # 回归损失（bbox损失）权重
+  cls_loss_weight: 10.0  # 分类损失权重
+  ctr_loss_weight: 0.5  # 置信度损失权重
   class_smooth_factor: 0.1 # 标签平滑
   cls_pos_weight: 1.0  # 
   ctr_pos_weight: 1.0  # 
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "/E/JYL/Datasets/COCO/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "/E/JYL/Datasets/COCO/train/lab"  # 存放训练label的文件夹路径
-  name_path: "/E/JYL/Datasets/COCO/train/names.txt"
-  test_img_dir: "./result/coco_test_imgs"  # for test
-  val_img_dir: "/E/JYL/Datasets/COCO/val/img"  # validation image dir
-  val_lab_dir: "/E/JYL/Datasets/COCO/val/lab"  # validation label dir
-  aspect_ratio: false  
+  train_img_dir: "/E/JYL/Datasets/GlobalWheat/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/E/JYL/Datasets/GlobalWheat/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/E/JYL/Datasets/GlobalWheat/train/names.txt"
+  test_img_dir: "./result/wheat_test_imgs"  # for test
+  val_img_dir: "/E/JYL/Datasets/GlobalWheat/val/img"  # validation image dir
+  val_lab_dir: "/E/JYL/Datasets/GlobalWheat/val/lab"  # validation label dir
+  aspect_ratio: false
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 10000
@@ -30,23 +30,23 @@ train_hyp:
     - 6
     - 3
   enable_head_scale: false
-  norm_layer_type: 'group_norm'  # ['batch_norm', 'group_norm']
+  norm_layer_type: 'batch_norm'  # ['batch_norm', 'group_norm']
   freeze_bn: false
-  batch_size: 8
+  batch_size: 4
   drop_last: true  # DataLoader
   pin_memory: true  # DataLoader
-  random_seed: 7
+  random_seed: 42
   shuffle: false  # DataLoader
   num_workers: 0  # DataLoader
   start_epoch: 0
-  total_epoch: 300
+  total_epoch: 100
   device: "gpu"  # 是否使用GPU进行训练['gpu', 'cpu']
-  accumulate_loss_step: 64  # 累积梯度下降
+  accumulate_loss_step: 2  # 累积梯度下降
   do_ema: true
-  validation_every: 1  # 每隔多少个epoch validate一次
+  validation_every: 0.5  # 每隔多少个epoch validate一次
   use_tta: true  # validation时是否使用TTA
   mutil_scale_training: false 
-  calculate_map_every: 50  # 每个多少个epoch计算一次map
+  calculate_map_every: 5  # 每个多少个epoch计算一次map
   save_ckpt_every: 2  # 每隔多少个epoch保存一次模型
   model_type: 'normal'
   use_auxiliary_classifier: false 
@@ -54,7 +54,7 @@ train_hyp:
   log_identifier: 'fcos_debug'
   save_log_every: 1
   no_data_aug_epoch: 15
-  center_sampling_radius: 1.5
+  center_sampling_radius: 1.0
   iou_type: 'giou'  # ['iou', 'giou', 'linear_iou']
   do_center_sampling: true
   do_cen_loss_balance: false
@@ -65,8 +65,8 @@ train_hyp:
 optimizer_hyp:
   scheduler_type: 'linear'  # ['onecycle', 'linear', 'cosine']
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']
-  basic_lr_per_img: 0.000125 # basic lr: 0.001
-  weight_decay: 0.0001
+  basic_lr_per_img: 0.00625 # basic lr: 0.1 / 16
+  weight_decay: 0.0005
   momentum: 0.937
   lr_max_ds_scale: 0.01
 

@@ -315,7 +315,6 @@ class Training:
                     with amp.autocast(enabled=self.use_cuda):
                         stage_preds = self.model(img)
                         loss_dict = self.loss_fcn(stage_preds, ann)
-                        loss_dict['tot_loss'] *= get_world_size()
 
                 tot_loss = loss_dict['tot_loss']
 
@@ -346,7 +345,7 @@ class Training:
                 self.update_logger(step_in_total)
                 self.save_model(cur_epoch+1, step_in_total=step_in_total, loss_dict=loss_dict)
                 self.test(step_in_total)
-                self.calculate_metric(step_in_total)
+                self.after_epoch(step_in_total)
 
                 del x, img, ann, tot_loss, stage_preds, loss_dict
 
@@ -382,10 +381,10 @@ class Training:
         
     def update_tbar(self, tbar=None):
         if self.rank == 0:
-            tags = ("cur_epoch", "tot_loss", "iou_loss", "cof_loss", "cls_loss", "tar_nums", "input_dim", "lr"     , "map50"  , "iter_time")
-            fmts = ("^10d"     , "^13.3f"  , "^12.3f"  , "^12.3f"  , "^12.3f"  , "^12d"    , "^12d"     , "^13.3e" , "^10.1f" , "^12.1f"   ) 
+            tags = ("cur_epoch", "tot_loss", "iou_loss", "l1_loss", "cof_loss", "cls_loss", "tar_nums", "input_dim", "lr"     , "map50"  , "iter_time")
+            fmts = ("^10d"     , "^13.3f"  , "^12.3f"  , "^11.3f" , "^12.3f"  , "^12.3f"  , "^12d"    , "^12d"     , "^13.3e" , "^10.1f" , "^12.1f"   ) 
             if tbar is None:
-                head_fmt = ("%10s", "%11s", "%11s", "%12s", "%12s", "%13s", "%12s", "%9s", "%13s", "%13s")
+                head_fmt = ("%10s", "%11s" , "%11s"    , "%11s"   , "%12s"    , "%12s"    , "%13s"    , "%12s"    , "%9s"      , "%13s"  , "%13s")
                 head_msg = ''.join(head_fmt)
                 print(head_msg % tags)
             else:
@@ -394,8 +393,8 @@ class Training:
                     tbar.set_description_str(tbar_msg.format(**tbar_dct))
 
     def update_logger(self, step_in_total):
-        tags = ('percentage', "tot_loss", "iou_loss", 'cof_loss'  , 'cls_loss'  , "accumulate", "iter_time", 'data_time', "lr"  , "cur_epoch", "step_in_epoch", "batch_size", "input_dim", "allo_mem", "cach_mem")
-        fmts = ('3.2%'      , '5.3f'    , '5.3f'    , '>5.3f'     , '>5.3f'     , '>02d'      , '5.3f'     , '5.3f'     , '5.3e', '>04d'     , '>05d'    , '>02d'      , '>03d'     , '5.3f'    ,  '5.3f')
+        tags = ('percentage', "tot_loss", "iou_loss", "l1_loss", 'cof_loss'  , 'cls_loss'  , "accumulate", "iter_time", 'data_time', "lr"  , "cur_epoch", "step_in_epoch", "batch_size", "input_dim", "allo_mem", "cach_mem")
+        fmts = ('3.2%'      , '5.3f'    , '5.3f'    ,  ">5.3f" , '>5.3f'     , '>5.3f'     , '>02d'      , '5.3f'     , '5.3f'     , '5.3e', '>04d'     , '>05d'    , '>02d'      , '>03d'     , '5.3f'    ,  '5.3f')
         if step_in_total % self.hyp['save_log_every'] == 0:
             log_msg, show_dict = self.tag2msg(tags, fmts, True)
             if log_msg is not None:
@@ -660,7 +659,7 @@ class Training:
             msg.append(emoji.emojize("; ".join(msg_ls)))
         return msg
 
-    def calculate_metric(self, step_in_total):
+    def after_epoch(self, step_in_total):
         """
         计算dataloader中所有数据的map
         """

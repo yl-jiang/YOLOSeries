@@ -312,7 +312,7 @@ class Training:
                         with amp.autocast(enabled=self.use_cuda):
                             stage_preds = self.model(img)
                             loss_dict = self.loss_fcn(stage_preds, ann)
-                            loss_dict['tot_loss'] *= get_world_size()
+                            # loss_dict['tot_loss'] *= get_world_size()
 
                     tot_loss = loss_dict['tot_loss']
 
@@ -343,16 +343,14 @@ class Training:
                     self.update_logger(step_in_total)
                     self.save_model(cur_epoch+1, step_in_total=step_in_total, loss_dict=loss_dict)
                     self.test(step_in_total)
-                    self.calculate_metric(step_in_total)
+                    self.after_epoch(step_in_total)
 
                     del x, img, ann, tot_loss, stage_preds, loss_dict
 
                     if self.rank == 0 and self.tbar is not None:
                         self.tbar.update()
-                    
-                    if self.hyp['enable_profiler']:
                         profbar.step()
-
+                    
                 self.lr_scheduler.step()
                 epoch_time = time_synchronize() - start_epoch_t
                 self.logger.info(f'\n\n{"-" * 600}\n')
@@ -660,7 +658,7 @@ class Training:
             msg.append(emoji.emojize("; ".join(msg_ls)))
         return msg
 
-    def calculate_metric(self, step_in_total):
+    def after_epoch(self, step_in_total):
         """
         计算dataloader中所有数据的map
         """
@@ -842,12 +840,12 @@ if __name__ == '__main__':
 
     from utils import launch, get_num_devices
     import os
-    os.environ['CUDA_VISIBLE_DEVICES'] = "1"
+    # os.environ['CUDA_VISIBLE_DEVICES'] = "1"
     num_gpu = get_num_devices()
     clear_dir(str(current_work_directionary / 'log'))
     launch(
         main, 
-        num_gpus_per_machine= 1, 
+        num_gpus_per_machine= num_gpu, 
         num_machines= 1, 
         machine_rank= 0, 
         backend= "nccl", 

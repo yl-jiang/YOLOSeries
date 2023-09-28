@@ -115,7 +115,7 @@ def check_parameters_no_used(model: torch.nn.Module):
 class dummy_context:
 
     def __enter__(self):
-        pass
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass

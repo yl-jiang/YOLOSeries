@@ -304,7 +304,7 @@ class Training:
                     with amp.autocast(enabled=self.use_cuda):
                         pred_reg, pred_cls = self.model(img)
                         loss_dict = self.loss_fcn(img, pred_reg, pred_cls, ann)
-                        loss_dict['tot_loss'] *= get_world_size()
+                        # loss_dict['tot_loss'] *= get_world_size()
 
                 tot_loss = loss_dict['tot_loss']
 
@@ -335,7 +335,7 @@ class Training:
                 self.update_logger(step_in_total)
                 self.save_model(cur_epoch+1, step_in_total=step_in_total, loss_dict=loss_dict)
                 self.test(step_in_total)
-                self.calculate_metric(step_in_total)
+                self.after_epoch(step_in_total)
 
                 del x, img, ann, tot_loss, pred_cls, pred_reg, loss_dict
 
@@ -648,7 +648,7 @@ class Training:
             msg.append(emoji.emojize("; ".join(msg_ls)))
         return msg
 
-    def calculate_metric(self, step_in_total):
+    def after_epoch(self, step_in_total):
         """
         计算dataloader中所有数据的map
         """
