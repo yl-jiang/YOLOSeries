@@ -101,7 +101,7 @@ class YOLOV7Loss:
             # region ====================================== compute loss ======================================
             # Classification
             # 只有正样本才参与分类损失的计算
-            if self.hyp['num_class'] >= 1:  # if only one class then we don't compute class loss
+            if cur_tar_num > 0 and self.hyp['num_class'] >= 1:  # if only one class then we don't compute class loss
                 # t_cls: (N, 80)
                 t_cls = torch.full_like(cur_preds[:, 5:], fill_value=self.negative_smooth_cls)
                 t_cls[torch.arange(tar_cls_from_x.size(0)), tar_cls_from_x.long()] = self.positive_smooth_cls
@@ -111,7 +111,7 @@ class YOLOV7Loss:
                 else:
                     cls_factor = torch.ones_like(t_cls)
                 
-                cls_loss += (self.bce_cls(cur_preds[:, 5:], t_cls) * cls_factor).mean()
+                cls_loss += (self.bce_cls(cur_preds[:, 5:], t_cls) * cls_factor).mean(-1).sum() / cur_tar_num
 
             # Confidence and Regression
             # 只有正样本才参与回归损失的计算
@@ -128,7 +128,7 @@ class YOLOV7Loss:
                 pred_box, tar_box = xywh2xyxy(pred_box), xywh2xyxy(tar_box_from_x)
                 # iou: (N,)
                 iou = gpu_CIoU(pred_box, tar_box)
-                iou_loss += (1.0 - iou).mean()
+                iou_loss += (1.0 - iou).sum() / cur_tar_num
                 # t_cof: (bn, 3, h, w) / 所有grid均参与confidence loss的计算
                 if self.use_iou_as_tar_cof:
                     t_cof[img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x] = iou.detach().clamp(0).type_as(t_cof)
@@ -142,7 +142,7 @@ class YOLOV7Loss:
             # endregion ====================================== compute loss ======================================
 
             # 所有样本均参与置信度损失的计算 / 在3种loss中confidence loss是最为重要的
-            cof_loss_tmp = (self.bce_cof(preds[..., 4], t_cof) * cof_factor).mean()
+            cof_loss_tmp = (self.bce_cof(preds[..., 4], t_cof) * cof_factor).sum() / max(cur_tar_num, 1.)
             cof_loss_tmp *= self.balances[i]
             self.balances[i] = self.balances[i] * 0.9999 + 0.0001 / cof_loss_tmp.detach().item()
             cof_loss += cof_loss_tmp
@@ -342,7 +342,7 @@ class YOLOV7Loss:
 
             # 当一个prediction有多个target与之匹配时，选择cost最小的那个target(一个target可以有多个prediction与之对应，但一个prediction至多只能有一个target与之对应)
             select_matching_tar = matching_matrix.sum(dim=0)
-            if (select_matching_tar > 1).sum() > 0:
+            if i.sum() > 0 and select_matching_tar.max() > 0:
                 cost_min_idx = torch.min(cost[:, select_matching_tar > 1], dim=0)[1]
                 matching_matrix[:, select_matching_tar > 1] *= 0.0
                 matching_matrix[cost_min_idx, select_matching_tar > 1] = 1.0

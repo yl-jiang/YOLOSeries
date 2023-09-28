@@ -338,7 +338,7 @@ class YOLOXLoss:
         # (valid_num_box, Y) -> (Y,)  / 满足条件的prediction的并集(存在某个prediction匹配到多个gt box)
         all_matching_gt = matching_matrix.sum(0) 
         # 如果存在某个prediction匹配到多个gt box的情况
-        if all_matching_gt.max() > 0:  
+        if all_matching_gt.max() > 1:  
             cost_argmin = torch.min(cost[:, all_matching_gt > 1], dim=0)[1]
             # 处理某些prediction匹配到多个gt box的情况, 将这些prediction只分配到与其匹配度最高的gt box
             matching_matrix[:, all_matching_gt > 1] = 0

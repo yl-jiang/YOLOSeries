@@ -2,9 +2,9 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  iou_loss_scale: 1.0  # 回归损失（bbox损失）权重
+  iou_loss_scale: 5.0  # 回归损失（bbox损失）权重
   cls_loss_scale: 1.0  # 分类损失权重
-  cof_loss_scale: 2.0  # 置信度损失权重
+  cof_loss_scale: 1.0  # 置信度损失权重
   anchor_match_thr: 4.0  # 该参数用于过滤预测框与标签框之间匹配的阈值
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 
@@ -49,19 +49,19 @@ train_hyp:
   enable_tensorboard: true
   use_iou_as_tar_cof: true
   log_identifier: 'v7_debug'
-  topk: 13
+  topk: 15
 
 optimizer_hyp:
   scheduler_type: 'onecycle'
   optimizer: 'sgd' # 优化器类别/['sgd' or 'adam']
-  basic_lr_per_img: 0.005  # 0.1 / 16
+  basic_lr_per_img: 0.0005  # 0.1 / 16
   weight_decay: 0.0005
   momentum: 0.937
   lr_max_ds_scale: 0.1
 
 warm_up:
   do_warmup: true  # 是否开启预热训练
-  warmup_epoch: 3
+  warmup_epoch: 5
   warmup_bias_max_lr: 0.1
   warmup_momentum: 0.8
 
@@ -88,7 +88,7 @@ data_hyp:
 nms_hyp:
   iou_threshold: 0.45
   conf_threshold: 0.2
-  cls_threshold: 0.45
+  cls_threshold: 0.3
   max_predictions_per_img: 300
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096

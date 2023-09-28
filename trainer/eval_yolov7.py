@@ -217,7 +217,8 @@ class YOLOV7Evaluator:
         do NMS with numba
         """
         preds_out = preds_out.float().cpu().numpy()
-        obj_conf_mask = preds_out[:, :, 4] >= self.conf_threshold
+        preds_class_conf = np.max(preds_out[:, :, 5:], axis=-1)  # (b, X)
+        obj_conf_mask = (preds_out[:, :, 4] * preds_class_conf) >= self.conf_threshold  # (b, X)
         outputs = []
         for i in range(preds_out.shape[0]):  # do nms for each image
             x = preds_out[i][obj_conf_mask[i]]
@@ -236,7 +237,7 @@ class YOLOV7Evaluator:
                 col_idx = x[:, 5:].argmax(axis=1)[:, None]
                 # [xmin, ymin, xmax, ymax, conf, cls_id]
                 x = np.concatenate((box, cls_conf, col_idx.astype(np.float32)), axis=1)
-                cls_conf_mask = np.ascontiguousarray(cls_conf.reshape(-1)) > self.cls_threshold
+                cls_conf_mask = np.ascontiguousarray(cls_conf.reshape(-1)) >= self.cls_threshold
                 x = x[cls_conf_mask]
 
             bbox_num = x.shape[0]
