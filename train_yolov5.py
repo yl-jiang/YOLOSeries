@@ -329,7 +329,7 @@ class Training:
                     with amp.autocast(enabled=self.use_cuda):
                         stage_preds = self.model(img)
                         loss_dict = self.loss_fcn(stage_preds, ann)
-                        loss_dict['tot_loss'] *= get_world_size()
+                        # loss_dict['tot_loss'] *= get_world_size()
 
                 tot_loss = loss_dict['tot_loss']
 

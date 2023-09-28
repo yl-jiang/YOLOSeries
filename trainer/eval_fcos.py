@@ -88,73 +88,6 @@ class FCOSEvaluator:
                 output.append(None)
         return output
 
-    def do_nms(self, preds_out):
-        """
-         Do NMS with torch
-        :param preds_out: (batch_size, X, 85)
-        :return: list / [(X, 6), ..., None, (Y, 6), None, ..., (Z, 6), ...]
-        """
-        obj_conf_mask = preds_out[:, :, 4] > self.hyp['cen_threshold']  # (b, N)
-        outputs = []
-        for i in range(preds_out.size(0)):  # do nms for each image
-            x = preds_out[i][obj_conf_mask[i]]
-            # x = preds_out[i]
-            if x.size(0) == 0:
-                outputs.append(None)
-                continue
-            x[:, 5:] *= x[:, 4:5]  # conf = cls_conf * obj_conf
-            x[:, 5:] = np.sqrt(x[:, 5:])
-            # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
-            box = xywh2xyxy(x[:, :4])
-            if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] >= self.cls_threshold).nonzero(as_tuple=True)
-                # x: [xmin, ymin, xmax, ymax, conf, cls_id]
-                x = torch.cat((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].float()), dim=1)
-            else:
-                cls_conf, col_idx = x[:, 5:].max(dim=1, keepdim=True)
-                # [xmin, ymin, xmax, ymax, conf, cls_id]
-                x = torch.cat((box, cls_conf, col_idx.float()), dim=1)
-                cls_conf_mask = cls_conf.view(-1).contiguous() > self.cls_threshold
-                x = x[cls_conf_mask]
-
-            bbox_num = x.size(0)
-            if not bbox_num:
-                outputs.append(None)
-                continue
-
-            if self.hyp['agnostic']:  # 每张image的每个class之间的bbox进行nms
-                # 给每一个类别的bbox加上一个特殊的偏置，从而使得NMS时可以在每个类别间的bbox进行
-                box_offset = x[:, 5] * 4096
-            else:
-                box_offset = x[:, 5] * 0.
-            bboxes_offseted = x[:, :4] + box_offset[:, None]  # M
-            scores = x[:, 4]
-            keep_index = gpu_nms(bboxes_offseted, scores, self.hyp['iou_type'], self.iou_threshold)
-
-            if len(keep_index) > self.hyp['max_predictions_per_img']:
-                keep_index = keep_index[:self.hyp['max_predictions_per_img']]  # N
-
-            # 对每个bbox进行调优(每个最终输出的bbox都由与其iou大于iou threshold的一些bbox共同merge得到的)
-            if self.hyp['postprocess_bbox']:
-                if 1 < bbox_num < 3000:
-                    iou = self.bbox_iou(bboxes_offseted[keep_index], bboxes_offseted)  # (N, M)
-                    iou_mask = iou > self.iou_threshold  # (N, M)
-                    weights = iou_mask * scores[None, :]  # (N, M)
-                    # (N, M) & (M, 4) & (N, 1) -> (N, 4)
-                    bboxes_offseted[keep_index, :4] = torch.mm(weights, bboxes_offseted[:, :4]).float() / weights.sum(dim=1, keepdims=True)
-                    # 因为如果一个区域有物体，网络应该在这一区域内给出很多不同的预测框，我们再从这些预测框中选取一个最好的作为该处obj的最终输出；
-                    # 如果在某个grid处网络只给出了很少的几个预测框，则更倾向于认为这是网络预测错误所致
-                    keep_index = torch.tensor(keep_index)[iou_mask.float().sum(dim=1) > 1]
-
-            x = self.remove_small_boxes(x[keep_index], self.hyp['min_prediction_box_wh'])  # (X, 6)
-            if len(x) == 0:
-                outputs.append(None)
-                continue
-            
-            outputs.append(x)
-
-        return outputs
-
     def test_time_augmentation(self, inputs):  # just for inference not training time
         """
 
@@ -174,7 +107,7 @@ class FCOSEvaluator:
             img = self.scale_img(img, s)
             # (bs, M, 85)
             ripe_preds = self.do_inference(img)
-            ripe_preds[..., :4] /= s
+            ripe_preds[..., :4] /= s  # xyxy
             if f == 2:  # flip axis y
                 ymin = img_h - ripe_preds[..., 3]
                 ymax = img_h - ripe_preds[..., 1]

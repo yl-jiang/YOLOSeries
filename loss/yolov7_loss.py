@@ -4,6 +4,9 @@ from utils import xyxy2xywhn, xyxy2xywh, xywh2xyxy
 from utils import gpu_CIoU
 from utils import gpu_iou, gpu_DIoU, gpu_Giou
 import torch.nn.functional as F
+from typing import Dict, List, Tuple
+from torch import FloatTensor, BoolTensor, LongTensor
+
 
 def smooth_bce(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
     # return positive, negative label smoothing BCE targets
@@ -35,7 +38,7 @@ class YOLOV7Loss:
         self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce()
         self.use_iou_as_tar_cof = self.hyp["use_iou_as_tar_cof"]
 
-    def __call__(self, stage_preds, targets_batch):
+    def __call__(self, stage_preds: Dict, targets_batch: torch.Tensor):
         """
         通过对比preds和targets, 找到与pred对应的target。
         注意: 每一个batch的targets中的bbox_num都相同(参见cocodataset.py中fixed_imgsize_collector函数)。
@@ -50,19 +53,19 @@ class YOLOV7Loss:
         assert stage_preds[keys[0]].size(0) == targets_batch.size(0), f"the length of predictions and targets should be the same, " \
             "but len(predictions)={preds_batch[0].size(0)} and len(targets)={targets_batch.size(0)}"
 
-        batch_size = targets_batch.size(0)
-        bbox_num = targets_batch.size(1)
-        anchor_num = self.anchors.shape[1]
-        targets = targets_batch.clone().detach()
-        targets[..., :4] = xyxy2xywhn(targets[..., :4], self.input_img_size)
+        batch_size, bbox_num, *_ = targets_batch.size()
+        anchor_num = self.anchors.shape[1]  # 3
+        targets = torch.zeros_like(targets_batch)
+        targets[..., :4] = xyxy2xywhn(targets_batch[..., :4], self.input_img_size)
+        targets[..., 4:] = targets_batch[..., 4:]
         # (bn, bbox_num, 6) -> (anchor_num, bn, bbox_num, 6) / 每个obj都与3个anchor进行匹配
-        targets = targets.repeat(anchor_num, 1, 1, 1).contiguous()
+        targets = targets.unsqueeze_(0).expand(anchor_num, -1, -1, -1)
         # anchor_ids: (anchor_num, 1)
-        anchor_ids = torch.arange(anchor_num, device=self.device, dtype=torch.float32).reshape(-1, 1).contiguous()
+        anchor_ids = torch.arange(anchor_num, device=self.device, dtype=torch.float32).reshape(-1, 1)
         # anchor_ids: (anchor_num, 1) -> (anchor_num, bn, bbox_num, 1)
-        anchor_ids = anchor_ids[:, None, None, :].repeat(1, batch_size, bbox_num, 1).contiguous()
+        anchor_ids = anchor_ids[:, None, None, :].repeat(1, batch_size, bbox_num, 1)
         # (anchor_num, bn, bbox_num, 6) -> (anchor_num, bn, bbox_num, 7) / 最后一维多出来的一个元素标记匹配的anchor
-        targets = torch.cat([targets, anchor_ids], dim=-1).contiguous()
+        targets = torch.cat([targets, anchor_ids], dim=-1)
         assert torch.sum(targets[0][..., -1]) == 0., f"please check the data format of anchor_ids"
 
         cls_loss, iou_loss, cof_loss = torch.zeros(1, device=self.device), torch.zeros(1, device=self.device), torch.zeros(1, device=self.device)
@@ -76,7 +79,7 @@ class YOLOV7Loss:
             # anchor: (3, 2)
             anchor = self.anchors[i]
             anchor_stage = anchor / ds_scale
-            anchor_num = anchor_stage.shape[0]
+            # anchor_num = anchor_stage.shape[0]
             # preds: (bn, 3, h, w, 85)
             preds = stage_preds[keys[i]]
             assert preds.size(-1) == self.hyp['num_class'] + 5
@@ -85,7 +88,8 @@ class YOLOV7Loss:
             # endregion ============================= yolov5 matching =============================
 
             # region ============================= yolox matching =============================
-            tar_box_from_x, tar_cls_from_x, img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x = self.simple_ota(batch_size, anchor_stage, ds_scale, preds, targets_batch, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5)
+            tar_box_from_x, tar_cls_from_x, img_idx_from_x, anc_idx_from_x, gy_from_x, gx_from_x = \
+                self.simple_ota(batch_size, anchor_stage, ds_scale, preds, targets_batch, img_idx_from_v5, anc_idx_from_v5, gy_from_v5, gx_from_v5)
             # endregion ============================= yolox matching =============================
 
             cur_tar_num = tar_box_from_x.shape[0]
@@ -97,7 +101,7 @@ class YOLOV7Loss:
             # region ====================================== compute loss ======================================
             # Classification
             # 只有正样本才参与分类损失的计算
-            if self.hyp['num_class'] > 1:  # if only one class then we don't compute class loss
+            if self.hyp['num_class'] >= 1:  # if only one class then we don't compute class loss
                 # t_cls: (N, 80)
                 t_cls = torch.full_like(cur_preds[:, 5:], fill_value=self.negative_smooth_cls)
                 t_cls[torch.arange(tar_cls_from_x.size(0)), tar_cls_from_x.long()] = self.positive_smooth_cls
@@ -158,34 +162,38 @@ class YOLOV7Loss:
         }
         return loss_dict
 
-    def match(self, targets, anchor_stage, fm_shape):
+    @torch.no_grad()
+    def match(self, 
+              targets: FloatTensor, 
+              anchor_stage: FloatTensor, 
+              fm_shape: List):
         """
         正样本分配策略(根据anchor与targets的匹配关系进行过滤)。
 
         并不是传入的所有target都可以参与最终loss的计算, 只有那些与anchor的width/height ratio满足一定条件的targe才有资格;
-        :param targets: (num_anchor=3, batch_num, bbox_num, 7) / [norm_x, norm_y, norm_w, norm_h, cls, img_id, anchor_id]
+        :param targets: (num_anchor=3, batch_num, M, 7) / [norm_x, norm_y, norm_w, norm_h, cls, img_id, anchor_id]
         :param anchor_stage: (3, 2) / (w, h)
         :param fm_shape: [w, h] / stage feature map shape
         :return:
         """
 
-        g = torch.ones_like(targets)
+        g = torch.ones_like(targets)  # (na, bs, M, 7)
         # [fm_w, fm_h, fm_w, fm_h, 1, 1, 1]
-        g[..., :4] *= torch.tensor(fm_shape, device=g.device, dtype=g.dtype)[[0, 1, 0, 1]]
+        g[..., :4] *= g.new_tensor(fm_shape)[[0, 1, 0, 1]]
         # (stage_x, stage_y, stage_w, stage_h, cls, img_id, anchor_id)
         t_stage = targets * g
 
         # fliter by anchor ratio
-        # t_stage_whs: (3, bn, bbox_num, 2)
+        # t_stage_whs: (3, bn, M, 2)
         t_stage_whs = t_stage[..., [2, 3]]
         batch_size, bbox_num = t_stage.size(1), t_stage.size(2)
-        # anchor_wh: (3, 2) -> (3, bn, bbox_num, 2)
-        anchor_stage_whs = anchor_stage[:, None, None, :].repeat(1, batch_size, bbox_num, 1).contiguous()
-        # ratio: (3, bn, bbox_num, 2)
+        # anchor_wh: (3, 2) -> (3, bn, M, 2)
+        anchor_stage_whs = anchor_stage[:, None, None, :].repeat(1, batch_size, bbox_num, 1)
+        # ratio: (3, bn, M, 2)
         ratio = t_stage_whs / anchor_stage_whs + 1e-16
-        # ar_mask: (3, bn, bbox_num) 为target选取符合条件的anchor
+        # ar_mask: (3, bn, M) 为target选取符合条件的anchor
         ar_mask = torch.max(ratio, 1/ratio).max(dim=-1)[0] < self.hyp['anchor_match_thr']  # anchor ratio mask
-        # targets: (3, bn, bbox_num, 7) -> (X, 7)
+        # targets: (3, bn, M, 7) -> (X, 7)
         t_stage = t_stage[ar_mask]
         t_stage = t_stage[t_stage[:, 4] >= 0]
 
@@ -205,7 +213,7 @@ class YOLOV7Loss:
         # grid_mask: (X,) -> (5, X)
         grid_mask = torch.stack((torch.ones_like(grid_mask_i), grid_mask_i, grid_mask_j, grid_mask_l, grid_mask_m), dim=0)
         # t_stage: (X, 7) -> (5, X, 7) & (5, X) -> (N, 7)
-        t_stage = t_stage.repeat(5, 1, 1).contiguous()
+        t_stage = t_stage.repeat(5, 1, 1)
         t_stage = t_stage[grid_mask]
         # grid_xys_expand: (1, X, 2) & (5, 1, 2) -> (5, X, 2) & (5, X) -> (N, 2)
         grid_xys_expand = torch.zeros_like(grid_xys)[None] + offset[:, None, :]
@@ -227,13 +235,23 @@ class YOLOV7Loss:
         tar_anc_idx = t_stage[:, 6]  # anchor id
         # tar_grid_i: (N, ) / row index; tar_grid_j: (N, ) / cloumn index
         tar_grid_x, tar_grid_y = tar_grid_coors.T
-        tar_grid_x = torch.clamp(tar_grid_x, 0, fm_shape[0]-1)
-        tar_grid_y = torch.clamp(tar_grid_y, 0, fm_shape[1]-1)
+        tar_grid_x.clamp_(0, fm_shape[0]-1)
+        tar_grid_y.clamp_(0, fm_shape[1]-1)
 
         del g, offset, t_stage
         return tar_box, tar_cls.long(), tar_img_idx.long(), tar_anc_idx.long(), tar_grid_y.long(), tar_grid_x.long()
 
-    def simple_ota(self, batch_size, anchor_stage, ds_scale, one_stage_pred, org_tar, img_idx, anc_idx, gy, gx):
+    @torch.no_grad()
+    def simple_ota(self, 
+                   batch_size: float, 
+                   anchor_stage: FloatTensor, 
+                   ds_scale: float, 
+                   one_stage_pred: FloatTensor, 
+                   org_tar: FloatTensor, 
+                   img_idx: LongTensor, 
+                   anc_idx: LongTensor, 
+                   gy: LongTensor, 
+                   gx: LongTensor):
         """
         正负样本匹配策略
 
@@ -241,7 +259,7 @@ class YOLOV7Loss:
             batch_size:
             anchor_stage:
             one_stage_pred: (bn, anchor_num, h, w, 85)
-            org_tar: (bn, bbox_num, 6); [x, y, w, h, cls, img_id]
+            org_tar: (bn, M, 6); [x, y, w, h, cls, img_id]
             tar_cls: (N,)
             img_idx: (N,)
             anc_idx: (N,)
@@ -251,13 +269,11 @@ class YOLOV7Loss:
         Returns:
             all_matched_pred:
             all_matched_tar:
-
-
         """
 
        # restore xyxyn to xyxy of original image scale
         tar_box = org_tar[:, :, :4]
-        tar_cls = org_tar[:, :, 4]  # (bn, bbox_num)
+        tar_cls = org_tar[:, :, 4]  # (bn, M)
         # pred: (N, 85) / [pred_x, pred_y, pred_w, pred_h, confidence, c1, c2, c3, ..., c80]
         pred = one_stage_pred[img_idx, anc_idx, gy, gx]
         # sigmoid(-5) ≈ 0; sigmoid(0) = 0.5; sigmoid(5) ≈ 1
@@ -268,14 +284,14 @@ class YOLOV7Loss:
         # (N, 2) & (N, 2) -> (N, 2) / restore prediction to original image scale
         pred_wh = (pred[:, 2:4].sigmoid() * 2.) ** 2 * anchor_stage[anc_idx] * ds_scale
         # pred_box: (N, 4) / tar_box: (N, 4)
-        pred_box = torch.cat((pred_xy.contiguous(), pred_wh.contiguous()), dim=1).to(self.device)
+        pred_box = torch.cat((pred_xy, pred_wh), dim=1)
         # because pred_box and tar_box's format is xywh, before compute iou loss we should turn it to xyxy format
         pred_box = xywh2xyxy(pred_box)  # tar_box: (bn, bbox_num, 4)
         fm_h, fm_w = one_stage_pred.size(2), one_stage_pred.size(3)
 
         matched_tar_box, matched_tar_cls, matched_img_idx, matched_anc_idx, matched_gy, matched_gx = [], [], [], [], [], []
         for b in range(batch_size):  # one image one stage prediction
-            valid_tar_idx = org_tar[b, :, 4] >= 0  # (bbox_num,)
+            valid_tar_idx = org_tar[b, :, 4] >= 0  # (M,)
             i = img_idx == b  # (X,)
             matched_img_idx.append(img_idx[i])
             matched_anc_idx.append(anc_idx[i])
@@ -290,21 +306,25 @@ class YOLOV7Loss:
             matched_tar_cls.append(tar_cls[b][valid_tar_idx])
 
             this_pred_box = pred_box[i]  # (Xp, 4)
-            this_pred_cof = pred[i][:, 4]  # (Xp,)
-            this_pred_cls = pred[i][:, 5:]  # (Xp, class_num)
-
+            # this_pred_cof = pred[i][:, 4]  # (Xp,)
+            # this_pred_cls = pred[i][:, 5:]  # (Xp, class_num)
+            _, this_pred_cof, this_pred_cls = pred[i].split([4, 1, self.hyp["num_class"]], -1)  # (Xp, 1), (Xp, class_num)
             pairwise_iou = gpu_iou(this_tar_box, this_pred_box)  # (Xt, Xp)
-            pairwise_neg_iou_loss = -torch.log(pairwise_iou + 1e-8)  # (Xt, Xp)
+            pairwise_neg_iou_loss = -torch.log(pairwise_iou + 1e-9)  # (Xt, Xp)
             # 一个pred最多可以匹配target的个数
-            topk_iou_loss, _ = torch.topk(pairwise_neg_iou_loss, min(10, pairwise_neg_iou_loss.shape[1]), dim=1)
-            dynamick = torch.clamp(topk_iou_loss.sum(1).int(), min=1, max=topk_iou_loss.size(1))  # (Xt,) / 为每个target分配dynamic个prediction
-            if self.hyp["num_class"] > 1: 
-                # (Xt,) -> (Xt, 80) -> (Xt, 1, 80) -> (Xt, Xp, 80)
-                this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_class']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
+            topk_iou_loss = torch.topk(pairwise_neg_iou_loss, min(self.hyp['topk'], pairwise_iou.size(-1)), dim=1)[0]
+            dynamick = torch.clamp(topk_iou_loss.sum(1).int(), 1, topk_iou_loss.size(1))  # (Xt,) / 为每个target分配dynamic个prediction
+            if self.hyp["num_class"] >= 1: 
+                this_tar_onehot_cls = this_tar_cls.new_zeros((len(this_tar_cls), self.hyp['num_class']))  # (Xt, 80)
+                this_tar_onehot_cls.scatter_(-1, this_tar_cls.long().unsqueeze(1), 1.0)  # (Xt, 80)
+                this_tar_onehot_cls = this_tar_onehot_cls.unsqueeze_(1).expand(-1, i.sum().int(), -1)
+
+                # this_tar_onehot_cls = F.one_hot(this_tar_cls.long(), self.hyp['num_class']).float().unsqueeze(1).repeat(1, i.sum().int(), 1)
+
                 # (Xp, 80) -> (1, Xp, 80) -> (Xt, Xp, 80)
-                this_pred_pairwise_cls = this_pred_cls.float().unsqueeze(0).repeat(num_tar, 1, 1).sigmoid()  # (Xt, Xp, 80)
+                this_pred_pairwise_cls = this_pred_cls.float().unsqueeze(0).expand(num_tar, -1, -1).sigmoid()  # (Xt, Xp, 80)
                 # (Xt, Xp, 80) & (Xt, Xp, 1) -> (Xt, Xp, 80)
-                this_pred_pairwise_cls *= this_pred_cof.float()[None, :, None].repeat(num_tar, 1, 1).sigmoid()  # (Xt, Xp, 80)
+                this_pred_pairwise_cls *= this_pred_cof.float().unsqueeze(0).expand(num_tar, -1, -1).sigmoid()  # (Xt, Xp, 80)
                 # sqrt操作会放大预测的confidence值
                 this_pred_pairwise_cls = this_pred_pairwise_cls.sqrt()  # (Xt, Xp, 80)
                 # torch.log(this_pred_pairwise_cls / (1 - this_pred_pairwise_cls)): 将小于0.5的预测值进一步缩小，将大于0.5的预测值进一步放大

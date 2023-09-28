@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torch.nn.functional as F
-from utils import gpu_nms, numba_iou, numba_nms, numba_xywh2xyxy
+from utils import gpu_nms, numba_iou, numba_nms, numba_xywh2xyxy, numba_xyxy2xywh
 from utils import xywh2xyxy
 from collections import defaultdict
 from utils import weighted_fusion_bbox
@@ -91,64 +91,6 @@ class YOLOV7Evaluator:
                 output.append(None)
         return output
 
-    def do_nms(self, preds_out):
-        """
-         Do NMS with torch
-        :param preds_out: (batch_size, X, 85)
-        :return: list / [(X, 6), ..., None, (Y, 6), None, ..., (Z, 6), ...]
-        """
-        obj_conf_mask = preds_out[:, :, 4] >= self.conf_threshold
-        outputs = []
-        for i in range(preds_out.size(0)):  # do nms for each image
-            x = preds_out[i][obj_conf_mask[i]]
-            if x.size(0) == 0:
-                outputs.append(None)
-                continue
-            x[:, 5:] *= x[:, 4:5]  # conf = cls_conf * obj_conf
-            # [centerx, centery, w, h] -> [xmin, ymin, xmax, ymax]
-            box = xywh2xyxy(x[:, :4])
-            if self.hyp['mutil_label']:
-                row_idx, col_idx = (x[:, 5:] >= self.cls_threshold).nonzero(as_tuple=True)
-                # x: [xmin, ymin, xmax, ymax, conf, cls_id]
-                x = torch.cat((box[row_idx], x[row_idx, col_idx+5][:, None], col_idx[:, None].float()), dim=1)
-            else:
-                cls_conf, col_idx = x[:, 5:].max(dim=1, keepdim=True)
-                # [xmin, ymin, xmax, ymax, conf, cls_id]
-                x = torch.cat((box, cls_conf, col_idx.float()), dim=1)
-                cls_conf_mask = cls_conf.view(-1).contiguous() > self.cls_threshold
-                x = x[cls_conf_mask]
-
-            bbox_num = x.size(0)
-            if not bbox_num:
-                outputs.append(None)
-                continue
-
-            if self.hyp['agnostic']:  # 每张image的每个class之间的bbox进行nms
-                # 给每一个类别的bbox加上一个特殊的偏置，从而使得NMS时可以在每个类别间的bbox进行
-                box_offset = x[:, 5] * 4096
-            else:
-                box_offset = x[:, 5] * 0.
-            bboxes_offseted = x[:, :4] + box_offset[:, None]  # M
-            scores = x[:, 4]
-            keep_index = gpu_nms(bboxes_offseted, scores, self.hyp['iou_type'], self.iou_threshold)
-
-            if len(keep_index) > self.hyp['max_predictions_per_img']:
-                keep_index = keep_index[:self.hyp['max_predictions_per_img']]  # N
-
-            # 对每个bbox进行调优(每个最终输出的bbox都由与其iou大于iou threshold的一些bbox共同merge得到的)
-            if self.hyp['postprocess_bbox']:
-                if 1 < bbox_num < 3000:
-                    iou = self.bbox_iou(bboxes_offseted[keep_index], bboxes_offseted)  # (N, M)
-                    iou_mask = iou > self.iou_threshold  # (N, M)
-                    weights = iou_mask * scores[None, :]  # (N, M)
-                    # (N, M) & (M, 4) & (N, 1) -> (N, 4)
-                    bboxes_offseted[keep_index, :4] = torch.mm(weights, bboxes_offseted[:, :4]).float() / weights.sum(dim=1, keepdims=True)
-                    # 因为如果一个区域有物体，网络应该在这一区域内给出很多不同的预测框，我们再从这些预测框中选取一个最好的作为该处obj的最终输出；
-                    # 如果在某个grid处网络只给出了很少的几个预测框，则更倾向于认为这是网络预测错误所致
-                    keep_index = torch.tensor(keep_index)[iou_mask.float().sum(dim=1) > 1]
-            outputs.append(x[keep_index])
-        return outputs
-
     def test_time_augmentation(self, inputs):  # just for inference not training time
         """
 
@@ -168,17 +110,11 @@ class YOLOV7Evaluator:
             img = self.scale_img(img, s)
             # (bs, M, 85)
             ripe_preds = self.do_inference(img)
-            ripe_preds[..., :4] /= s
+            ripe_preds[..., :4] /= s  # xywh
             if f == 2:  # flip axis y
-                ymin = img_h - ripe_preds[..., 3]
-                ymax = img_h - ripe_preds[..., 1]
-                ripe_preds[..., 1] = ymin
-                ripe_preds[..., 3] = ymax
+                ripe_preds[..., 1] = img_h - ripe_preds[..., 1]
             if f == 3:  # flip axis x
-                xmin = img_w - ripe_preds[..., 2]
-                xmax = img_w - ripe_preds[..., 0]
-                ripe_preds[..., 0] = xmin
-                ripe_preds[..., 2] = xmax
+                ripe_preds[..., 0] = img_w - ripe_preds[..., 0]
             # [(bs, M, 85), (bs, N, 85), (bs, P, 85)]
             aug_preds.append(ripe_preds)
         # (bs, M+N+P, 85)
@@ -196,23 +132,23 @@ class YOLOV7Evaluator:
             cur_preds = stage_preds[keys[i]]
             fm_h, fm_w = cur_preds.size(2), cur_preds.size(3)
             # stage_anchor: (3, 2) -> (1, 3, 1, 1, 2)
-            stage_anchor = (self.anchors[i] / self.ds_scales[i])[None, :, None, None, :].contiguous().type_as(inputs)
+            stage_anchor = (self.anchors[i] / self.ds_scales[i])[None, :, None, None, :].type_as(inputs)
             # cur_preds: (bn, 3, h, w, 85) / [center_x, center_y, w, h, cofidence, c1, c2, c3, ...]
-            cur_preds = cur_preds.sigmoid()
+            cur_preds.sigmoid_()
             # grid_coords: (1, 1, h, w, 2) / 可以优化grid_coords的创建方式
             if input_img_h == self.inp_h and input_img_w == self.inp_w:
                 grid_coords = self.grid_coords[i].type_as(inputs)
             else:
-                grid_coords = self.make_grid(fm_h, fm_w).type_as(inputs)
+                grid_coords = self.make_grid(fm_h, fm_w).type_as(inputs)  # (1, 1, h, w, 2)
 
             # (bn, 3, h, w, 2) & (1, 1, h, w, 2) -> (bn, 3, h, w, 2)
             cur_preds[..., [0, 1]] = (cur_preds[..., [0, 1]] * 2 - 0.5 + grid_coords) * self.ds_scales[i]
             # (bn, 3, h, w, 2) & (1, 3, 1, 1, 2) -> (bn, 3, h, w, 2)
             cur_preds[..., [2, 3]] = (cur_preds[..., [2, 3]] * 2) ** 2 * stage_anchor * self.ds_scales[i]
             # [(bs, 20*20*3, 85), (bs, 40*40*3, 85), (bs, 80*80*3, 85)]
-            preds_out.append(cur_preds.reshape(batch_size, -1, self.num_class+5).contiguous())
+            preds_out.append(cur_preds.reshape(batch_size, -1, self.num_class+5))
         # (bs, (20*20+40*40+80*80)*3, 85)
-        return torch.cat(preds_out, dim=1).contiguous()
+        return torch.cat(preds_out, dim=1)
 
     @staticmethod
     def scale_img(img, scale_factor):
@@ -234,10 +170,10 @@ class YOLOV7Evaluator:
 
     def make_grid(self, row_num, col_num):
         y, x = torch.meshgrid([torch.arange(row_num, device=self.device), torch.arange(col_num, device=self.device)], indexing='ij')
-        # mesh_grid: (col_num, row_num, 2) -> (row_num, col_num, 2)
-        mesh_grid = torch.stack((x, y), dim=2).reshape(row_num, col_num, 2)
+        # mesh_grid: (col_num, row_num, 2) / [x, y]
+        mesh_grid = torch.stack((y, x), dim=2).flip((-1,)).contiguous()
         # (1, 1, col_num, row_num, 2)
-        return mesh_grid[None, None, ...].contiguous()
+        return mesh_grid.unsqueeze_(0).unsqueeze_(0)
 
     @staticmethod
     def bbox_iou(bbox1, bbox2):
@@ -257,12 +193,24 @@ class YOLOV7Evaluator:
         interaction_xmax = torch.minimum(bbox1[:, 2][:, None], bbox2[:, 2])  # (N, M)
         interaction_ymin = torch.maximum(bbox1[:, 1][:, None], bbox2[:, 1])  # (N, M)
         interaction_ymax = torch.minimum(bbox1[:, 3][:, None], bbox2[:, 3])  # (N, M)
-        interaction_h = interaction_ymax - interaction_ymin
-        interaction_w = interaction_xmax - interaction_xmin
+        interaction_h = (interaction_ymax - interaction_ymin).clamp(0.)
+        interaction_w = (interaction_xmax - interaction_xmin).clamp(0.)
         interaction_area = interaction_w * interaction_h  # (N, M)
         iou = interaction_area / (area1[:, None] + area2 - interaction_area)  # (N, M)
         assert iou.size(0) == n and iou.size(1) == m
         return iou
+    
+    def remove_small_boxes(self, bboxes, min_size=0.0):
+        """
+        Inputs:
+            bboxes: (M, 6) / [xmin, ymin, xmax, ymax, prob, cls]
+        Outputs:
+            bboxes: (N, 6) / N <= M
+        """
+        bbox_xywh = numba_xyxy2xywh(bboxes[:, :4])  # (M, 4)
+        bbox_mask = bbox_xywh[:, [2, 3]] > min_size  # (M, 2)
+        valid_idx = np.all(bbox_mask, axis=1)  # (M,)
+        return bboxes[valid_idx]
 
     def numba_nms(self, preds_out):
         """
@@ -319,5 +267,16 @@ class YOLOV7Evaluator:
                     # 因为如果一个区域有物体，网络应该在这一区域内给出很多不同的预测框，我们再从这些预测框中选取一个最好的作为该处obj的最终输出；
                     # 如果在某个grid处网络只给出了很少的几个预测框，则更倾向于认为这是网络预测错误所致
                     keep_index = np.asarray(keep_index)[iou_mask.astype(np.float32).sum(axis=1) > 1]
-            outputs.append(x[keep_index])
+
+            if len(keep_index) == 0:
+                outputs.append(None)
+                continue
+
+            x = self.remove_small_boxes(x[keep_index], self.hyp['min_prediction_box_wh'])  # (X, 6)
+            if len(x) == 0:
+                outputs.append(None)
+                continue
+            
+            outputs.append(x)
+            # outputs.append(x[keep_index])
         return outputs

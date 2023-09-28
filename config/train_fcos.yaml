@@ -17,7 +17,7 @@ train_hyp:
   test_img_dir: "./result/wheat_test_imgs"  # for test
   val_img_dir: "/E/JYL/Datasets/GlobalWheat/val/img"  # validation image dir
   val_lab_dir: "/E/JYL/Datasets/GlobalWheat/val/lab"  # validation label dir
-  aspect_ratio: false  
+  aspect_ratio: false
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 10000
@@ -39,7 +39,7 @@ train_hyp:
   shuffle: false  # DataLoader
   num_workers: 0  # DataLoader
   start_epoch: 0
-  total_epoch: 300
+  total_epoch: 100
   device: "gpu"  # 是否使用GPU进行训练['gpu', 'cpu']
   accumulate_loss_step: 2  # 累积梯度下降
   do_ema: true

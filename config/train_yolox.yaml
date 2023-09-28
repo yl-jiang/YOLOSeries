@@ -1,24 +1,24 @@
 loss_hyp:
-  use_focal_loss: true # 是否使用focal loss方法计算分类损失
+  use_focal_loss: false # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  iou_loss_scale: 0.05  # 回归损失（bbox损失）权重
+  iou_loss_scale: 5.0  # 回归损失（bbox损失）权重
   use_l1: true  # compute L1 norm regression loss
-  l1_loss_scale: 0.05 # L1 loss损失权重
-  cls_loss_scale: 0.3  # 分类损失权重
-  cof_loss_scale: 0.7  # 置信度损失权重
+  l1_loss_scale: 1.0 # L1 loss损失权重
+  cls_loss_scale: 1.0  # 分类损失权重
+  cof_loss_scale: 1.0  # 置信度损失权重
   class_smooth_factor: 1.0 # 标签平滑
   cls_pos_weight: 1.0  # 计算分类损失时，对类别为1的loss乘以该权重
   cof_pos_weight: 1.0  # 计算分类损失时，对类别为1的loss乘以该权重
 
 train_hyp:
   pretrained_model_path: ""  # 预训练模型路径
-  train_img_dir: "/E/JYL/Datasets/VOC/train/img"  # 存放训练图像的文件夹路径
-  train_lab_dir: "/E/JYL/Datasets/VOC/train/lab"  # 存放训练label的文件夹路径
-  name_path: "/E/JYL/Datasets/VOC/train/names.txt"
-  test_img_dir: "./result/coco_test_imgs"  # for test
-  val_img_dir: "/E/JYL/Datasets/VOC/val/img"  # validation image dir
-  val_lab_dir: "/E/JYL/Datasets/VOC/val/lab"  # validation label dir 
+  train_img_dir: "/E/JYL/Datasets/GlobalWheat/train/img"  # 存放训练图像的文件夹路径
+  train_lab_dir: "/E/JYL/Datasets/GlobalWheat/train/lab"  # 存放训练label的文件夹路径
+  name_path: "/E/JYL/Datasets/GlobalWheat/train/names.txt"
+  test_img_dir: "./result/wheat_test_imgs"  # for test
+  val_img_dir: "/E/JYL/Datasets/GlobalWheat/val/img"  # validation image dir
+  val_lab_dir: "/E/JYL/Datasets/GlobalWheat/val/lab"  # validation label dir
   enable_data_aug: true
   aspect_ratio: false  # 训练时，是否按照训练集中图片长宽比从小到大的顺序输入到网络
   aspect_ratio_path: ""  # 训练数据集中每张图片的长宽比（用于根据图像长宽比的一定顺序输入网络进行训练）
@@ -26,8 +26,8 @@ train_hyp:
   input_img_size:  # 输入训练网络的图片大小
     - 640
     - 640
-  batch_size: 32
-  random_seed: 7
+  batch_size: 4
+  random_seed: 42
   drop_last: true  # Pytorch DataLoader参数
   pin_memory: false  # Pytorch DataLoader参数
   shuffle: true  # Pytorch DataLoader参数
@@ -36,10 +36,10 @@ train_hyp:
   total_epoch: 100
   num_anchors: 1  # 每个grid给出多少个预测框
   device: "gpu"  # 是否使用GPU进行训练 / ['gpu', 'cpu']中的一种
-  accumulate_loss_step: 128  # 累积梯度下降
+  accumulate_loss_step: 2  # 累积梯度下降
   do_ema: true  # 是否维持一个Everage Moving Model
   weight_init_prior_prob: 0.01  # 用于网络中的bias参数初始化
-  validation_every: 1  # 每隔多少个epoch testing一次
+  validation_every: 0.5  # 每隔多少个epoch testing一次
   show_tbar_every: 2  # 每个多少个step显示实时训练状态信息
   save_log_every: 2
   use_tta: true  # validation时是否使用TTA
@@ -52,18 +52,20 @@ train_hyp:
   no_data_aug_epoch: 10
   enable_tensorboard: true
   log_identifier: 'yolox_debug'
+  topk: 13
+  center_radius: 3
 
 warmup_hyp:
   do_warmup: true  # 是否开启预热训练
-  warmup_epoch: 3
+  warmup_epoch: 5
   warmup_bias_max_lr: 0.1  # warmup lr for bias
   warmup_momentum: 0.9
 
 optimizer_hyp:
   scheduler_type: 'linear'
   optimizer: 'sgd' # 优化器类别/['sgd', 'adam']中的一种
-  basic_lr_per_img: 0.003125 # 0.1 / 32
-  weight_decay: 0.00005
+  basic_lr_per_img: 0.0005 # 0.01 / 64
+  weight_decay: 0.0005
   momentum: 0.937
   lr_max_ds_scale: 0.1
 
@@ -88,9 +90,9 @@ data_hyp:
   data_aug_scale_jitting_p: 0.0
 
 nms_hyp:
-  iou_threshold: 0.2
-  conf_threshold: 0.3
-  cls_threshold: 0.3
+  iou_threshold: 0.45
+  conf_threshold: 0.2
+  cls_threshold: 0.25
   max_predictions_per_img: 300  # 每张图像最多留下一定数量的预测框
   min_prediction_box_wh: 2  # 去除长宽小于一定阈值的预测框
   max_prediction_box_wh: 4096  # 去除长宽大于一定阈值的预测框

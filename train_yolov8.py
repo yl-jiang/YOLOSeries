@@ -312,7 +312,7 @@ class Training:
                         with amp.autocast(enabled=self.use_cuda):
                             stage_preds = self.model(img)
                             loss_dict = self.loss_fcn(stage_preds, ann)
-                            loss_dict['tot_loss'] *= get_world_size()
+                            # loss_dict['tot_loss'] *= get_world_size()
 
                     tot_loss = loss_dict['tot_loss']
 
@@ -840,12 +840,12 @@ if __name__ == '__main__':
 
     from utils import launch, get_num_devices
     import os
-    os.environ['CUDA_VISIBLE_DEVICES'] = "1"
+    # os.environ['CUDA_VISIBLE_DEVICES'] = "1"
     num_gpu = get_num_devices()
     clear_dir(str(current_work_directionary / 'log'))
     launch(
         main, 
-        num_gpus_per_machine= 1, 
+        num_gpus_per_machine= num_gpu, 
         num_machines= 1, 
         machine_rank= 0, 
         backend= "nccl", 

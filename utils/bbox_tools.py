@@ -1,6 +1,7 @@
 import torch
 import numba
 import numpy as np
+from torch import FloatTensor
 
 __all__ = ['letter_resize_bbox', 'minmax_bbox_resize', 
            'cpu_iou', 'xyxy2xywh', 'xyxy2xywhn', 'xywh2xyxy', 'numba_xywh2xyxy', 
@@ -118,17 +119,18 @@ def xyxy2xywhn(bboxes, img_shape):
     return bboxes_out
 
 
-def xywh2xyxy(bboxes):
+def xywh2xyxy(bboxes: FloatTensor):
     """
     [center_x, center_y, w, h] -> [xmin, ymin, xmax, ymax]
     :param bboxes: (N, 4)
     """
     # assert bboxes.ndim == 2, f"input bboxes's shape be same like (N, 4), but got {bboxes.shape}"
+    x, y, w, h = bboxes.chunk(4, -1)
     bbox_out = torch.zeros_like(bboxes)
-    bbox_out[..., 0] = bboxes[..., 0] - bboxes[..., 2] / 2
-    bbox_out[..., 1] = bboxes[..., 1] - bboxes[..., 3] / 2
-    bbox_out[..., 2] = bboxes[..., 0] + bboxes[..., 2] / 2
-    bbox_out[..., 3] = bboxes[..., 1] + bboxes[..., 3] / 2
+    bbox_out[..., [0]] = x - w / 2
+    bbox_out[..., [1]] = y - h / 2
+    bbox_out[..., [2]] = x + w / 2
+    bbox_out[..., [3]] = y + h / 2
     return bbox_out
 
 
@@ -175,15 +177,15 @@ def gpu_iou(bbox1, bbox2):
     # bbox1_area = bbox1_w * bbox1_h
     # bbox2_area = bbox2_w * bbox2_h
 
-    intersection_ymax = torch.min(bbox1[:, None, 3], bbox2[:, 3])  # (N, M)
-    intersection_xmax = torch.min(bbox1[:, None, 2], bbox2[:, 2])  # (N, M)
-    intersection_ymin = torch.max(bbox1[:, None, 1], bbox2[:, 1])  # (N, M)
-    intersection_xmin = torch.max(bbox1[:, None, 0], bbox2[:, 0])  # (N, M)
+    intersection_ymax = torch.min(bbox1[:, None, 3], bbox2[None, :, 3])  # (N, M)
+    intersection_xmax = torch.min(bbox1[:, None, 2], bbox2[None, :, 2])  # (N, M)
+    intersection_ymin = torch.max(bbox1[:, None, 1], bbox2[None, :, 1])  # (N, M)
+    intersection_xmin = torch.max(bbox1[:, None, 0], bbox2[None, :, 0])  # (N, M)
 
     intersection_w = torch.clamp(intersection_xmax - intersection_xmin, min=0.0)  # (N, M)
     intersection_h = torch.clamp(intersection_ymax - intersection_ymin, min=0.0)  # (N, M)
     intersection_area = intersection_w * intersection_h  # (N, M)
-    iou = intersection_area / (bbox1_area[:, None] + bbox2_area - intersection_area).clamp(1e-6)  # (N, M)
+    iou = intersection_area / (bbox1_area[:, None] + bbox2_area[None, :] - intersection_area).clamp(1e-9)  # (N, M)
 
     return iou  # (N, M)
 
@@ -289,54 +291,52 @@ def gpu_CIoU(bbox1, bbox2):
     """
     assert isinstance(bbox1, torch.Tensor)
     assert isinstance(bbox2, torch.Tensor)
-    # assert (bbox1[:, [2, 3]] >= bbox1[:, [0, 1]]).all(), f"bbox1: {bbox1}"
-    # assert (bbox2[:, [2, 3]] >= bbox2[:, [0, 1]]).all(), f"bbox2: {bbox2}"
     assert bbox1.shape[-1] == bbox2.shape[-1] == 4
     assert bbox1.device == bbox2.device
 
-    w1, h1 = (bbox1[:, [2, 3]] - bbox1[:, [0, 1]]).T  # (N, 2)
-    w2, h2 = (bbox2[:, [2, 3]] - bbox2[:, [0, 1]]).T  # (N, 2)
-    bbox1_area = w1 * h1  # (N,)
-    bbox2_area = w2 * h2  # (N,)
+    eps = 1e-9
+    box1_xmin, box1_ymin, box1_xmax, box1_ymax = bbox1.chunk(4, -1)  # (N, 1)
+    box2_xmin, box2_ymin, box2_xmax, box2_ymax = bbox2.chunk(4, -1)  # (N, 1)
+    box1_w, box1_h = box1_xmax - box1_xmin, box1_ymax - box1_ymin    # (N, 1)
+    box2_w, box2_h = box2_xmax - box2_xmin, box2_ymax - box2_ymin    # (N, 1)
 
-    intersection_ymax = torch.min(bbox1[:, 3], bbox2[:, 3])  # (N,)
-    intersection_xmax = torch.min(bbox1[:, 2], bbox2[:, 2])  # (N,)
-    intersection_ymin = torch.max(bbox1[:, 1], bbox2[:, 1])  # (N,)
-    intersection_xmin = torch.max(bbox1[:, 0], bbox2[:, 0])  # (N,)
+    intersection_ymax = torch.min(box1_ymax, box2_ymax)  # (N, 1)
+    intersection_xmax = torch.min(box1_xmax, box2_xmax)  # (N, 1)
+    intersection_ymin = torch.max(box1_ymin, box2_ymin)  # (N, 1)
+    intersection_xmin = torch.max(box1_xmin, box2_xmin)  # (N, 1)
 
-    intersection_w = torch.clamp(intersection_xmax - intersection_xmin, min=0.)  # (N,)
-    intersection_h = torch.clamp(intersection_ymax - intersection_ymin, min=0.)  # (N,)
-    intersection_area = intersection_w * intersection_h  # (N,)
+    intersection_w = torch.clamp(intersection_xmax - intersection_xmin, min=0.)  # (N, 1)
+    intersection_h = torch.clamp(intersection_ymax - intersection_ymin, min=0.)  # (N, 1)
+    intersection_area = intersection_w * intersection_h  # (N, 1)
 
-    union_area = bbox1_area + bbox2_area - intersection_area  # (N,)
-    union_area = torch.clamp(union_area, min=1e-6)
-    iou = intersection_area / union_area  # (N,)
+    union_area = box1_w * box1_h + box2_w * box2_h - intersection_area  # (N, 1)
+    union_area = torch.clamp(union_area, eps)
+    iou = intersection_area / union_area  # (N, 1)
 
-    c_xmin = torch.min(bbox1[:, 0], bbox2[:, 0])  # (N,)
-    c_xmax = torch.max(bbox1[:, 2], bbox2[:, 2])  # (N,)
-    c_ymin = torch.min(bbox1[:, 1], bbox2[:, 1])  # (N,)
-    c_ymax = torch.max(bbox1[:, 3], bbox2[:, 3])  # (N,)
-    c_hs = c_ymax - c_ymin  # (N,)
-    c_ws = c_xmax - c_xmin  # (N,)
-    c_diagonal = torch.pow(c_ws, 2) + torch.pow(c_hs, 2)  # (N,)
+    c_xmin = torch.min(box1_xmin, box2_xmin)  # (N, 1)
+    c_xmax = torch.max(box1_xmax, box2_xmax)  # (N, 1)
+    c_ymin = torch.min(box1_ymin, box2_ymin)  # (N, 1)
+    c_ymax = torch.max(box1_ymax, box2_ymax)  # (N, 1)
+    c_hs = c_ymax - c_ymin  # (N, 1)
+    c_ws = c_xmax - c_xmin  # (N, 1)
+    c_diagonal = torch.pow(c_ws, 2) + torch.pow(c_hs, 2)  # (N, 1)
     
-
     # compute center coordinate of bboxes
-    bbox1_ctr_x = (bbox1[:, 2] + bbox1[:, 0]) / 2  # (N,)
-    bbox1_ctr_y = (bbox1[:, 3] + bbox1[:, 1]) / 2  # (N,)
-    bbox2_ctr_x = (bbox2[:, 2] + bbox2[:, 0]) / 2  # (N,)
-    bbox2_ctr_y = (bbox2[:, 3] + bbox2[:, 1]) / 2  # (N,)
-    ctr_ws = bbox1_ctr_x - bbox2_ctr_x  # (N,)
-    ctr_hs = bbox1_ctr_y - bbox2_ctr_y  # (N,)
+    bbox1_ctr_x = (box1_xmin + box1_xmax) / 2  # (N, 1)
+    bbox1_ctr_y = (box1_ymin + box1_ymax) / 2  # (N, 1)
+    bbox2_ctr_x = (box2_xmin + box2_xmax) / 2  # (N, 1)
+    bbox2_ctr_y = (box2_ymin + box2_ymax) / 2  # (N, 1)
+    ctr_ws = bbox1_ctr_x - bbox2_ctr_x  # (N, 1)
+    ctr_hs = bbox1_ctr_y - bbox2_ctr_y  # (N, 1)
     # ctr_distance: distance of two bbox center
-    ctr_distance = ctr_hs.pow_(2) + ctr_ws.pow_(2)  # (N,)
-    v = (4 / (np.pi ** 2)) * (torch.atan(w2 / torch.clamp(h2, min=1e-6)) - torch.atan(w1 / torch.clamp(h1, min=1e-6))).pow_(2)  # (N,)
+    ctr_distance = ctr_hs ** 2 + ctr_ws ** 2  # (N, 1)
+    v = (4 / (np.pi ** 2)) * (torch.atan(box1_w / torch.clamp(box1_h, eps)) - torch.atan(box2_w / torch.clamp(box2_h, eps))).pow_(2)  # (N, 1)
 
     with torch.no_grad():
-        alpha = v / torch.clamp(1 - iou + v, min=1e-6)
-    c_diagonal = torch.clamp(c_diagonal, min=1e-6)
-    ciou = iou - (ctr_distance / c_diagonal + v * alpha)  # (N,)
-    return ciou
+        alpha = v / torch.clamp(1 - iou + v, eps)
+    c_diagonal = torch.clamp(c_diagonal, min=eps)
+    ciou = iou - (ctr_distance / c_diagonal + v * alpha)  # (N, 1)
+    return ciou.squeeze()  # (N,)
 
 
 def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1):  # box1(4,n), box2(4,n)
