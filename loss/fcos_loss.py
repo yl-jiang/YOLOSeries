@@ -33,17 +33,13 @@ class FCOSLoss:
         self.bce_ctr = nn.BCEWithLogitsLoss(pos_weight=ctr_pos_weight, reduction='none').to(self.device)
         self.l1_reg = nn.L1Loss()
         self.input_img_size = hyp['input_img_size']
-        self.ctr_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
-        self.cls_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
-        self.reg_loss_balances = [4., 1., 0.4] if stage_num == 3 else [1., 2., 4., 0.2, 0.1]
-        self.fpn_loss_balances = [0.1, 0.5, 1.0, 0.5, 0.1]
         self.num_stage = stage_num
         self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce(self.hyp['class_smooth_factor'])
         self.radius = hyp['center_sampling_radius']
         self.grids = None
         self.eps = self.hyp['eps']
 
-    def compute_iou_loss(self, pred, tar, weight=None):
+    def compute_iou_loss(self, pred: torch.FloatTensor, tar: torch.FloatTensor, weight=None):
         """
         Inputs:
             pred: (m, 4) / [l, t, r, b]
@@ -54,28 +50,20 @@ class FCOSLoss:
         if weight is not None:
             assert pred.size(0) == len(weight)
 
-        pred_left   = pred[:, 0]  # (m,)
-        pred_top    = pred[:, 1]  # (m,)
-        pred_right  = pred[:, 2]  # (m,)
-        pred_bottom = pred[:, 3]  # (m,)
+        pred_left, pred_top, pred_right, pred_bottom = pred.chunk(4, -1)  # (m, 1)
+        target_left, target_top, target_right, target_bottom = tar.chunk(4, -1)  # (m, 1)
+        target_area = (target_left + target_right) * (target_top + target_bottom)  # (m, 1)
+        pred_area   = (pred_left   + pred_right)   * (pred_top   + pred_bottom)    # (m, 1)
 
-        target_left   = tar[:, 0]  # (m,)
-        target_top    = tar[:, 1]  # (m,)
-        target_right  = tar[:, 2]  # (m,)
-        target_bottom = tar[:, 3]  # (m,)
-
-        target_area = (target_left + target_right) * (target_top + target_bottom)  # (m,)
-        pred_area   = (pred_left   + pred_right)   * (pred_top   + pred_bottom)    # (m,)
-
-        w_intersect = torch.min(pred_left, target_left) + torch.min(pred_right, target_right)    # (m,)
-        g_w_intersect = torch.max(pred_left, target_left) + torch.max(pred_right, target_right)  # (m,)
-        h_intersect = torch.min(pred_bottom, target_bottom) + torch.min(pred_top, target_top)    # (m,)
-        g_h_intersect = torch.max(pred_bottom, target_bottom) + torch.max(pred_top, target_top)  # (m,)
-        ac_uion = g_w_intersect * g_h_intersect + self.eps  # (m,)
-        area_intersect = w_intersect * h_intersect  # (m,)
-        area_union = target_area + pred_area - area_intersect
-        ious = (area_intersect + 1.0) / (area_union + 1.0)
-        gious = ious - (ac_uion - area_union) / ac_uion
+        w_intersect = torch.min(pred_left, target_left) + torch.min(pred_right, target_right)    # (m, 1)
+        g_w_intersect = torch.max(pred_left, target_left) + torch.max(pred_right, target_right)  # (m, 1)
+        h_intersect = torch.min(pred_bottom, target_bottom) + torch.min(pred_top, target_top)    # (m, 1)
+        g_h_intersect = torch.max(pred_bottom, target_bottom) + torch.max(pred_top, target_top)  # (m, 1)
+        ac_uion = g_w_intersect.clamp_(0.0) * g_h_intersect.clamp_(0.0) + self.eps  # (m, 1)
+        area_intersect = w_intersect.clamp_(0.0) * h_intersect.clamp_(0.0)  # (m, 1)
+        area_union = target_area + pred_area - area_intersect  # (m, 1)
+        ious = (area_intersect + 1.0) / (area_union.clamp_(0.0) + 1.0)  # (m, 1)
+        gious = ious - (ac_uion - area_union) / ac_uion  # (m, 1)
         if self.hyp['iou_type'] == 'iou':
             losses = -torch.log(ious)
         elif self.hyp['iou_type'] == 'linear_iou':
@@ -136,8 +124,9 @@ class FCOSLoss:
                 if pos_num > 0:
                     # --------------------------------------------------------------------------------- centerness loss
                     tmp_tars_cen[(pos_idx[0], pos_idx[1])] = ctr_tar.unsqueeze(dim=-1).type_as(tmp_pred_ctr)
-                    ctr_loss = self.bce_ctr(tmp_pred_ctr[(pos_idx[0], pos_idx[1])].reshape(-1, 1), tmp_tars_cen[(pos_idx[0], pos_idx[1])].reshape(-1, 1)).sum()
-                    ctr_loss /= pos_num
+                    ctr_focal = self.focal_loss_factor(tmp_pred_ctr[(pos_idx[0], pos_idx[1])].reshape(-1, 1), tmp_tars_cen[(pos_idx[0], pos_idx[1])].reshape(-1, 1))
+                    ctr_loss = self.bce_ctr(tmp_pred_ctr[(pos_idx[0], pos_idx[1])].reshape(-1, 1), tmp_tars_cen[(pos_idx[0], pos_idx[1])].reshape(-1, 1))
+                    ctr_loss = (ctr_loss * ctr_focal).sum() / pos_num
                     stage_ctr_loss.append(ctr_loss)
 
                     # --------------------------------------------------------------------------------- regression loss
@@ -145,7 +134,6 @@ class FCOSLoss:
                     iou_loss = self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, ctr_tar)
                     iou_loss /= (loss_denorm * pos_num)
                     stage_reg_loss.append(iou_loss)
-                    # stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, ctr_tar) / (loss_denorm * pos_num))
                     
                     # --------------------------------------------------------------------------------- classification loss
                     tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls  # foreground class
@@ -154,23 +142,17 @@ class FCOSLoss:
                     stage_reg_loss.append(tmp_pred_reg.new_tensor(0.0))
                     stage_ctr_loss.append(self.bce_ctr(tmp_pred_ctr.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)).mean())
 
-                focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
+                cls_focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
                 cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
-                cls_loss = (cls_loss * focal).mean(-1).sum() / max(pos_num, 1.0)
+                cls_loss = (cls_loss * cls_focal).mean(-1).sum() / max(pos_num, 1.0)
                 stage_cls_loss.append(cls_loss)
 
-            balance_reg_loss, balance_ctr_loss, balance_cls_loss = self.compute_balance_losses(s, 
-                                                                                               stage_reg_loss=torch.stack(stage_reg_loss, dim=0).mean(), 
-                                                                                               stage_ctr_loss=torch.stack(stage_ctr_loss, dim=0).mean(), 
-                                                                                               stage_cls_loss=torch.stack(stage_cls_loss, dim=0).mean())
-            # balance_ctr_loss *= self.fpn_loss_balances[s]
-            # balance_cls_loss *= self.fpn_loss_balances[s]
-            # balance_reg_loss *= self.fpn_loss_balances[s]
+            balance_reg_loss = torch.stack(stage_reg_loss, dim=0).mean()
+            balance_ctr_loss = torch.stack(stage_ctr_loss, dim=0).mean()
+            balance_cls_loss = torch.stack(stage_cls_loss, dim=0).mean()
             tot_ctr_loss.append(balance_ctr_loss)
             tot_cls_loss.append(balance_cls_loss)
             tot_reg_loss.append(balance_reg_loss)
-
-        self.update_balances() 
 
         scale = batch_size
         ctr_loss_out = torch.stack(tot_ctr_loss, dim=0).mean() * self.hyp['ctr_loss_weight']
@@ -184,31 +166,7 @@ class FCOSLoss:
                 'reg_loss': reg_loss_out.detach().item() * scale, 
                 'tar_nums': target_num}
     
-    def compute_balance_losses(self, stage, stage_reg_loss, stage_ctr_loss, stage_cls_loss):
-        if self.hyp['do_cen_loss_balance']:
-            stage_ctr_loss = stage_ctr_loss * self.ctr_loss_balances[stage]
-            self.ctr_loss_balances[stage] = self.ctr_loss_balances[stage] * 0.9999 + 0.0001 / (stage_ctr_loss.detach().item() if stage_ctr_loss.detach().item() != 0 else 1.0)
-            
-        if self.hyp['do_cls_loss_balance']:
-            stage_cls_loss = stage_cls_loss * self.cls_loss_balances[stage]
-            self.cls_loss_balances[stage] = self.cls_loss_balances[stage] * 0.9999 + 0.0001 / (stage_cls_loss.detach().item() if stage_cls_loss.detach().item() != 0 else 1.0)
-
-        if self.hyp['do_reg_loss_balance']:
-            stage_reg_loss = stage_reg_loss * self.reg_loss_balances[stage]
-            self.reg_loss_balances[stage] = self.reg_loss_balances[stage] * 0.9999 + 0.0001 / (stage_reg_loss.detach().item() if stage_reg_loss.detach().item() != 0 else 1.0)
-
-        return stage_reg_loss, stage_ctr_loss, stage_cls_loss
-    
-    def update_balances(self):
-        if self.hyp['do_cen_loss_balance']:
-            self.cen_loss_balances = [x/self.cen_loss_balances[self.num_stage // 2] for x in self.cen_loss_balances]
-
-        if self.hyp['do_cls_loss_balance']:
-            self.cls_loss_balances = [x/self.cls_loss_balances[self.num_stage // 2] for x in self.cls_loss_balances]
-            
-        if self.hyp['do_reg_loss_balance']:
-            self.reg_loss_balances = [x/self.reg_loss_balances[self.num_stage // 2] for x in self.reg_loss_balances]
-
+    @torch.no_grad()
     def build_targets(self, grid, tar_box, tar_cls, reg_obj_size, stride):
         """
         Inputs:
@@ -361,7 +319,6 @@ class FCOSLoss:
         alpha = self.hyp.get('focal_loss_alpha', 0.25)
         alpha_factor = target * alpha + (1.0 - target) * (1.0 - alpha)
         factor = gamma_factor * alpha_factor
-
         return factor
 
     def make_grid(self, shape_list):
@@ -370,13 +327,13 @@ class FCOSLoss:
             shape_list: [[h/8, w/8], [h/16, w/16], [h/32, w/32], [h/64, w/64], [h/128, w/128]]
         """
         grids = []
-        for s, (h, w) in enumerate(shape_list):
+        for h, w in shape_list:
             stride = self.input_img_size[0] / h
             shift_x = torch.arange(0, w*stride, step=stride, device=self.device, dtype=torch.float32)
             shift_y = torch.arange(0, h*stride, step=stride, device=self.device, dtype=torch.float32)
             y, x = torch.meshgrid((shift_x, shift_y), indexing='ij')
             # mesh_grid: (col_num, row_num, 2) -> (row_num, col_num, 2)
-            mesh_grid = torch.stack((x, y), dim=2).reshape(h, w, 2) + stride // 2
+            mesh_grid = torch.stack((y, x), dim=2).flip(dims=(-1,)) + stride // 2
             # (col_num, row_num, 2)
             grids.append(mesh_grid)
         return grids

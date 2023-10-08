@@ -16,7 +16,6 @@ class FCOSEvaluator:
         self.device = hyp['device']
         self.num_class = hyp['num_class']
         self.ds_scales = [8, 16, 32, 64, 128]
-        
         self.inp_h, self.inp_w = hyp['input_img_size']
         self.use_tta = hyp['use_tta']
         self.grid_coords = [self.make_grid(self.inp_h//s, self.inp_w//s, s).float() for s in self.ds_scales]
@@ -188,7 +187,7 @@ class FCOSEvaluator:
         shift_y = torch.arange(0, row_num*stride, step=stride, device=self.device, dtype=torch.float32)
         y, x = torch.meshgrid((shift_x, shift_y), indexing='ij')
         # mesh_grid: (col_num, row_num, 2) -> (row_num, col_num, 2)
-        mesh_grid = torch.stack((x, y), dim=2).reshape(row_num, col_num, 2) + stride // 2
+        mesh_grid = torch.stack((y, x), dim=2).flip(dims=(-1,)) + stride // 2
         return mesh_grid[None, ...].contiguous()  # (1, col_num, row_num, 2)
 
     @staticmethod

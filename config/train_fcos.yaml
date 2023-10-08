@@ -2,9 +2,9 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  reg_loss_weight: 1.0  # 回归损失（bbox损失）权重
+  reg_loss_weight: 0.3  # 回归损失（bbox损失）权重
   cls_loss_weight: 1.0  # 分类损失权重
-  ctr_loss_weight: 0.5  # 置信度损失权重
+  ctr_loss_weight: 1.0  # 置信度损失权重
   class_smooth_factor: 0.01 # 标签平滑
   cls_pos_weight: 1.0  # 
   ctr_pos_weight: 1.0  # 
@@ -22,17 +22,17 @@ train_hyp:
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
   cache_num: 1000000
   input_img_size:  # 输入训练网络的图片大小
-    - 640
-    - 640
+    - 768
+    - 768
   resnet_layers: 
     - 3
     - 4
     - 6
     - 3
   enable_head_scale: true
-  norm_layer_type: 'batch_norm'  # ['batch_norm', 'group_norm']
+  norm_layer_type: 'group_norm'  # ['batch_norm', 'group_norm']
   freeze_bn: false
-  batch_size: 64
+  batch_size: 32
   drop_last: true  # DataLoader
   pin_memory: true  # DataLoader
   random_seed: 42
@@ -41,7 +41,7 @@ train_hyp:
   start_epoch: 0
   total_epoch: 150
   device: "gpu"  # 是否使用GPU进行训练['gpu', 'cpu']
-  accumulate_loss_step: 64  # 累积梯度下降
+  accumulate_loss_step: 32  # 累积梯度下降
   do_ema: true
   validation_every: 0.5  # 每隔多少个epoch validate一次
   use_tta: true  # validation时是否使用TTA
@@ -54,8 +54,8 @@ train_hyp:
   log_identifier: 'fcos_debug'
   save_log_every: 5
   no_data_aug_epoch: 10
-  center_sampling_radius: 1.5
-  iou_type: 'giou'  # ['iou', 'giou', 'linear_iou']
+  center_sampling_radius: 1.3
+  iou_type: 'iou'  # ['iou', 'giou', 'linear_iou']
   do_center_sampling: true
   do_cen_loss_balance: false
   do_cls_loss_balance: false
