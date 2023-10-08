@@ -56,10 +56,10 @@ def fuse_conv_bn(conv_layer, bn_layer):
 class Scale(nn.Module):
     def __init__(self, init_value=1.0):
         super(Scale, self).__init__()
-        self.scale = nn.Parameter(torch.FloatTensor([init_value]))
+        self.scale = nn.Parameter(torch.FloatTensor([init_value]), requires_grad=True)
 
-    def forward(self, input):
-        return input * self.scale
+    def forward(self, x):
+        return x * self.scale
 
 class Concat(nn.Module):
 

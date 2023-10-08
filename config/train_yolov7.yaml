@@ -1,8 +1,8 @@
 loss_hyp:
-  use_focal_loss: true # 是否使用focal loss方法计算分类损失
+  use_focal_loss: false # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  iou_loss_scale: 5.0  # 回归损失（bbox损失）权重
+  iou_loss_scale: 2.0  # 回归损失（bbox损失）权重
   cls_loss_scale: 1.0  # 分类损失权重
   cof_loss_scale: 1.0  # 置信度损失权重
   anchor_match_thr: 4.0  # 该参数用于过滤预测框与标签框之间匹配的阈值

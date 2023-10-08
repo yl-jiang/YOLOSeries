@@ -41,6 +41,7 @@ class FCOSLoss:
         self.positive_smooth_cls, self.negative_smooth_cls = smooth_bce(self.hyp['class_smooth_factor'])
         self.radius = hyp['center_sampling_radius']
         self.grids = None
+        self.eps = self.hyp['eps']
 
     def compute_iou_loss(self, pred, tar, weight=None):
         """
@@ -70,7 +71,7 @@ class FCOSLoss:
         g_w_intersect = torch.max(pred_left, target_left) + torch.max(pred_right, target_right)  # (m,)
         h_intersect = torch.min(pred_bottom, target_bottom) + torch.min(pred_top, target_top)    # (m,)
         g_h_intersect = torch.max(pred_bottom, target_bottom) + torch.max(pred_top, target_top)  # (m,)
-        ac_uion = g_w_intersect * g_h_intersect + 1e-7  # (m,)
+        ac_uion = g_w_intersect * g_h_intersect + self.eps  # (m,)
         area_intersect = w_intersect * h_intersect  # (m,)
         area_union = target_area + pred_area - area_intersect
         ious = (area_intersect + 1.0) / (area_union + 1.0)
@@ -131,26 +132,31 @@ class FCOSLoss:
                 tmp_pred_ctr = pred_cen.permute(1, 2, 0).contiguous() # (h, w, 1)
                 tmp_pred_reg = pred_reg.permute(1, 2, 0).contiguous()  # (h, w, 4)
                 tmp_tars_cls = torch.ones_like(tmp_pred_cls) * self.negative_smooth_cls  # (h, w, num_class)
+                tmp_tars_cen = torch.zeros_like(tmp_pred_ctr)
                 if pos_num > 0:
                     # --------------------------------------------------------------------------------- centerness loss
-                    tmp_tars_cen = torch.zeros_like(tmp_pred_ctr)
                     tmp_tars_cen[(pos_idx[0], pos_idx[1])] = ctr_tar.unsqueeze(dim=-1).type_as(tmp_pred_ctr)
-                    stage_ctr_loss.append(self.bce_ctr(tmp_pred_ctr.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)).sum() / pos_num)
+                    ctr_loss = self.bce_ctr(tmp_pred_ctr[(pos_idx[0], pos_idx[1])].reshape(-1, 1), tmp_tars_cen[(pos_idx[0], pos_idx[1])].reshape(-1, 1)).sum()
+                    ctr_loss /= pos_num
+                    stage_ctr_loss.append(ctr_loss)
 
                     # --------------------------------------------------------------------------------- regression loss
-                    loss_denorm = max(ctr_tar.sum().item(), 1e-6)
-                    stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, ctr_tar) / loss_denorm)
+                    loss_denorm = max(ctr_tar.sum().item(), self.eps)
+                    iou_loss = self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, ctr_tar)
+                    iou_loss /= (loss_denorm * pos_num)
+                    stage_reg_loss.append(iou_loss)
+                    # stage_reg_loss.append(self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, ctr_tar) / (loss_denorm * pos_num))
                     
                     # --------------------------------------------------------------------------------- classification loss
                     tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls  # foreground class
                 else:
                     # --------------------------------------------------------------------------------- classification loss
-                    stage_ctr_loss.append(tmp_pred_ctr.new_tensor(0.0))
                     stage_reg_loss.append(tmp_pred_reg.new_tensor(0.0))
+                    stage_ctr_loss.append(self.bce_ctr(tmp_pred_ctr.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)).mean())
 
                 focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
                 cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
-                cls_loss = (cls_loss * focal).mean()
+                cls_loss = (cls_loss * focal).mean(-1).sum() / max(pos_num, 1.0)
                 stage_cls_loss.append(cls_loss)
 
             balance_reg_loss, balance_ctr_loss, balance_cls_loss = self.compute_balance_losses(s, 

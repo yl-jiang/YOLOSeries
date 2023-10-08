@@ -35,7 +35,7 @@ from utils import maybe_mkdir, clear_dir
 from trainer import ExponentialMovingAverageModel
 from utils import time_synchronize, summary_model
 from dataset import build_dataloader, build_test_dataloader
-from utils import mAP_v2
+from utils import mAP_v2, Scale
 from models import FCOSBaseline, FCOSCSPNet
 
 from utils import (configure_nccl, configure_omp, get_local_rank, print_config, 
@@ -236,15 +236,16 @@ class Training:
         self.accumulate = self.hyp['accumulate_loss_step'] / self.hyp['batch_size']
 
     def _init_optimizer(self):
-        param_group_weight, param_group_bias, param_group_other = [], [], []
+        param_group_weight, param_group_bias, param_group_other, param_group_scale = [], [], [], []
         for m in self.model.modules():
             if hasattr(m, "bias") and isinstance(m.bias, nn.Parameter):
                 param_group_bias.append(m.bias)
-            
             if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.GroupNorm):
                 param_group_other.append(m.weight)
             elif hasattr(m, 'weight') and isinstance(m.weight, nn.Parameter):
                 param_group_weight.append(m.weight)
+            elif hasattr(m, 'scale') and isinstance(m.scale, nn.Parameter):
+                param_group_scale.append(m.scale)
 
         if self.hyp['optimizer'].lower() == "sgd":
             optimizer = optim.SGD(params=param_group_other, lr=self.hyp['lr'], nesterov=True, momentum=self.hyp['momentum'])
@@ -255,6 +256,7 @@ class Training:
 
         optimizer.add_param_group({"params": param_group_weight, "weight_decay": self.hyp['weight_decay']})
         optimizer.add_param_group({"params": param_group_bias})
+        optimizer.add_param_group({"params": param_group_scale})
 
         del param_group_weight, param_group_bias, param_group_other
         return optimizer
@@ -308,7 +310,6 @@ class Training:
                     with amp.autocast(enabled=self.use_cuda):
                         cls_fms, reg_fms, ctr_fms = self.model(img)
                         loss_dict = self.loss_fcn(cls_fms, reg_fms, ctr_fms, ann)
-                        # loss_dict['tot_loss'] *= get_world_size()
 
                 tot_loss = loss_dict['tot_loss']
 
@@ -317,7 +318,7 @@ class Training:
                 check_parameters_no_used(self.model)
 
                 end_iter_t = time_synchronize()
-                loss_dict.update({'tot_loss': tot_loss.detach().item() / get_world_size()})
+                loss_dict.update({'tot_loss': tot_loss.detach().item()})
 
                 # optimize
                 if step_in_epoch % self.accumulate == 0:
