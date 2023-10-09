@@ -107,9 +107,16 @@ def compute_featuremap_shape(img_shape, pyramid_level):
 
 
 def check_parameters_no_used(model: torch.nn.Module):
+    unused_params = []
     for name, param in model.named_parameters():
         if param.grad is None:
-            print(name)
+            unused_params.append(name)
+
+    if len(unused_params) > 0:
+        print(f"{'=' * 100}")
+        print(unused_params)
+        print(f"{'=' * 100}")
+        # raise RuntimeError("error indicates that you module has parametes that were not used in producing loss!")
 
 
 class dummy_context:

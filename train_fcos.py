@@ -198,7 +198,6 @@ class Training:
         # ddp
         if self.is_distributed:
             model = DDP(model, device_ids=[self.local_rank], broadcast_buffers=False, find_unused_parameters=False)
-
         # loss
         self.loss_fcn = loss_fnc(self.hyp)
 
@@ -259,6 +258,13 @@ class Training:
         optimizer.add_param_group({"params": param_group_scale})
 
         del param_group_weight, param_group_bias, param_group_other
+
+        # if self.hyp['optimizer'].lower() == "sgd":
+        #     optimizer = optim.SGD(params=self.model.parameters(), lr=self.hyp['lr'], nesterov=True, momentum=self.hyp['momentum'])
+        # elif self.hyp['optimizer'].lower() == "adam":
+        #     optimizer = optim.Adam(params=self.model.parameters(), lr=self.hyp['lr'], betas=(self.hyp['momentum'], 0.999))
+        # else:
+        #     RuntimeError(f"Unkown optim_type {self.hyp['optimizer']}")
         return optimizer
 
     def before_epoch(self, cur_epoch):

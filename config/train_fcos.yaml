@@ -2,10 +2,10 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  reg_loss_weight: 0.3  # 回归损失（bbox损失）权重
+  reg_loss_weight: 0.1  # 回归损失（bbox损失）权重
   cls_loss_weight: 1.0  # 分类损失权重
   ctr_loss_weight: 1.0  # 置信度损失权重
-  class_smooth_factor: 0.01 # 标签平滑
+  class_smooth_factor: 0.0 # 标签平滑
   cls_pos_weight: 1.0  # 
   ctr_pos_weight: 1.0  # 
 
@@ -54,12 +54,9 @@ train_hyp:
   log_identifier: 'fcos_debug'
   save_log_every: 5
   no_data_aug_epoch: 10
-  center_sampling_radius: 1.3
-  iou_type: 'iou'  # ['iou', 'giou', 'linear_iou']
+  center_sampling_radius: 1.5
+  iou_type: 'giou'  # ['iou', 'giou', 'linear_iou']
   do_center_sampling: true
-  do_cen_loss_balance: false
-  do_cls_loss_balance: false
-  do_reg_loss_balance: false
   eps: 0.000001
 
 
@@ -106,7 +103,7 @@ nms_hyp:
   max_predictions_per_img: 100
   min_prediction_box_wh: 2
   max_prediction_box_wh: 4096
-  iou_type: 'iou'
+  nms_iou_type: 'iou'
   infer_img_save_path: ~
   mutil_label: false  # 一个object是否可以有多个标签
   agnostic: true  # 是否在同类别的bbox之间进行NMS

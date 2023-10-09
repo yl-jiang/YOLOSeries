@@ -8,7 +8,7 @@ import math
 
 __all__ = ['FCOSLoss']
 
-INF = 10000000000.0
+INF = 10000000.0
 
 
 def smooth_bce(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
@@ -50,22 +50,23 @@ class FCOSLoss:
         if weight is not None:
             assert pred.size(0) == len(weight)
 
-        pred_left, pred_top, pred_right, pred_bottom = pred.chunk(4, -1)  # (m, 1)
-        target_left, target_top, target_right, target_bottom = tar.chunk(4, -1)  # (m, 1)
-        target_area = (target_left + target_right) * (target_top + target_bottom)  # (m, 1)
-        pred_area   = (pred_left   + pred_right)   * (pred_top   + pred_bottom)    # (m, 1)
+        pred_l, pred_t, pred_r, pred_b = pred.chunk(4, -1)  # (m, 1)
+        tar_l, tar_t, tar_r, tar_b = tar.chunk(4, -1)  # (m, 1)
+        tar_area = (tar_l + tar_r) * (tar_t + tar_b)  # (m, 1)
+        pred_area = (pred_l + pred_r) * (pred_t + pred_b)    # (m, 1)
 
-        w_intersect = torch.min(pred_left, target_left) + torch.min(pred_right, target_right)    # (m, 1)
-        g_w_intersect = torch.max(pred_left, target_left) + torch.max(pred_right, target_right)  # (m, 1)
-        h_intersect = torch.min(pred_bottom, target_bottom) + torch.min(pred_top, target_top)    # (m, 1)
-        g_h_intersect = torch.max(pred_bottom, target_bottom) + torch.max(pred_top, target_top)  # (m, 1)
-        ac_uion = g_w_intersect.clamp_(0.0) * g_h_intersect.clamp_(0.0) + self.eps  # (m, 1)
-        area_intersect = w_intersect.clamp_(0.0) * h_intersect.clamp_(0.0)  # (m, 1)
-        area_union = target_area + pred_area - area_intersect  # (m, 1)
-        ious = (area_intersect + 1.0) / (area_union.clamp_(0.0) + 1.0)  # (m, 1)
+        w_inter = torch.min(pred_l, tar_l) + torch.min(pred_r, tar_r)    # (m, 1)
+        g_w_inter = torch.max(pred_l, tar_l) + torch.max(pred_r, tar_r)  # (m, 1)
+        h_inter = torch.min(pred_b, tar_b) + torch.min(pred_t, tar_t)    # (m, 1)
+        g_h_inter = torch.max(pred_b, tar_b) + torch.max(pred_t, tar_t)  # (m, 1)
+        ac_uion = (g_w_inter * g_h_inter).clamp(self.eps)  # (m, 1)
+        area_inter = w_inter.clamp_(0.0) * h_inter.clamp_(0.0)  # (m, 1)
+        area_union = (tar_area + pred_area.clamp(0.0) - area_inter).clamp(self.eps)  # (m, 1)
+        ious = area_inter / area_union  # (m, 1)
         gious = ious - (ac_uion - area_union) / ac_uion  # (m, 1)
+
         if self.hyp['iou_type'] == 'iou':
-            losses = -torch.log(ious)
+            losses = -torch.log(ious.clamp(self.eps))
         elif self.hyp['iou_type'] == 'linear_iou':
             losses = 1 - ious
         elif self.hyp['iou_type'] == 'giou':
@@ -74,7 +75,7 @@ class FCOSLoss:
             raise NotImplementedError
 
         if weight is not None :
-            return (losses * weight).sum()
+            return (losses * weight).sum() / weight.sum()
         else:
             return losses.sum()
 
@@ -90,7 +91,6 @@ class FCOSLoss:
         assert isinstance(targets_batch, torch.Tensor), f"targets's type should be torch.Tensor but we got {type(targets_batch)}"
 
         batch_size = targets_batch.size(0)
-        num_level = len(cls_fms)
         targets = targets_batch.clone().detach()
 
         fm_shapes  = [(f.size(2), f.size(3)) for f in cls_fms]
@@ -130,17 +130,15 @@ class FCOSLoss:
                     stage_ctr_loss.append(ctr_loss)
 
                     # --------------------------------------------------------------------------------- regression loss
-                    loss_denorm = max(ctr_tar.sum().item(), self.eps)
-                    iou_loss = self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, ctr_tar)
-                    iou_loss /= (loss_denorm * pos_num)
+                    iou_loss = self.compute_iou_loss(tmp_pred_reg[(pos_idx[0], pos_idx[1])], reg_tar, ctr_tar) / pos_num
                     stage_reg_loss.append(iou_loss)
                     
                     # --------------------------------------------------------------------------------- classification loss
                     tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls  # foreground class
                 else:
                     # --------------------------------------------------------------------------------- classification loss
-                    stage_reg_loss.append(tmp_pred_reg.new_tensor(0.0))
-                    stage_ctr_loss.append(self.bce_ctr(tmp_pred_ctr.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1)).mean())
+                    stage_reg_loss.append(tmp_pred_reg.mean())
+                    stage_ctr_loss.append(tmp_pred_ctr.sigmoid().mean())
 
                 cls_focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
                 cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))
