@@ -137,8 +137,10 @@ class FCOSLoss:
                     tmp_tars_cls[(pos_idx[0], pos_idx[1], cls_tar.long())] = self.positive_smooth_cls  # foreground class
                 else:
                     # --------------------------------------------------------------------------------- classification loss
-                    stage_reg_loss.append(tmp_pred_reg.mean())
-                    stage_ctr_loss.append(tmp_pred_ctr.sigmoid().mean())
+                    # stage_reg_loss.append(tmp_pred_reg.abs().sum())
+                    stage_reg_loss.append(tmp_pred_reg.clamp(0.0, 0.0).sum())
+                    ctr_focal = self.focal_loss_factor(tmp_pred_ctr.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1))
+                    stage_ctr_loss.append(self.bce_ctr(tmp_pred_ctr.reshape(-1, 1), tmp_tars_cen.reshape(-1, 1) * ctr_focal).mean())
 
                 cls_focal = self.focal_loss_factor(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class'])) 
                 cls_loss = self.bce_cls(tmp_pred_cls.float().reshape(-1, self.hyp['num_class']), tmp_tars_cls.float().reshape(-1, self.hyp['num_class']))

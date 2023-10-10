@@ -2,9 +2,9 @@ loss_hyp:
   use_focal_loss: true # 是否使用focal loss方法计算分类损失
   focal_loss_gamma: 1.5 # focal loss参数
   focal_loss_alpha: 0.25  # focal loss参数
-  reg_loss_weight: 0.1  # 回归损失（bbox损失）权重
-  cls_loss_weight: 1.0  # 分类损失权重
-  ctr_loss_weight: 1.0  # 置信度损失权重
+  reg_loss_weight: 0.5  # 回归损失（bbox损失）权重
+  cls_loss_weight: 0.5  # 分类损失权重
+  ctr_loss_weight: 2.0  # 置信度损失权重
   class_smooth_factor: 0.0 # 标签平滑
   cls_pos_weight: 1.0  # 
   ctr_pos_weight: 1.0  # 
@@ -17,6 +17,12 @@ train_hyp:
   test_img_dir: "./result/coco_test_imgs"  # for test
   val_img_dir: "/E/JYL/Datasets/VOC/val/img"  # validation image dir
   val_lab_dir: "/E/JYL/Datasets/VOC/val/lab"  # validation label dir
+  # train_img_dir: "/E/JYL/Datasets/GlobalWheat/train/img"  # 存放训练图像的文件夹路径
+  # train_lab_dir: "/E/JYL/Datasets/GlobalWheat/train/lab"  # 存放训练label的文件夹路径
+  # name_path: "/E/JYL/Datasets/GlobalWheat/train/names.txt"
+  # test_img_dir: "./result/wheat_test_imgs"  # for test
+  # val_img_dir: "/E/JYL/Datasets/GlobalWheat/val/img"  # validation image dir
+  # val_lab_dir: "/E/JYL/Datasets/GlobalWheat/val/lab"  # validation label dir
   aspect_ratio: false
   enable_data_aug: true
   aspect_ratio_path: './dataset/pkl/aspect_ratio.pkl'  # 训练时，按照训练集中图片长宽比从小到大的顺序输入到网络，该文件保存的是训练集中所有image的长宽比
