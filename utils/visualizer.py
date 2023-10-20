@@ -201,7 +201,7 @@ def cv2_save_img(img, bboxes, labels, scores, save_path):
             # thickness：int，值为-1时表示填充颜色
             font = cv2.FONT_HERSHEY_SIMPLEX
             # caption = id2lab[labels[i]] + f':{scores[i]:.3f}'
-            caption = f'{labels[i]}:{scores[i]:.1f}'
+            caption = f'{labels[i]}:{scores[i]:.3f}'
             box_h, box_w = int(box[3] - box[1]), int(box[2] - box[0])
             img = cv2.rectangle(img, pt1=lt, pt2=(round(box[0])+box_w, round(box[1])+12), color=[200, 0, 0], thickness=-1)
             h, w, c = img.shape

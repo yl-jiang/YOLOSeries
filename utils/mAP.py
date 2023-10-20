@@ -206,7 +206,7 @@ class mAP_v2:
         fig.savefig(str(save_path), dpi=300)
         plt.close('all')
         fig.clear()
-        del fig, ax
+        del ax, fig, my
         gc.collect()
 
     @staticmethod
@@ -261,14 +261,18 @@ class mAP_v2:
         gc.collect()
 
     def get_mean_metrics(self):
-        metrics = self.compute_ap_per_class()
-        ap = metrics['ap']  # (num_class, 10)
-        apm = ap.mean(axis=1)  # (num_class,)
-        map50 = ap[:, 0].mean()
-        map = apm.mean()
-        mp = metrics['precision'].mean()
-        mr = metrics['recall'].mean()
-        self.plot_ap_per_class(apm)
+        try:
+            metrics = self.compute_ap_per_class()
+            ap = metrics['ap']  # (num_class, 10)
+            apm = ap.mean(axis=1)  # (num_class,)
+            map50 = ap[:, 0].mean()
+            map = apm.mean()
+            mp = metrics['precision'].mean()
+            mr = metrics['recall'].mean()
+            self.plot_ap_per_class(apm)
+        except Exception as err:
+            map, map50, mp, mr = 0., 0., 0., 0.
+            print(err)
         return map, map50, mp, mr
 
 
